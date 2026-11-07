@@ -17,9 +17,10 @@ from dataclasses import dataclass
 import platform
 from subprocess import Popen
 from threading import RLock
-from typing import Callable
+from typing import Callable, cast
 
 from .stream_gpu_lease_host_bridge import HostGPUWorkerLeaseBridge
+from .stream_windows_job_worker import WindowsJobWorker
 from .stream_realtime_gpu_leases import (
     RealtimeGPUWorkLeases, WorkLeaseTicket, _now,
 )
@@ -41,10 +42,11 @@ class OwnedWorkerTick:
 @dataclass
 class _Owned:
     ticket: WorkLeaseTicket
-    process: Popen[bytes]
+    process: Popen[bytes] | WindowsJobWorker
     pid: int
     bridge_bound: bool
     stop_sent: bool = False
+    job_bound: bool = False
 
 
 class HostOwnedOptionalGPUWorkers:
@@ -92,7 +94,7 @@ class HostOwnedOptionalGPUWorkers:
     def enroll_spawned(
         self,
         ticket: WorkLeaseTicket,
-        process: Popen[bytes],
+        process: Popen[bytes] | WindowsJobWorker,
         *,
         now_ms: float,
         owner_approved: bool = False,
@@ -108,7 +110,7 @@ class HostOwnedOptionalGPUWorkers:
             raise PermissionError("owner-approved local worker required")
         if type(ticket) is not WorkLeaseTicket:
             raise TypeError("original lease ticket required")
-        if not isinstance(process, Popen):
+        if not isinstance(process, (Popen, WindowsJobWorker)):
             raise TypeError("original host-spawned subprocess handle required")
         pid = process.pid
         if type(pid) is not int or not 1 <= pid < 2**31:
@@ -123,6 +125,30 @@ class HostOwnedOptionalGPUWorkers:
                 raise ValueError("process or lease is already enrolled")
             if self._leases._lookup(ticket) is None:
                 raise ValueError("lease does not belong to this host session")
+            if isinstance(process, WindowsJobWorker):
+                # Root process exit never proves child exit. Only the original
+                # kernel Job Object may confirm the *entire* tree is empty.
+                item = _Owned(ticket, process, pid, False, job_bound=True)
+                self._owned[ticket.serial] = item
+                try:
+                    active = process.active_processes()
+                    root_done = process.poll() is not None
+                    if active == 0 and root_done:
+                        if self._leases.release(
+                            ticket, host_confirms_worker_stopped=True,
+                        ):
+                            del self._owned[ticket.serial]
+                            process.close()
+                            return True
+                    if active <= 0:
+                        return False
+                    return self._leases.mark_started(
+                        ticket, now_ms=now_ms,
+                        host_confirms_worker_started=True,
+                    )
+                except Exception:
+                    # Keep the claim charged and stop via original job handle.
+                    return False
             try:
                 code = process.poll()
             except Exception:
@@ -160,6 +186,10 @@ class HostOwnedOptionalGPUWorkers:
                 self._bridge.disable()
                 intents = ()
             revoked = {intent.ticket for intent in intents}
+            try:
+                revoked.update(self._leases.poll(now_ms=now_ms))
+            except Exception:
+                self._bridge.disable()
             sent, confirmed, uncertain = 0, 0, 0
             for serial, item in tuple(self._owned.items()):
                 try:
@@ -171,6 +201,57 @@ class HostOwnedOptionalGPUWorkers:
                 except Exception:
                     uncertain += 1
                     self._bridge.disable()
+                    # Even if root handle polling fails, the original Job
+                    # Object remains owned. Stop its entire tree once, while
+                    # retaining the lease until independent empty-job proof.
+                    if item.job_bound and not item.stop_sent and self._system_name() == "Windows":
+                        try:
+                            item.process.terminate()
+                            sent += 1
+                        except Exception:
+                            pass
+                        item.stop_sent = True
+                    continue
+
+                if item.job_bound:
+                    try:
+                        assert isinstance(item.process, WindowsJobWorker)
+                        active = item.process.active_processes()
+                        if active < 0:
+                            raise ValueError("invalid job process count")
+                    except Exception:
+                        uncertain += 1
+                        self._bridge.disable()
+                        active = -1
+                    if active == 0 and exit_code is not None:
+                        if self._leases.release(
+                            item.ticket, host_confirms_worker_stopped=True,
+                        ):
+                            cast(WindowsJobWorker, item.process).close()
+                            del self._owned[serial]
+                            confirmed += 1
+                        else:
+                            uncertain += 1
+                            self._bridge.disable()
+                        continue
+                    if active == 0 or active < 0:
+                        uncertain += int(active == 0)
+                        self._bridge.disable()
+                    elif item.ticket not in revoked and self._leases.heartbeat(
+                        item.ticket, now_ms=now_ms,
+                        host_confirms_worker_running=True,
+                    ):
+                        continue
+                    # Stop the WHOLE job, including any descendants, once.
+                    if not item.stop_sent and self._system_name() == "Windows":
+                        try:
+                            item.process.terminate()
+                            item.stop_sent = True
+                            sent += 1
+                        except Exception:
+                            item.stop_sent = True
+                            uncertain += 1
+                            self._bridge.disable()
                     continue
 
                 if exit_code is not None:
@@ -231,8 +312,9 @@ class HostOwnedOptionalGPUWorkers:
                     int(x.stop_sent) for x in self._owned.values()
                 ),
                 "quarantined_unbound": sum(
-                    int(not x.bridge_bound) for x in self._owned.values()
+                    int(not x.bridge_bound and not x.job_bound) for x in self._owned.values()
                 ),
+                "contained_jobs": sum(int(x.job_bound) for x in self._owned.values()),
             }
 
 
