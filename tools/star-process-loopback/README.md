@@ -37,3 +37,18 @@ This observes only the target voice **process tree** for 300–5000 ms and emits
 No live process capture or Windows-native smoke test has yet been performed by this commit.
 
 Sources: [Microsoft process loopback](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params), [NAudio 3 WasapiRecorder](https://naudio.github.io/NAudio/docs/WasapiRecorder.html), [NuGet NAudio.Wasapi 3.3.0](https://www.nuget.org/packages/NAudio.Wasapi/3.3.0).
+
+## Optional GitHub-hosted Windows packaging check
+
+The separate [Windows process-loopback smoke workflow](../../.github/workflows/star-process-loopback-windows.yml) uses an **ephemeral GitHub-hosted Windows runner**, never the owner's Windows PC. For a pull request touching this diagnostic it restores NAudio 3.3.0, builds a **self-contained Windows x64 single-file executable**, executes only `--self-test` and rejected argument paths (no valid `--observe` invocation), and uploads a **one-day retention** diagnostic artifact.
+
+The artifact includes `Star.ProcessLoopback.exe`, this README, and `manifest.json` containing the checked-out Git commit/tree, executable SHA-256, and explicit negative attestation fields for live capture, quiet-state verification, and permission to stream. Self-contained publishing eliminates the need to install .NET 9 on the target Windows machine; it does **not** eliminate Windows/NAudio requirements or attest native capture reliability.
+
+To inspect the artifact **without capturing anything**, extract into a fresh local directory, verify the executable's SHA-256 against `manifest.json`, and run:
+
+```powershell
+Get-FileHash .\Star.ProcessLoopback.exe -Algorithm SHA256
+.\Star.ProcessLoopback.exe --self-test
+```
+
+Do not run the `--observe` command on a general-use process. A real capture rehearsal requires an independently verified dedicated voice subprocess and owner-approved isolation; the artifact is a **diagnostic**, not a streaming executable or proof of silence. If the Windows workflow is queued, failing, or has never run, there is **no verified Windows executable** to claim yet.
