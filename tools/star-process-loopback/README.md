@@ -25,7 +25,13 @@ dotnet tools/star-process-loopback/bin/Release/net9.0/Star.ProcessLoopback.dll -
 dotnet tools/star-process-loopback/bin/Release/net9.0/Star.ProcessLoopback.dll --observe --pid <StarVoicePID> --expect-exe StarVoice.exe --duration-ms 1200
 ```
 
-This observes only the target voice **process tree** for 300–5000 ms and emits sanitized newline-delimited JSON. The `max_peak_milli` is a diagnostic peak (0–1000), not loudness in dB, recognition quality, audible output identity, speech presence, or calibrated threshold. It never drives input or starts OBS/voice. No PCM is written. A native callback may **stop firing when the process is silent**; no callback does *not* prove quietness. Process exit, PID/creation-time mismatch, malformed PCM, unsupported Windows or audio activation failure produces nonzero exit or `capture_invalid`. Do not reuse a stale successful run after an audio route/worker restart.
+This observes only the target voice **process tree** for 300–5000 ms and emits sanitized newline-delimited JSON. The `max_peak_milli` is a diagnostic peak (0–1000), not loudness in dB, recognition quality, audible output identity, speech presence, or calibrated threshold. It never drives input or starts OBS/voice. No PCM is written. A native callback may **stop firing when the process is silent**; no callback does *not* prove quietness.
+
+Each emitted JSON record now also reports a **local per-interval activity window**: `activity_window_ms`, `activity_callbacks`, `activity_sample_frames`, `activity_peak_milli` and `activity_rms_milli`. Peak and RMS are amplitude indicators scaled from clamped floating-point PCM (0–1000), not calibrated sound-pressure levels. They reset between reports instead of retaining the peak of the entire recording. **If no PCM samples arrive, peak and RMS are null, not zero**—missing callbacks are not evidence of digital silence. A callback may cover a different period than the JSON polling interval, so these windows are arrival-time buckets, not sample-accurate synchronization, speech recognition or guaranteed end-to-end latency. The dedicated host still needs native packet-state, voice PID lifecycle, audio abort, OBS and avatar evidence. `verified_silence` remains false.
+
+Even though the CLI emits no audio bytes, its coarse activity timing can expose when the voice process was speaking. Keep the output local, ephemeral and private; do not forward the JSON to public chat, Discord, telemetry, a model prompt, or broadcast overlays. The new fields offer a **diagnostic before/after activity trace for owner-supervised rehearsal**, never playback-control authority.
+
+ Process exit, PID/creation-time mismatch, malformed PCM, unsupported Windows or audio activation failure produces nonzero exit or `capture_invalid`. Do not reuse a stale successful run after an audio route/worker restart.
 
 ## Real acceptance needed before integration
 

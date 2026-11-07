@@ -46,7 +46,9 @@ jobs:
           if ((Get-Item -LiteralPath $exe).Length -gt 209715200) { throw 'Unexpected executable size >200 MiB' }
           # Never perform a valid --observe capture in CI or use a random PID.
           $selfTest = & $exe --self-test
-          if ($LASTEXITCODE -ne 0 -or "$selfTest" -notmatch '"capture_started":false') { throw 'Self-test failed or unexpectedly reported capture' }
+          if ($LASTEXITCODE -ne 0 -or "$selfTest" -notmatch '"capture_started":false' -or
+              "$selfTest" -notmatch '"activity_window_tested":true' -or
+              "$selfTest" -notmatch '"missing_pcm_means_unknown":true') { throw 'Audio activity-window self-test failed or unexpectedly reported capture' }
           $null = & $exe --observe 2>$null
           if ($LASTEXITCODE -ne 2) { throw 'Bare --observe was not safely rejected' }
           $null = & $exe --help 2>$null
