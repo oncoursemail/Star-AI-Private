@@ -225,19 +225,23 @@ def test_native_not_completed_rejected(tmp_path):
 
 
 def test_duplicate_reordered_or_changed_native_rows_rejected(tmp_path):
-    for mutate in (
-        lambda rows: [rows[0], rows[1], rows[1], rows[3]],
-        lambda rows: [rows[0], rows[2], rows[1], rows[3]],
-        lambda rows: [rows[0], {**rows[1], "verified_silence": True}, rows[2], rows[3]],
-        lambda rows: [rows[0], {**rows[1], "activity_sample_frames": 79}, rows[2], rows[3]],
-        lambda rows: [rows[0], {**rows[1], "state": "capture_invalid"}, rows[2], rows[3]],
+    for index, mutate in enumerate(
+        (
+            lambda rows: [rows[0], rows[1], rows[1], rows[3]],
+            lambda rows: [rows[0], rows[2], rows[1], rows[3]],
+            lambda rows: [rows[0], {**rows[1], "verified_silence": True}, rows[2], rows[3]],
+            lambda rows: [rows[0], {**rows[1], "activity_sample_frames": 79}, rows[2], rows[3]],
+            lambda rows: [rows[0], {**rows[1], "state": "capture_invalid"}, rows[2], rows[3]],
+        )
     ):
         rows = mutate(valid_rows())
-        path, root, digest = create_case(tmp_path / str(len(rows)) if False else tmp_path, make_bytes(rows))
+        # A fresh file per case avoids Windows metadata coalescing from rapid
+        # unlink/recreate of the same path while preserving strict file guards.
+        variant_root = tmp_path / f"variant_{index}"
+        variant_root.mkdir()
+        path, root, digest = create_case(variant_root, make_bytes(rows))
         with pytest.raises(PrivateVoiceAuditError, match="invalid_native"):
             run(path, root, digest)
-        path.unlink()
-        root.rmdir()
 
 
 def test_reject_symlink_and_parent_symlink(tmp_path):
