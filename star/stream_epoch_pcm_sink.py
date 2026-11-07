@@ -170,7 +170,14 @@ class LocalEpochPCMSink:
     def request_stop(self, epoch: str) -> bool:
         """Invalidate first; clear app queue. Native output still needs proof."""
         with self._lock:
-            if type(epoch) is not str or epoch != self._active:
+            if type(epoch) is not str:
+                return False
+            # The output fence and the physical-stop coordinator may both
+            # request the same stop. Acknowledging the *request* twice is
+            # safe; only observe_quiet can attest native device drain.
+            if epoch == self._pending_quiet:
+                return not self._faulted
+            if epoch != self._active:
                 return False
             self._active = None
             self._pending_quiet = epoch
