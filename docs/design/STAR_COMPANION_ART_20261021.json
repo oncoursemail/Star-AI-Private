@@ -1,0 +1,85 @@
+{
+  "generated_on": "2026-10-21",
+  "tool": "ComfyUI 0.39.0 on the owner PC GPU (RTX 3060 Ti), FLUX.2 klein 4B fp8 (flux-2-klein-4b-fp8.safetensors, qwen_3_4b_fp4_flux2 text encoder, flux2-vae), 4 steps, workflows built by star/comfy.py (klein_text_to_image, klein_edit)",
+  "purpose": "Fourth companion (Gemini) and the inpainted closed-eye/closed-mouth and earless variants used by the animated puppets (frontend/src/companions).",
+  "likeness_note": "Fan-made characters for the owner's private build; Ember and Gemini evoke AI model mascots. Review naming and art before any public release.",
+  "assets": [
+    {
+      "character": "Gemini",
+      "path": "frontend/public/assets/companions/gemini.png",
+      "width": 416,
+      "height": 520,
+      "mode": "RGBA",
+      "bytes": 242955,
+      "sha256": "bbd8a237f105bcdd5c647a8e6824ff7a0eac141181a2ec011f99bc67970a8cc3",
+      "steps": [
+        "text to image 832x1040, references ember.png and astra.png composited on white (style only), seed 22 picked from seeds 11-14 and 21-26",
+        "masked edit of the hair clip into a four-point star with Star's own clip (stand.png crop) as reference, seed 4 of 4-6",
+        "background flood-filled from the borders into alpha with 2 px soft unpremultiplied edges, largest component kept",
+        "Lanczos to the shared 416x520 frame: figure 486 px tall, soles at y 504"
+      ],
+      "prompt": "Chibi anime desktop companion sprite, the exact same art style, line weight, cel shading, head-to-body proportions and rendering quality as the two reference characters (they are style references only; draw a NEW girl). Single full-body character, front three-quarter view facing slightly left, relaxed standing pose with tiny mitten hands, both boots fully visible, very chibi proportions: a big head and a small compact body with short legs, under 3 head-heights tall exactly like the references, centered with generous margins, plain flat pure white background, no ground shadow, no text, no other characters. Character: GEMINI, cheerful sparkly girl with a big bright open smile and sparkling sky-blue eyes. Very long flowing hair that blends from sky blue at the top to soft pink at the ends, with two front locks, and one small golden hair clip shaped like a four-pointed sparkle star (four points only, like a twinkle) on one side. Wearing a short teal-aqua hooded cape with a white trim tied with a small aqua bow, a white blouse, a light blue pleated skirt, opaque white tights and small teal ankle boots. Modest, fully clothed, wholesome, soft blush, fine dark brown outlines, soft painterly cel shading with gentle gradients and glossy hair highlights like the references, crisp professional sprite art.",
+      "clip_prompt": "Replace the girl's hair clip with exactly the four-pointed star hair clip shown in the second image: a small golden star with only four points (top, bottom, left, right), dark outline, same art style. Keep everything else unchanged.",
+      "raw_sha256": "2c56bb9136777f608b637785f3b4614d3e2eb38b6bfd79ebe7ba481a9800e3b4"
+    },
+    {
+      "character": "Star (eyes and mouth closed)",
+      "path": "frontend/public/assets/companions/star-closed.png",
+      "width": 512,
+      "height": 640,
+      "mode": "RGBA",
+      "bytes": 209112,
+      "sha256": "c0efac61325e49f8e1dcc04e97940294f861fc0514d8e84dca80e8a5a620f147",
+      "source": "frontend/public/assets/mascot/poses/stand.png",
+      "seed": 11
+    },
+    {
+      "character": "Ember (eyes and mouth closed)",
+      "path": "frontend/public/assets/companions/ember-closed.png",
+      "width": 416,
+      "height": 520,
+      "mode": "RGBA",
+      "bytes": 219192,
+      "sha256": "d640723de4a9800f1bfb17772f4f5fc4a0ba8130544d6cb93726d330876e8ce7",
+      "source": "ember.png",
+      "seed": 2
+    },
+    {
+      "character": "Astra (eyes and mouth closed)",
+      "path": "frontend/public/assets/companions/astra-closed.png",
+      "width": 416,
+      "height": 520,
+      "mode": "RGBA",
+      "bytes": 183456,
+      "sha256": "f96fe13f4ed83bd4dfb46fe028572f4ca8ff7b06f410aab579bc7dcfdf46221e",
+      "source": "astra.png",
+      "seed": 11
+    },
+    {
+      "character": "Gemini (eyes and mouth closed)",
+      "path": "frontend/public/assets/companions/gemini-closed.png",
+      "width": 416,
+      "height": 520,
+      "mode": "RGBA",
+      "bytes": 239372,
+      "sha256": "838fc94b7610ab70d2467193d2e64bc494cb8cc26c255cdd40eb85be72050e4e",
+      "source": "gemini.png",
+      "seed": 12
+    },
+    {
+      "character": "Astra without cat ears and tail (dog form)",
+      "path": "frontend/public/assets/companions/astra-plain.png",
+      "width": 416,
+      "height": 520,
+      "mode": "RGBA",
+      "bytes": 166156,
+      "sha256": "4f61923a16ba7b14938e22c167addf539f7fdd6852a7c10816b0da304b5b6280",
+      "source": "astra.png",
+      "seed": 3,
+      "prompt": "Remove the cat ears and remove the cat tail. Where the ears were, draw the normal rounded top of her black hair with violet tips; where the tail was, plain white background and the edge of her skirt. Keep the same character, art style and everything else exactly unchanged.",
+      "note": "masked edit at 832x1040, flood-fill matte inside the edited area only, a stray tail-outline stroke removed (largest component kept)"
+    }
+  ],
+  "closed_variant_method": "masked klein_edit at 832x1040 over the eye and mouth ellipses (rig.ts eyes/mouth), 3-4 seeds each, picked by eye; blended back into the original sprite inside the same ellipses (feathered), alpha from the original. The renderer reads these files only inside those ellipses.",
+  "closed_variant_prompt": "The same picture of the same girl, but her eyes are now gently closed: each eye becomes a soft downward-curved closed eyelid line with dark lashes, a peaceful happy closed-eye expression, and her mouth is closed in a small soft smile. Keep the art style, line weight, skin colour, blush, glasses, hair and everything else exactly the same."
+}
