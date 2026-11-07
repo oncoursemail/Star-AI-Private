@@ -21,6 +21,7 @@ from threading import RLock
 from typing import Callable
 
 from .stream_gpu_owned_worker_host import HostOwnedOptionalGPUWorkers, OwnedWorkerTick
+from .stream_host_artifact_pins import HostArtifactPin, MAX_LAUNCH_HASH_BYTES
 from .stream_windows_job_worker import WindowsJobWorker, spawn_windows_job
 from .stream_realtime_gpu_leases import RealtimeGPUWorkLeases, WorkLeaseTicket, _now
 
@@ -43,6 +44,8 @@ class HostOptionalWorkerPlan:
     executable: Path
     arguments: tuple[str, ...] = ()
     working_directory: Path | None = None
+    executable_pin: HostArtifactPin | None = None
+    additional_pins: tuple[HostArtifactPin, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.alias) is not str or not _ALIAS.fullmatch(self.alias):
@@ -63,16 +66,42 @@ class HostOptionalWorkerPlan:
             if (type(argument) is not str or len(argument) > 4096
                     or "\x00" in argument or any(ord(c) < 32 for c in argument)):
                 raise ValueError("invalid fixed host argument")
+        if self.executable_pin is not None and (
+            type(self.executable_pin) is not HostArtifactPin
+            or self.executable_pin.path != self.executable
+        ):
+            raise ValueError("executable pin must match the selected binary")
+        if (type(self.additional_pins) is not tuple
+                or len(self.additional_pins) > 8
+                or any(type(pin) is not HostArtifactPin for pin in self.additional_pins)
+                or len({pin.path for pin in self.additional_pins}) != len(self.additional_pins)
+                or any(pin.path == self.executable for pin in self.additional_pins)):
+            raise ValueError("additional launch pins must be unique local files")
         if self.working_directory is not None:
             directory = self.working_directory
             if (not isinstance(directory, Path) or not directory.is_absolute()
                     or directory.is_symlink() or not directory.is_dir()):
                 raise ValueError("host working directory must exist and be absolute")
 
-    def verified_command(self) -> tuple[list[str], str | None]:
+    def verified_command(
+        self, *, require_artifact_pins: bool = False
+    ) -> tuple[list[str], str | None]:
         """Revalidate fixed files, not caller-provided runtime arguments."""
         if self.executable.is_symlink() or not self.executable.is_file():
             raise ValueError("owner-selected executable changed or disappeared")
+        if require_artifact_pins and self.executable_pin is None:
+            raise ValueError("strict launch requires a pinned binary")
+        remaining_bytes = MAX_LAUNCH_HASH_BYTES
+        for pin in (self.executable_pin, *self.additional_pins):
+            if pin is None:
+                continue
+            try:
+                size = pin.path.stat().st_size
+            except OSError as exc:
+                raise ValueError("trusted launch artifact unavailable") from exc
+            if size > remaining_bytes or not pin.verify(max_bytes=max(1, remaining_bytes)):
+                raise ValueError("trusted launch artifact changed or is too large")
+            remaining_bytes -= size
         directory = self.working_directory
         if directory is not None and (directory.is_symlink() or not directory.is_dir()):
             raise ValueError("owner-selected working directory changed")
@@ -121,6 +150,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
         system_name: Callable[[], str] = platform.system,
         spawn: Callable[[list[str], str | None], subprocess.Popen[bytes]] = _spawn_windows,
         require_job_tree: bool = False,
+        require_artifact_pins: bool = False,
         job_spawn: Callable[[list[str], str | None], WindowsJobWorker] = spawn_windows_job,
     ) -> None:
         if not isinstance(leases, RealtimeGPUWorkLeases) or workers._leases is not leases:
@@ -130,7 +160,8 @@ class HostOptionalGPUWorkerLaunchSupervisor:
             raise TypeError("a nonempty immutable owner-configured plan registry is required")
         if len({plan.alias for plan in plans}) != len(plans):
             raise ValueError("duplicate host plan")
-        if type(require_job_tree) is not bool or not callable(job_spawn):
+        if (type(require_job_tree) is not bool
+                or type(require_artifact_pins) is not bool or not callable(job_spawn)):
             raise TypeError("explicit host-owned Windows job policy required")
         if not callable(system_name) or not callable(spawn):
             raise TypeError("trusted local OS and process factories required")
@@ -141,6 +172,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
         self._spawn = spawn
         self._job_spawn = job_spawn
         self._require_job_tree = require_job_tree
+        self._require_pins = require_artifact_pins
         self._lock = RLock()
         self._enabled = False
         self._faulted = False
@@ -178,7 +210,9 @@ class HostOptionalGPUWorkerLaunchSupervisor:
                 return self._result("deferred", "optional_plan_worker_already_outstanding")
             self._active_plans.pop(plan.alias, None)
             try:
-                argv, cwd = plan.verified_command()
+                argv, cwd = plan.verified_command(
+                    require_artifact_pins=self._require_pins,
+                )
             except (OSError, ValueError):
                 return self._result("deferred", "trusted_launch_files_invalid")
             advice = self._leases.reserve(
@@ -254,6 +288,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
                 "faulted": self._faulted,
                 "configured_optional_plans": len(self._plans),
                 "job_tree_containment_required": self._require_job_tree,
+                "artifact_pins_required": self._require_pins,
                 "outstanding_reservations": self._leases.metrics()["outstanding_claims"],
                 "owned_workers": self._workers.metrics()["owned_workers"],
             }
