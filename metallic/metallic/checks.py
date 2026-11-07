@@ -363,7 +363,12 @@ def check_eval(ctx: Context, verdict_file: str | None, state: Path) -> CheckResu
         return CheckResult("eval-gate", FAIL if blocking else WARN, msg,
                            [finding(f, 0, "eval", "eval-sensitive file changed", FAIL if blocking else WARN)
                             for f in hit[:20]], blocking=blocking)
-    allowed = bool(v.get("allowed")) and int(v.get("exit_code", 1)) == 0
+    if (not isinstance(v, dict) or type(v.get("allowed")) is not bool
+            or type(v.get("exit_code")) is not int):
+        return CheckResult("eval-gate", FAIL,
+                           "malformed paired verdict: allowed must be boolean and exit_code must be integer",
+                           blocking=True)
+    allowed = v["allowed"] is True and v["exit_code"] == 0
     return CheckResult("eval-gate", PASS if allowed else FAIL,
                        ("paired verdict allows the change" if allowed else
                         f"paired verdict does not allow it (exit {v.get('exit_code')})"), blocking=True)

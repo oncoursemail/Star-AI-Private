@@ -23,7 +23,7 @@ import time
 
 from . import cache as cache_mod
 from . import engine, gitutil
-from .config import load
+from .config import fnmatch_any, load
 
 LOCK_STALE_SECONDS = 2 * 3600
 
@@ -84,10 +84,14 @@ def _merge(scratch: Path, sha: str, label: str, identity: tuple[str, str]) -> li
         return conflicted
 
 
-def _check(scratch: Path, base: str, branch: str, jobs: int, cache: cache_mod.Cache, emit) -> dict:
+def _check(scratch: Path, base: str, branch: str, jobs: int, cache: cache_mod.Cache, emit, *,
+           source_branches: tuple[str, ...] = ()) -> dict:
     cfg = load(scratch)                     # the combined tree's own config: a gate added by a branch is enforced
+    # A synthetic batch label must not erase generator restrictions. A mixed batch
+    # can fail conservatively here; the existing individual fallback attributes each change.
+    guard_branch = next((b for b in source_branches if fnmatch_any(b, cfg.generator_branches)), branch)
     head = gitutil.rev("HEAD", scratch)
-    return engine.run_check(scratch, cfg, base=base, tree=gitutil.tree_of(head, scratch), branch=branch, full=True,
+    return engine.run_check(scratch, cfg, base=base, tree=gitutil.tree_of(head, scratch), branch=guard_branch, full=True,
                             jobs=jobs, cache=cache, emit=emit, test_cache_scope="tree",
                             fail_fast=True)
 
@@ -123,7 +127,8 @@ def run(root: Path, target: str, branches: list[str], *, apply: bool = False, jo
                         break
                 if not conflicts:
                     emit("batch", branches, time.monotonic() - t0)
-                    rep = _check(scratch, target_sha, "metallic-queue", jobs, cache, emit)
+                    rep = _check(scratch, target_sha, "metallic-queue", jobs, cache, emit,
+                                 source_branches=tuple(branches))
                     report["batch"] = {"branches": branches, "verdict": rep["verdict"], "red": rep["red"],
                                        "seconds": rep["timings"]["total"]}
                     if rep["verdict"] == "green":
