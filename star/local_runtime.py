@@ -55,9 +55,28 @@ class Runtime:
         return ["--spec-type", "ngram-simple", "--spec-draft-n-max", str(max_draft_tokens)]
 
     @staticmethod
+    def _attention_kv_flags(flash_attention: str, kv_cache_type: str) -> list[str]:
+        """Optional llama.cpp experiment; unchanged default argv.
+
+        Quantized KV cache support depends on the actual installed binary and
+        model, and is not evidence of memory fit or answer quality.
+        """
+        if type(flash_attention) is not str or flash_attention not in ("auto", "on", "off"):
+            raise ValueError("Flash Attention must be auto, on, or off")
+        if type(kv_cache_type) is not str or kv_cache_type not in ("f16", "q8_0"):
+            raise ValueError("KV cache type must be f16 or q8_0")
+        if kv_cache_type != "f16" and flash_attention != "on":
+            raise ValueError("Quantized KV cache requires explicit Flash Attention on")
+        flags = [] if flash_attention == "auto" else ["-fa", flash_attention]
+        if kv_cache_type == "q8_0":
+            flags += ["-ctk", "q8_0", "-ctv", "q8_0"]
+        return flags
+
+    @staticmethod
     def arguments(executable: Path, model: Path, *, port=8080, context=4096, gpu_layers=25,
                   projector: Path | None = None, speculative: str = "off",
-                  max_draft_tokens: int = 16) -> list[str]:
+                  max_draft_tokens: int = 16,
+                  flash_attention: str = "auto", kv_cache_type: str = "f16") -> list[str]:
         executable=executable.expanduser().resolve(strict=True)
         model=model.expanduser().resolve(strict=True)
         if executable.name.lower()!='llama-server.exe' or executable.suffix.lower()!='.exe':
@@ -75,12 +94,15 @@ class Runtime:
             if proj.suffix.lower() != '.gguf':
                 raise ValueError('Vision projector must be a GGUF file')
             args += ['--mmproj', str(proj)]
-        return args + Runtime._speculative_flags(speculative, max_draft_tokens)
+        return args + Runtime._speculative_flags(speculative, max_draft_tokens) + Runtime._attention_kv_flags(
+            flash_attention, kv_cache_type)
 
     @staticmethod
     def router_arguments(executable: Path, models_dir: Path, *, port=8080,
                          context=4096, gpu_layers=25, max_loaded=1,
-                         speculative: str = "off", max_draft_tokens: int = 16) -> list[str]:
+                         speculative: str = "off", max_draft_tokens: int = 16,
+                         flash_attention: str = "auto",
+                         kv_cache_type: str = "f16") -> list[str]:
         """Dynamic llama.cpp model router, bound strictly to loopback.
 
         One resident model prevents multiple heavy GGUFs from exhausting RAM.
@@ -101,18 +123,22 @@ class Runtime:
                 '--models-max', '1', '--host', '127.0.0.1',
                 '--port', str(port), '--ctx-size', str(context),
                 '-ngl', str(gpu_layers), '-np', '1', '--jinja'] + Runtime._speculative_flags(
-                    speculative, max_draft_tokens)
+                    speculative, max_draft_tokens) + Runtime._attention_kv_flags(
+            flash_attention, kv_cache_type)
 
     def start_router(self, executable: Path, models_dir: Path, log_path: Path,
                      *, port=8080, context=4096, gpu_layers=25,
-                     speculative: str = "off", max_draft_tokens: int = 16):
+                     speculative: str = "off", max_draft_tokens: int = 16,
+                     flash_attention: str = "auto", kv_cache_type: str = "f16"):
         """Start only an explicitly requested, locally installed model router."""
         with self.lock:
             self._ready_to_start('Stop the current managed STAR Brain before starting model router')
             argv = self.router_arguments(executable, models_dir, port=port,
                                          context=context, gpu_layers=gpu_layers,
                                          speculative=speculative,
-                                         max_draft_tokens=max_draft_tokens)
+                                         max_draft_tokens=max_draft_tokens,
+                                         flash_attention=flash_attention,
+                                         kv_cache_type=kv_cache_type)
             log_path.parent.mkdir(parents=True, exist_ok=True)
             self._close_log()
             self.log_file = log_path.open('ab')
@@ -136,12 +162,15 @@ class Runtime:
 
     def start(self, executable: Path, model: Path, log_path: Path, *, port=8080,
               context=4096, gpu_layers=25, projector: Path | None = None,
-              speculative: str = "off", max_draft_tokens: int = 16):
+              speculative: str = "off", max_draft_tokens: int = 16,
+              flash_attention: str = "auto", kv_cache_type: str = "f16"):
         with self.lock:
             self._ready_to_start('llama.cpp is already running')
             argv=self.arguments(executable,model,port=port,context=context,gpu_layers=gpu_layers,
                                 projector=projector, speculative=speculative,
-                                max_draft_tokens=max_draft_tokens)
+                                max_draft_tokens=max_draft_tokens,
+                                flash_attention=flash_attention,
+                                kv_cache_type=kv_cache_type)
             log_path.parent.mkdir(parents=True,exist_ok=True)
             self._close_log()
             self.log_file=log_path.open('ab')
