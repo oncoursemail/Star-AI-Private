@@ -204,6 +204,14 @@ class HostGPUWorkerLeaseBridge:
         with self._lock:
             self._leases.disable()
 
+    def is_pinned(self, ticket: WorkLeaseTicket) -> bool:
+        """Host-only exact identity check after an independent exit tick."""
+        if type(ticket) is not WorkLeaseTicket:
+            raise TypeError("original in-process lease ticket required")
+        with self._lock:
+            item = self._pinned.get(ticket.serial)
+            return item is not None and item.ticket is ticket
+
     def metrics(self) -> dict[str, int]:
         """No raw PIDs, process creation times, paths, or viewer data."""
         with self._lock:
