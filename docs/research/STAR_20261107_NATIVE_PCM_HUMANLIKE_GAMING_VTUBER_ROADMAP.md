@@ -9,7 +9,7 @@ The preceding stacked changes already introduced NaturalTurnBridge (speech timin
 
 - Owner opt-in required. The speaker must already be opened on a trusted local control worker; this module opens **no audio device**, microphone, game, OBS or network.
 - A bounded, never-reused native playback epoch is attached to the output consumer's `tts_pcm` route. Only immutable, mono little-endian PCM16 chunks at the speaker's **actual sample rate** can be queued. Byte size, sample alignment and native app-buffer age are constrained before submit; the existing SoundSpeaker does not need to resample.
-- Every write and stop is serialized. The local stop invalidates its native epoch **before** clearing application PCM. A playback exception faults and latches the epoch rather than pretending audio has stopped.
+- Every write and stop is serialized. The local stop invalidates its native epoch **before** clearing application PCM. A playback exception faults and latches the epoch rather than pretending audio has stopped. Duplicate stop *requests* from the output fence and physical stop controller are idempotent for the same epoch, but never imply driver silence.
 - A new epoch is refused until the host separately attests that the native output path has been flushed/quiet and the application queue is empty. Reused IDs never become valid within the same adapter lifetime. False native callbacks, stale epochs, buffer pressure and unconfirmed quiet fail closed.
 - Metrics contain only counters and flags. No transcripts, PCM buffers, viewer details or raw device IDs are exported.
 
