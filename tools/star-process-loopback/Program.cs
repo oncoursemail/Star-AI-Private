@@ -38,7 +38,15 @@ internal static class Program
     private sealed record ActivityWindow(
         long SpanMs, long Callbacks, long Frames, int? PeakMilli, int? RmsMilli);
 
-    private static ActivityWindow TakeActivityWindow()
+    // Capture the current interval and cumulative counters *under one lock*.
+    // Otherwise a native audio callback between TakeActivityWindow() and
+    // Interlocked.Read() could make a valid JSON interval contradict its totals.
+    // The external rehearsal verifier requires coherent deltas.
+    private sealed record ActivitySnapshot(
+        ActivityWindow Window, long TotalCallbacks, long TotalFrames,
+        int MaxPeakMilli, long LastPacketTicks);
+
+    private static ActivitySnapshot TakeActivitySnapshot()
     {
         lock (WindowGate)
         {
@@ -48,7 +56,10 @@ internal static class Program
             int? rms = _windowSamples > 0
                 ? (int)Math.Clamp(Math.Round(Math.Sqrt(_windowSumSquares / _windowSamples) * 1000.0), 0, 1000)
                 : null;
-            var result = new ActivityWindow(span, _windowCallbacks, _windowFrames, peak, rms);
+            var result = new ActivitySnapshot(
+                new ActivityWindow(span, _windowCallbacks, _windowFrames, peak, rms),
+                Interlocked.Read(ref _callbacks), Interlocked.Read(ref _frames),
+                Volatile.Read(ref _peakMilli), Volatile.Read(ref _lastPacketTicks));
             _windowStartTicks = now;
             _windowCallbacks = 0;
             _windowFrames = 0;
@@ -58,6 +69,8 @@ internal static class Program
             return result;
         }
     }
+
+    private static ActivityWindow TakeActivityWindow() => TakeActivitySnapshot().Window;
 
     private static Options Parse(string[] args)
     {
@@ -84,8 +97,9 @@ internal static class Program
 
     private static void Emit(string state, long elapsedMs = 0)
     {
-        ActivityWindow activity = TakeActivityWindow();
-        long last = Volatile.Read(ref _lastPacketTicks);
+        ActivitySnapshot snapshot = TakeActivitySnapshot();
+        ActivityWindow activity = snapshot.Window;
+        long last = snapshot.LastPacketTicks;
         long age = last == 0 ? -1L :
             Math.Max(0L, (long)Stopwatch.GetElapsedTime(last).TotalMilliseconds);
         // No process identifiers, filenames, audio bytes, transcripts, paths or keys.
@@ -94,10 +108,10 @@ internal static class Program
             schema = "star.process_loopback.diagnostic.v1",
             state,
             elapsed_ms = elapsedMs,
-            callback_generation = Interlocked.Read(ref _callbacks),
-            sample_frames = Interlocked.Read(ref _frames),
+            callback_generation = snapshot.TotalCallbacks,
+            sample_frames = snapshot.TotalFrames,
             bad_packets = Interlocked.Read(ref _badPackets),
-            max_peak_milli = Volatile.Read(ref _peakMilli),
+            max_peak_milli = snapshot.MaxPeakMilli,
             last_callback_age_ms = age,
             activity_window_ms = activity.SpanMs,
             activity_callbacks = activity.Callbacks,
@@ -192,8 +206,11 @@ internal static class Program
             if (Interlocked.Read(ref _callbacks) != 1 || Interlocked.Read(ref _frames) != 2 ||
                 Volatile.Read(ref _peakMilli) != 750 || Volatile.Read(ref _lastPacketTicks) == 0)
                 return 1;
-            ActivityWindow activity = TakeActivityWindow();
-            if (activity.Callbacks != 1 || activity.Frames != 2 ||
+            ActivitySnapshot snapshot = TakeActivitySnapshot();
+            ActivityWindow activity = snapshot.Window;
+            if (snapshot.TotalCallbacks != 1 || snapshot.TotalFrames != 2 ||
+                snapshot.MaxPeakMilli != 750 || snapshot.LastPacketTicks == 0 ||
+                activity.Callbacks != 1 || activity.Frames != 2 ||
                 activity.PeakMilli != 750 || activity.RmsMilli != 468)
                 return 1;
             ActivityWindow empty = TakeActivityWindow();
@@ -206,7 +223,36 @@ internal static class Program
             ActivityWindow invalid = TakeActivityWindow();
             if (invalid.Callbacks != 0 || invalid.RmsMilli is not null)
                 return 1;
-            Console.WriteLine("{\"self_test\":\"pass\",\"capture_started\":false,\"activity_window_tested\":true,\"missing_pcm_means_unknown\":true}");
+
+            // Deterministically test the accounting invariant under concurrent
+            // packet ingestion. It used to be possible for Emit() to observe
+            // a new cumulative callback after resetting the activity bucket.
+            // No OS/device capture is started for this synthetic stress test.
+            long previousCallbacks = Interlocked.Read(ref _callbacks);
+            long previousFrames = Interlocked.Read(ref _frames);
+            byte[] synthetic = MemoryMarshal.AsBytes(
+                new float[] { 0.1f, -0.2f }.AsSpan()).ToArray();
+            var writer = Task.Run(() =>
+            {
+                for (int i = 0; i < 2048; ++i)
+                    AcceptPacket(synthetic);
+            });
+            for (int i = 0; i < 2048; ++i)
+            {
+                ActivitySnapshot concurrent = TakeActivitySnapshot();
+                if (concurrent.TotalCallbacks - previousCallbacks != concurrent.Window.Callbacks ||
+                    concurrent.TotalFrames - previousFrames != concurrent.Window.Frames)
+                    return 1;
+                previousCallbacks = concurrent.TotalCallbacks;
+                previousFrames = concurrent.TotalFrames;
+            }
+            writer.GetAwaiter().GetResult();
+            ActivitySnapshot trailing = TakeActivitySnapshot();
+            if (trailing.TotalCallbacks - previousCallbacks != trailing.Window.Callbacks ||
+                trailing.TotalFrames - previousFrames != trailing.Window.Frames ||
+                trailing.TotalCallbacks != 2049 || trailing.TotalFrames != 2050)
+                return 1;
+            Console.WriteLine("{\"self_test\":\"pass\",\"capture_started\":false,\"activity_window_tested\":true,\"missing_pcm_means_unknown\":true,\"atomic_activity_windows_tested\":true}");
             return 0;
         }
         catch { return 1; }
