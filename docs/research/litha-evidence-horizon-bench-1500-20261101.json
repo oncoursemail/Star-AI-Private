@@ -1,0 +1,41 @@
+{
+  "description": "synthetic, offline, retrieval-only; three multiquery searches per sample",
+  "sources": 1500,
+  "repeats": 15,
+  "queries": [
+    [
+      "roblox debugging",
+      "rust model"
+    ],
+    [
+      "memory retrieval context"
+    ],
+    [
+      "blender model important_00223"
+    ]
+  ],
+  "backend": "fts5",
+  "median_ms_per_3_query_batch": 19.66174,
+  "min_ms": 18.43897,
+  "max_ms": 20.99462,
+  "samples_ms": [
+    20.99462,
+    19.60793,
+    19.88283,
+    19.52994,
+    19.5888,
+    19.92809,
+    20.0375,
+    19.05664,
+    19.66174,
+    19.66903,
+    19.90888,
+    19.08177,
+    19.81599,
+    18.43897,
+    18.96473
+  ],
+  "deterministic_hit_order": true,
+  "result_identity_sha256": "f35243e881b4b99718b70142fd407715f64bded7291db5124b934ceaefe12452",
+  "limitations": "Cold indexing cost excluded; synthetic content, isolated host, no model, tokenization, reranking, GPU, live data, or production latency."
+}
