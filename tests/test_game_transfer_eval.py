@@ -145,5 +145,74 @@ class TransferTests(unittest.TestCase):
         self.assertGreater(report.mcnemar_one_sided_p, 0)
 
 
+    def test_single_game_gain_is_not_general_skill_transfer(self):
+        roster, signed = records(baseline="failure", candidate="failure")
+        adjusted = []
+        for signed_trial in signed:
+            trial = signed_trial.trial
+            if trial.game_id == "game0" and trial.action_id == "trained":
+                trial = replace(trial, outcome="success")
+            adjusted.append(SignedHoldoutTrial(
+                trial, hmac.new(KEY, trial.canonical_bytes(), hashlib.sha256).hexdigest()
+            ))
+        report = check(roster, adjusted)
+        # Old criterion would have passed: 10 discordant wins, overall +20%.
+        self.assertEqual(report.candidate_only_successes, 10)
+        self.assertEqual(report.paired_success_gain, 0.2)
+        self.assertLess(report.mcnemar_one_sided_p, 0.025)
+        self.assertEqual(report.games_with_meaningful_gain, 1)
+        self.assertEqual(report.effective_game_count, 5.0)
+        self.assertEqual(report.verdict, "inconclusive")
+
+    def test_imbalanced_roster_cannot_make_one_game_count_as_five(self):
+        original, signed = records(n_games=5, per_game=80,
+                                   baseline="failure", candidate="failure")
+        roster = [case for case in original
+                  if case.game_id == "game0" or int(case.situation_id[4:]) < 3]
+        allowed = set(roster)
+        adjusted = []
+        for signed_trial in signed:
+            trial = signed_trial.trial
+            case = HoldoutCase(trial.game_id, trial.game_version,
+                               trial.objective_id, trial.situation_id)
+            if case not in allowed:
+                continue
+            if trial.game_id in {"game0", "game1", "game2"} and trial.action_id == "trained":
+                trial = replace(trial, outcome="success")
+            adjusted.append(SignedHoldoutTrial(
+                trial, hmac.new(KEY, trial.canonical_bytes(), hashlib.sha256).hexdigest()
+            ))
+        report = check(roster, adjusted)
+        self.assertEqual(report.preregistered_pairs, 92)
+        self.assertEqual(report.games_with_meaningful_gain, 3)
+        self.assertGreater(report.paired_success_gain, 0.8)
+        self.assertLess(report.mcnemar_one_sided_p, 0.025)
+        self.assertLess(report.effective_game_count, 0.70 * report.distinct_games)
+        self.assertEqual(report.verdict, "inconclusive")
+
+    def test_broad_improvement_across_three_of_five_games_can_qualify(self):
+        roster, signed = records(baseline="failure", candidate="failure")
+        adjusted = []
+        for signed_trial in signed:
+            trial = signed_trial.trial
+            if trial.game_id in {"game0", "game1", "game2"} and trial.action_id == "trained":
+                trial = replace(trial, outcome="success")
+            adjusted.append(SignedHoldoutTrial(
+                trial, hmac.new(KEY, trial.canonical_bytes(), hashlib.sha256).hexdigest()
+            ))
+        report = check(roster, adjusted)
+        self.assertEqual(report.verdict, "eligible_for_owner_pilot")
+        self.assertEqual(report.games_with_meaningful_gain, 3)
+        self.assertAlmostEqual(report.macro_paired_success_gain, 0.6)
+        self.assertEqual(report.effective_game_count, 5.0)
+
+    def test_incomplete_roster_does_not_disclose_macro_metrics(self):
+        roster, signed = records()
+        report = check(roster, signed[:-1])
+        self.assertIsNone(report.macro_paired_success_gain)
+        self.assertIsNone(report.effective_game_count)
+        self.assertEqual(report.games_with_meaningful_gain, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
