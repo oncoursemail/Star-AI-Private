@@ -54,6 +54,11 @@ def main() -> None:
         "paired_synthetic_audit": {
             "decision": evaluation["decision"],
             "p95_relative_latency_gain": evaluation["p95_relative_latency_gain"],
+            "paired_faster_cases": evaluation["paired_faster_cases"],
+            "paired_slower_cases": evaluation["paired_slower_cases"],
+            "paired_neutral_cases": evaluation["paired_neutral_cases"],
+            "paired_one_sided_sign_p": evaluation["paired_one_sided_sign_p"],
+            "paired_directional_gain_supported": evaluation["paired_directional_gain_supported"],
             "automatic_promotion": evaluation["promoted"],
         },
     }, indent=2))
