@@ -37,9 +37,10 @@ TelemetryProbe = Callable[[], StreamTelemetry | None]
 
 @dataclass(frozen=True)
 class PracticeProposal:
-    """UNTRUSTED, narrow suggestion; NEVER a key, permit or authority."""
+    """UNTRUSTED narrow suggestion; probability is a diagnostic only."""
     action_id: str
     hold_ms: int
+    success_probability_bps: int | None = None  # for pre-action forecast, never an authorization
 
 
 @dataclass(frozen=True)
@@ -168,6 +169,7 @@ class StudioPracticeRunner:
     async def take_step(
         self, proposer: Callable[[VisualEvidence, LadderAdvice], Awaitable[PracticeProposal]],
         *, now_unix_s: int,
+        dispatch_guard: Callable[[], bool] | None = None,
     ) -> PracticeStep:
         """At most one approved input pulse; no auto evaluation or repeat loop.
 
@@ -177,6 +179,8 @@ class StudioPracticeRunner:
         """
         if not callable(proposer):
             raise TypeError("proposer must be async callable")
+        if dispatch_guard is not None and not callable(dispatch_guard):
+            raise TypeError("dispatch_guard must be trusted host callable")
         async with self._turn_lock:
             with self._state_lock:
                 if not self._enabled:
@@ -211,7 +215,10 @@ class StudioPracticeRunner:
                     or type(proposal.action_id) is not str
                     or proposal.action_id != advice.action_id
                     or type(proposal.hold_ms) is not int
-                    or not 1 <= proposal.hold_ms <= 180):
+                    or not 1 <= proposal.hold_ms <= 180
+                    or (proposal.success_probability_bps is not None
+                        and (type(proposal.success_probability_bps) is not int
+                             or not 1 <= proposal.success_probability_bps <= 9999))):
                 return self._blocked("untrusted_or_off_curriculum_action", advice.situation_id)
             tele = self._sample_telemetry()  # remeasure AFTER model inference
             if not self._practice_capacity(tele):
@@ -230,6 +237,17 @@ class StudioPracticeRunner:
                     self._observer._private()
                 except Exception:
                     return self._blocked("private_focus_revoked_before_input")
+                # A trusted scheduler may revoke an episode while slow model
+                # inference is in progress. Recheck immediately before input.
+                # This callback has no authority to grant a Studio permit.
+                if dispatch_guard is not None:
+                    try:
+                        if dispatch_guard() is not True:
+                            return self._blocked("portfolio_reservation_revoked",
+                                                 advice.situation_id)
+                    except Exception:
+                        return self._blocked("portfolio_reservation_unavailable",
+                                             advice.situation_id)
                 now = _ms(self._clock)
                 hint = GameActionHint(
                     proposal.action_id, evidence.frame.sequence,
@@ -242,7 +260,10 @@ class StudioPracticeRunner:
                                          advice.situation_id)
                 # Synchronous private-Studio pulse; not allowed while live.
                 # Lock serializes an owner STOP from another host thread.
-                report = self._actions.dispatch(permit, port=self._port)
+                # Also enforce revocation *inside* the physical input host:
+                # its second Studio focus snapshot may block after our check.
+                report = self._actions.dispatch(
+                    permit, port=self._port, dispatch_guard=dispatch_guard)
                 if not report.sent or not report.input_released:
                     return self._blocked("studio_input_" + report.reason,
                                          advice.situation_id)
