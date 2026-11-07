@@ -16,7 +16,7 @@ import ctypes
 from ctypes import wintypes
 import os
 import subprocess
-from typing import Any
+from typing import Any, Callable
 
 _CREATE_SUSPENDED = 0x00000004
 _CREATE_NO_WINDOW = 0x08000000
@@ -167,13 +167,18 @@ class WindowsJobWorker:
     targets the entire job, not just the root process.
     """
 
-    def __init__(self, argv: list[str], cwd: str | None = None) -> None:
+    def __init__(
+        self, argv: list[str], cwd: str | None = None,
+        *, pre_resume: Callable[[], bool] | None = None,
+    ) -> None:
         if not argv or not os.path.isabs(argv[0]) or not argv[0].lower().endswith(".exe"):
             raise ValueError("host must select a fixed absolute .exe command")
-        if any(not isinstance(x, str) or "\\x00" in x for x in argv):
+        if any(not isinstance(x, str) or chr(0) in x for x in argv):
             raise ValueError("invalid command argument")
         if cwd is not None and not os.path.isabs(cwd):
             raise ValueError("host working directory must be absolute")
+        if pre_resume is not None and not callable(pre_resume):
+            raise TypeError("host-owned pre-resume verification must be callable")
         k = _winapi()
         self._kernel = k
         self._job = None
@@ -221,6 +226,13 @@ class WindowsJobWorker:
             if not k.AssignProcessToJobObject(job, pi.hProcess):
                 raise _win_error()
             assigned = True
+            # Run the trusted host's SECOND artifact check after a kernel Job
+            # owns this still-suspended process, before a single instruction
+            # from the optional worker is permitted to run. If files change
+            # between reservation and execution, abort the entire Job.
+            # This narrows but does not eliminate filesystem TOCTOU risks.
+            if pre_resume is not None and pre_resume() is not True:
+                raise ValueError("trusted artifact changed before worker resume")
             if k.ResumeThread(thread) == 0xFFFFFFFF:
                 raise _win_error()
         except BaseException:
@@ -289,9 +301,12 @@ class WindowsJobWorker:
             pass
 
 
-def spawn_windows_job(argv: list[str], cwd: str | None) -> WindowsJobWorker:
-    """Never accept an LLM-supplied command; caller validates owner plan."""
-    return WindowsJobWorker(argv, cwd)
+def spawn_windows_job(
+    argv: list[str], cwd: str | None,
+    *, pre_resume: Callable[[], bool] | None = None,
+) -> WindowsJobWorker:
+    """Only the trusted host may supply an optional pre-resume verifier."""
+    return WindowsJobWorker(argv, cwd, pre_resume=pre_resume)
 
 
 __all__ = ["WindowsJobWorker", "spawn_windows_job"]

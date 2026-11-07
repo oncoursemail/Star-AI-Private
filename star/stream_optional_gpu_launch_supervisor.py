@@ -151,7 +151,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
         spawn: Callable[[list[str], str | None], subprocess.Popen[bytes]] = _spawn_windows,
         require_job_tree: bool = False,
         require_artifact_pins: bool = False,
-        job_spawn: Callable[[list[str], str | None], WindowsJobWorker] = spawn_windows_job,
+        job_spawn: Callable[..., WindowsJobWorker] = spawn_windows_job,
     ) -> None:
         if not isinstance(leases, RealtimeGPUWorkLeases) or workers._leases is not leases:
             raise TypeError("launch supervisor needs one trusted host lease session")
@@ -226,8 +226,21 @@ class HostOptionalGPUWorkerLaunchSupervisor:
             # A reserved lease is not permission to bypass changing host
             # pressure. A tick later must stop the worker if it changes.
             try:
-                process = (self._job_spawn(argv, cwd) if self._require_job_tree
-                           else self._spawn(argv, cwd))
+                if self._require_job_tree and self._require_pins:
+                    # A Job-bound process begins suspended. Recheck ALL pinned
+                    # files immediately before its main thread resumes. This
+                    # is a trusted callback invoked INSIDE the Win32 launcher,
+                    # not a model-supplied hook. Repeated hashing is bounded.
+                    def verify_before_resume() -> bool:
+                        return plan.verified_command(require_artifact_pins=True) == (argv, cwd)
+
+                    process = self._job_spawn(
+                        argv, cwd, pre_resume=verify_before_resume,
+                    )
+                elif self._require_job_tree:
+                    process = self._job_spawn(argv, cwd)
+                else:
+                    process = self._spawn(argv, cwd)
                 if self._require_job_tree:
                     if not isinstance(process, WindowsJobWorker):
                         raise TypeError("host must return original Windows Job worker")
