@@ -19,7 +19,7 @@ import math
 from pathlib import Path
 import random
 import re
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, cast
 
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
@@ -37,7 +37,7 @@ def _sha(value: object) -> bool:
 def _number(value: object, *, max_value: float = 600_000) -> float:
     if type(value) not in (int, float):
         raise ValueError("invalid finite benchmark measurement")
-    value = float(value)
+    value = float(cast(int | float, value))
     if not math.isfinite(value) or not 0 <= value <= max_value:
         raise ValueError("invalid bounded benchmark measurement")
     return value
@@ -228,17 +228,17 @@ def compare_stream_speed(
     if not complete:
         return StreamSpeedVerdict("inconclusive", len(pairs), 0,
                                   None, None, None, None, None, None)
-    base_speech = [float(p.baseline["first_speakable_p95_ms"]) for p in complete]
-    new_speech = [float(p.candidate["first_speakable_p95_ms"]) for p in complete]
-    base_done = [float(p.baseline["complete_p95_ms"]) for p in complete]
-    new_done = [float(p.candidate["complete_p95_ms"]) for p in complete]
+    base_speech = [_number(p.baseline["first_speakable_p95_ms"]) for p in complete]
+    new_speech = [_number(p.candidate["first_speakable_p95_ms"]) for p in complete]
+    base_done = [_number(p.baseline["complete_p95_ms"]) for p in complete]
+    new_done = [_number(p.candidate["complete_p95_ms"]) for p in complete]
     gains = [b - c for b, c in zip(base_speech, new_speech)]
     ci = _bootstrap_gain_ci(gains)
     # Missing outputs never disappear from the paired denominator.
     degraded = any(
-        p.candidate["completed"] < p.baseline["completed"]
-        or p.candidate["speakable_missing"] > p.baseline["speakable_missing"]
-        or p.candidate["canary_mismatches"] > p.baseline["canary_mismatches"]
+        cast(int, p.candidate["completed"]) < cast(int, p.baseline["completed"])
+        or cast(int, p.candidate["speakable_missing"]) > cast(int, p.baseline["speakable_missing"])
+        or cast(int, p.candidate["canary_mismatches"]) > cast(int, p.baseline["canary_mismatches"])
         for p in pairs
     )
     degraded = degraded or any(
