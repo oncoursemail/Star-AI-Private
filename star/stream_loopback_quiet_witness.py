@@ -2,6 +2,9 @@
 
 The source MUST be an independent, owner-controlled PCM16 loopback capture of
 Star's ISOLATED voice process or dedicated voice device (not a speaker queue).
+Windows process loopback may deliver NO PCM while the voice is quiet, so the
+trusted host can alternatively report fresh OS capture polls and callback
+generation. An absent callback *alone* never establishes silence.
 This module NEVER opens audio devices or trusts model/viewer-supplied samples.
 
 A valid result means a trusted digital capture was quiet for a window; it
@@ -67,6 +70,15 @@ class IsolatedLoopbackQuietWitness:
         self._last_end: float | None = None
         self._last_quiet_end: float | None = None
         self._continuous_quiet = 0.0
+        # WASAPI process-loopback commonly emits NO PCM buffers while silent.
+        # A native host may separately poll its capture packet state; never
+        # mistake missing callbacks by themselves for proof of quiet.
+        self._idle_checked_at: float | None = None
+        self._idle_start_at: float | None = None
+        self._idle_poll_sequence: int | None = None
+        self._idle_packet_generation: int | None = None
+        self._idle_checks = 0
+        self._idle_resets = 0
         self._faulted = False
         self._seen: set[str] = set()
         self._observed = 0
@@ -179,6 +191,14 @@ class IsolatedLoopbackQuietWitness:
             if self._last_end is not None and captured_at - self._last_end > 0.002:
                 self._continuous_quiet = 0.0  # missing capture must not count
                 self._last_quiet_end = None
+            # Any PCM callback invalidates a previously quiet no-packet poll
+            # window. The next poll must begin a fresh uninterrupted interval.
+            if self._idle_checked_at is not None:
+                self._idle_resets += 1
+            self._idle_checked_at = None
+            self._idle_start_at = None
+            self._idle_poll_sequence = None
+            self._idle_packet_generation = None
             previous_end = self._last_end
             self._last_end = end
             self._observed += 1
@@ -190,6 +210,80 @@ class IsolatedLoopbackQuietWitness:
             self._continuous_quiet += duration - overlap
             self._last_quiet_end = end
             return self._continuous_quiet + 1e-9 >= self._quiet_s
+
+    def observe_no_packet_poll(
+        self,
+        epoch: str,
+        *,
+        route_generation: int,
+        checked_at: float,
+        poll_sequence: int,
+        packet_generation: int,
+        isolated_capture_running: bool,
+        voice_process_identity_pinned: bool,
+        no_pending_capture_packet: bool,
+    ) -> bool:
+        """Observe trusted native capture polling when WASAPI emits no silence.
+
+        The host MUST poll the native capture client and a lifetime-pinned,
+        isolated voice process (not whole-endpoint audio). packet_generation
+        must count *all* native PCM callbacks, including packets already read.
+        Polls spaced >80ms break the observation window. No callback alone is
+        NOT proof: health, fresh polling, exact route/identity, prior audible
+        reference and native-abort/avatar gates are all mandatory.
+
+        This is a digital best-effort witness, never physical-silence proof.
+        """
+        with self._lock:
+            if epoch != self._epoch or self._stop_at is None or self._faulted:
+                return False
+            if (
+                type(route_generation) is not int
+                or route_generation != self._route
+                or not _finite(checked_at)
+                or checked_at < self._stop_at
+                or type(poll_sequence) is not int
+                or not 0 <= poll_sequence < 2**63
+                or type(packet_generation) is not int
+                or not 0 <= packet_generation < 2**63
+                or isolated_capture_running is not True
+                or voice_process_identity_pinned is not True
+                or type(no_pending_capture_packet) is not bool
+            ):
+                self._faulted = True
+                self._rejected += 1
+                return False
+            if self._idle_poll_sequence is not None and (
+                poll_sequence <= self._idle_poll_sequence
+                or checked_at <= (self._idle_checked_at or 0)
+                or packet_generation < (self._idle_packet_generation or 0)
+            ):
+                self._faulted = True
+                self._rejected += 1
+                return False
+            # A pending packet or a new callback since the previous native
+            # query breaks the idle window even if the packet is now consumed.
+            changed = self._idle_packet_generation is not None and packet_generation != self._idle_packet_generation
+            gap = self._idle_checked_at is not None and checked_at - self._idle_checked_at > 0.08
+            if no_pending_capture_packet is False or changed or gap:
+                self._idle_start_at = None
+                self._idle_resets += 1
+                # A known packet or fresh callback invalidates a quiet PCM
+                # window as well, even when the native host consumed it before
+                # this Python witness received an ingest() call.
+                if no_pending_capture_packet is False or changed:
+                    self._continuous_quiet = 0.0
+                    self._last_quiet_end = None
+            self._idle_checked_at = float(checked_at)
+            self._idle_poll_sequence = poll_sequence
+            self._idle_packet_generation = packet_generation
+            self._idle_checks += 1
+            if no_pending_capture_packet is False:
+                return False
+            if self._idle_start_at is None:
+                self._idle_start_at = float(checked_at)
+                return False
+            return checked_at - self._idle_start_at + 1e-9 >= self._quiet_s
 
     def ready(
         self,
@@ -212,10 +306,20 @@ class IsolatedLoopbackQuietWitness:
                 and epoch == self._epoch
                 and self._stop_at is not None
                 and route_generation == self._route
-                and self._last_quiet_end is not None
-                and self._continuous_quiet + 1e-9 >= self._quiet_s
                 and _finite(now)
-                and 0 <= now - self._last_quiet_end <= 0.15
+                and (
+                    (
+                        self._last_quiet_end is not None
+                        and self._continuous_quiet + 1e-9 >= self._quiet_s
+                        and 0 <= now - self._last_quiet_end <= 0.15
+                    )
+                    or (
+                        self._idle_start_at is not None
+                        and self._idle_checked_at is not None
+                        and self._idle_checked_at - self._idle_start_at + 1e-9 >= self._quiet_s
+                        and 0 <= now - self._idle_checked_at <= 0.03
+                    )
+                )
                 and capture_isolated_and_healthy is True
                 and native_abort_confirmed is True
                 and avatar_neutral_confirmed is True
@@ -232,6 +336,10 @@ class IsolatedLoopbackQuietWitness:
                 self._last_end = None
                 self._last_quiet_end = None
                 self._continuous_quiet = 0.0
+                self._idle_checked_at = None
+                self._idle_start_at = None
+                self._idle_poll_sequence = None
+                self._idle_packet_generation = None
 
     def metrics(self) -> dict[str, bool | int]:
         """Privacy-preserving: no epoch strings, routes, raw PCM or timestamps."""
@@ -242,6 +350,8 @@ class IsolatedLoopbackQuietWitness:
                 "observed_blocks": self._observed,
                 "rejected_blocks": self._rejected,
                 "used_epochs": len(self._seen),
+                "idle_checks": self._idle_checks,
+                "idle_resets": self._idle_resets,
             }
 
 
