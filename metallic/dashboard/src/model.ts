@@ -43,6 +43,15 @@ export interface Status { generated: string; projects: Project[]; runners: Runne
 
 export type Health = "red" | "warn" | "green" | "none" | "offline";
 
+/** Decode a location.hash project selection; a damaged link uses the default project. */
+export function projectFromHash(hash: string): string | null {
+  try {
+    return decodeURIComponent(hash.slice(1)) || null;
+  } catch {
+    return null;
+  }
+}
+
 export function health(p: Project): Health {
   if (!p.connected) return "offline";
   const last = p.checks?.[0];
