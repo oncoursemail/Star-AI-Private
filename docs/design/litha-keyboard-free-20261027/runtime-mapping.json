@@ -1,0 +1,52 @@
+{
+ "source": "Improved Solstice Architect; matched launcher portrait/expression revision 2026-10-26",
+ "eyes": [
+  {
+   "side": "left",
+   "cx": 0.407,
+   "cy": 0.395,
+   "rx": 0.044,
+   "ry": 0.033
+  },
+  {
+   "side": "right",
+   "cx": 0.574,
+   "cy": 0.405,
+   "rx": 0.044,
+   "ry": 0.033
+  }
+ ],
+ "lenses": [
+  {
+   "cx": 0.407,
+   "cy": 0.4,
+   "r": 0.072
+  },
+  {
+   "cx": 0.574,
+   "cy": 0.412,
+   "r": 0.072
+  }
+ ],
+ "neckY": 0.7,
+ "hairSides": [
+  0.3,
+  0.7
+ ],
+ "view": {
+  "width": 0.84,
+  "top": 0
+ },
+ "assets": {
+  "neutral": "litha/improved/neutral.png",
+  "blink": "litha/improved/blink.png"
+ },
+ "expressions": {
+  "wave": "litha/improved/wave.png",
+  "think": "litha/improved/think.png",
+  "type": "litha/improved/working.png",
+  "cheer": "litha/improved/cheer.png",
+  "sleepy": "litha/improved/sleepy.png",
+  "surprised": "litha/improved/surprised.png"
+ }
+}
