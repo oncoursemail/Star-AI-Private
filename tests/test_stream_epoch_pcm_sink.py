@@ -134,6 +134,11 @@ def test_stop_invalidates_then_requires_independently_attested_native_flush() ->
     assert host.submit("voice_1", "tts_pcm", b"ab")
     assert host.request_stop("voice_1")
     assert device.stopped == 1
+    # Model cancellation and the physical stop host can both request stop.
+    # A second stop request is safe but does not establish native silence.
+    assert host.request_stop("voice_1")
+    assert device.stopped == 1
+    assert host.observe_quiet("voice_1").status == "held"
     assert not host.submit("voice_1", "tts_pcm", b"cd")
     assert host.bind("voice_2", independently_quiet=True).status == "held"
     assert host.observe_quiet("voice_1").status == "held"
