@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from threading import RLock
+from typing import cast
 
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_turntaking import TurnTakingGate, VoiceFrame
@@ -19,7 +20,7 @@ def _time(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("host time must be a finite numeric millisecond clock")
     try:
-        now = float(value)
+        now = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("invalid host clock") from exc
     if not math.isfinite(now) or not 0 <= now <= 1e13:
