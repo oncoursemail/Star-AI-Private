@@ -58,3 +58,28 @@ Get-FileHash .\Star.ProcessLoopback.exe -Algorithm SHA256
 ```
 
 Do not run the `--observe` command on a general-use process. A real capture rehearsal requires an independently verified dedicated voice subprocess and owner-approved isolation; the artifact is a **diagnostic**, not a streaming executable or proof of silence. If the Windows workflow is queued, failing, or has never run, there is **no verified Windows executable** to claim yet.
+
+
+## Read-only Python JSONL integrity boundary (new)
+
+For a **private, owner-started diagnostic**, the local trusted host may instantiate
+the Python `star.process_loopback_activity.ProcessLoopbackActivityVerifier` with
+`owner_approved=True` and feed each complete UTF-8 JSON line from this
+native process's **authenticated, PID/start-time pinned stdout stream** to its
+`feed_line()` method. The parser validates monotonic cumulative callback
+and frame counts against each **atomic activity interval** and fails closed for
+malformed/reordered/duplicated/invalid messages. It rejects claims of silence,
+game authority, and broadcast permission. Missing PCM yields an *unknown*
+amplitude hint; it never manufactures a quiet period.
+
+Read `summary()` only after a normal native process exit and the
+`capture_complete_no_silence_claim` terminal event. The summary remains
+an advisory PRIVATE diagnostic, **not** an audio-quietness witness. The host
+must separately attest that capture remained process-isolated, native stop
+succeeded, the avatar returned neutral, OBS never broadcast, and the correct
+Windows speaker/monitor was independently observed. A model, chat message or
+webhook cannot supply native JSONL or assert these conditions.
+
+The `--self-test` now exercises atomic cross-thread activity-window
+accounting with synthetic float packets. It starts **no** Windows capture.
+See `docs/research/STAR_20261107_PROCESS_VOICE_ACTIVITY_INTEGRITY_AND_REALTIME_GENERALIST.md`.

@@ -48,7 +48,8 @@ jobs:
           $selfTest = & $exe --self-test
           if ($LASTEXITCODE -ne 0 -or "$selfTest" -notmatch '"capture_started":false' -or
               "$selfTest" -notmatch '"activity_window_tested":true' -or
-              "$selfTest" -notmatch '"missing_pcm_means_unknown":true') { throw 'Audio activity-window self-test failed or unexpectedly reported capture' }
+              "$selfTest" -notmatch '"missing_pcm_means_unknown":true' -or
+              "$selfTest" -notmatch '"atomic_activity_windows_tested":true') { throw 'Audio activity-window self-test failed or unexpectedly reported capture' }
           $null = & $exe --observe 2>$null
           if ($LASTEXITCODE -ne 2) { throw 'Bare --observe was not safely rejected' }
           $null = & $exe --help 2>$null
