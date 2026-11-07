@@ -105,6 +105,8 @@ class VerifiedGameReactionHost:
         self._last_clock: float | None = None
         self._last_offered = float("-inf")
         self._successes_announced: set[str] = set()
+        # One grounded relief moment per action/episode, not endless cheers.
+        self._comebacks_announced: set[str] = set()
         self._failures_announced: set[str] = set()
         # Keep consecutive failures within a one-minute gameplay window.
         self._failure_streaks: dict[str, tuple[int, float]] = {}
@@ -122,6 +124,7 @@ class VerifiedGameReactionHost:
             if self._episode.metrics()["enabled"] is not True:
                 raise RuntimeError("start signed episode first")
             self._successes_announced.clear()
+            self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
             self._last_clock = None
@@ -168,9 +171,19 @@ class VerifiedGameReactionHost:
                 return ReactionDecision("stale", True, False)
             action = trial.action_id
             kind: str
+            recovered = False
             if trial.outcome == "success":
-                self._failure_streaks.pop(action, None)
-                if action in self._successes_announced:
+                failed_count, last_failure = self._failure_streaks.pop(
+                    action, (0, float("-inf"))
+                )
+                # A new success after three *fresh signed failures* is a
+                # distinct, genuinely narratable comeback. Keep only one per
+                # game episode; no imaginary wins or endless repetition.
+                recovered = (
+                    failed_count >= 3 and 0 <= now - last_failure <= 60
+                    and action not in self._comebacks_announced
+                )
+                if action in self._successes_announced and not recovered:
                     self._counts["quiet"] += 1
                     return ReactionDecision("already_reacted", True, False)
                 kind = "game_success"
@@ -198,8 +211,18 @@ class VerifiedGameReactionHost:
                 return ReactionDecision("not_publishable", True, False)
             label = self._labels[action]
             if kind == "game_success":
-                detail = (f"Host-verified practice attempt for {label}: this one action "
-                          "succeeded. Do not claim the game was won or the skill mastered.")
+                if recovered:
+                    detail = (
+                        f"Host-verified practice: three recent attempts at {label} "
+                        "failed, then this one action succeeded. A brief, natural "
+                        "relieved reaction fits; do not claim the level was completed "
+                        "or the skill mastered."
+                    )
+                else:
+                    detail = (
+                        f"Host-verified practice attempt for {label}: this one action "
+                        "succeeded. Do not claim the game was won or the skill mastered."
+                    )
             else:
                 detail = (f"Host-verified practice: three recent attempts at {label} "
                           "failed. Briefly consider a different approach; do not invent why.")
@@ -213,6 +236,8 @@ class VerifiedGameReactionHost:
             self._last_offered = now
             if kind == "game_success":
                 self._successes_announced.add(action)
+                if recovered:
+                    self._comebacks_announced.add(action)
             else:
                 self._failures_announced.add(action)
             self._counts["offered"] += 1
@@ -227,6 +252,7 @@ class VerifiedGameReactionHost:
         with self._lock:
             self._enabled = False
             self._successes_announced.clear()
+            self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
             self._last_clock = None
