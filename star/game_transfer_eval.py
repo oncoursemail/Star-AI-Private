@@ -59,6 +59,11 @@ class TransferReport:
     candidate_only_successes: int
     baseline_only_successes: int
     mcnemar_one_sided_p: float | None
+    # Macro metrics expose whether improvement spans different games, rather
+    # than being concentrated in many near-duplicate seeds of one game.
+    macro_paired_success_gain: float | None = None
+    effective_game_count: float | None = None
+    games_with_meaningful_gain: int = 0
     note: str = "advisory only; independent validation, no automatic promotion"
 
 
@@ -107,8 +112,10 @@ def evaluate_transfer(
     can prove that the host's scorer is truthful or the holdouts remained secret.
 
     Baseline and candidate use different run IDs but the same hidden case.
-    Two-sided gameplay coverage and one-sided exact McNemar significance are
-    both required for a candidate to be eligible for *manual* hardware pilots.
+    Paired significance, game-balanced sample diversity and improvements on
+    at least 60% of games are required for *manual* hardware-pilot eligibility.
+    This prevents one over-sampled or unusually easy game from driving the
+    reported generalization result. It does not prove causal skill transfer.
     """
     if type(validation_key) is not bytes or len(validation_key) < 32:
         raise ValueError("requires independent host-owned validation key")
@@ -190,11 +197,21 @@ def evaluate_transfer(
     gain = (candidate_wins - baseline_wins) / total
     coverage = (total >= minimum_pairs and distinct_games >= minimum_games
                 and all(n >= min_cases_per_game for n, _, _ in counts.values()))
+    # A seed-heavy game must not masquerade as broad skill transfer. Simpson's
+    # effective game count equals N for equal game counts, ~1 when a single game
+    # dominates. These are preregistered *evaluation rules*, not learned weights.
+    effective_games = total * total / sum(n * n for n, _, _ in counts.values())
+    per_game_gains = [(c - b) / n for n, b, c in counts.values()]
+    macro_gain = sum(per_game_gains) / distinct_games
+    improved_games = sum(delta >= 0.10 - 1e-12 for delta in per_game_gains)
+    broad_gain = improved_games >= math.ceil(0.60 * distinct_games)
+    balanced_coverage = effective_games >= 0.70 * distinct_games - 1e-12
     # A large aggregate gain should not conceal a catastrophic game regression.
-    no_major_per_game_regression = all((c - b) / n >= -0.2 - 1e-12
-                                       for n, b, c in counts.values())
-    eligible = (coverage and gain >= 0.10 - 1e-12 and p_value < 0.025
-                and no_major_per_game_regression)
+    no_major_per_game_regression = all(delta >= -0.20 - 1e-12
+                                       for delta in per_game_gains)
+    eligible = (coverage and gain >= 0.10 - 1e-12 and macro_gain >= 0.10 - 1e-12
+                and p_value < 0.025 and no_major_per_game_regression
+                and balanced_coverage and broad_gain)
     regressed = (coverage and gain <= -0.10 + 1e-12
                  and _one_sided_p(baseline_only, candidate_only) < 0.025)
     return TransferReport(
@@ -202,6 +219,7 @@ def evaluate_transfer(
         total, total, 0, distinct_games,
         round(baseline_wins / total, 4), round(candidate_wins / total, 4),
         round(gain, 4), candidate_only, baseline_only, round(p_value, 7),
+        round(macro_gain, 4), round(effective_games, 4), improved_games,
     )
 
 
