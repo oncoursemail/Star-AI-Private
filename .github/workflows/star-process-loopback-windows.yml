@@ -5,6 +5,10 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'tools/star-process-loopback/**'
+      - 'star/process_loopback_activity.py'
+      - 'star/process_loopback_private_audit_cli.py'
+      - 'tests/test_process_loopback_activity.py'
+      - 'tests/test_process_loopback_private_audit_cli.py'
       - '.github/workflows/star-process-loopback-windows.yml'
   workflow_dispatch:
 
@@ -74,6 +78,19 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path $artifactDir 'manifest.json'), $manifest + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
           "Windows self-contained diagnostic: self-test PASS; invalid invocations rejected; live capture NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
           ("Executable SHA-256: " + $hash) >> $env:GITHUB_STEP_SUMMARY
+      - name: Install Python only for offline native JSONL importer tests
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Validate private stopped-diagnostic importer (NO capture)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check pytest==9.1.1
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to install pytest' }
+          python -m pytest -q tests/test_process_loopback_activity.py tests/test_process_loopback_private_audit_cli.py
+          if ($LASTEXITCODE -ne 0) { throw 'Private JSONL Windows synthetic regression failed' }
+          "Private offline JSONL importer: Windows synthetic tests PASS; no audio captured." >> $env:GITHUB_STEP_SUMMARY
       - name: Upload short-lived portable diagnostic for private trial
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
