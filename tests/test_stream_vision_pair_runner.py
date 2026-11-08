@@ -259,3 +259,129 @@ def test_interrupted_inference_aborts_trace_instead_of_reusing_worker():
     assert traces.metrics()["cases"] == 0
     with pytest.raises(UncertainVisionStop):
         r.run_pair(2, older, newer, **approvals())
+
+
+def test_opt_in_candidate_pixel_budget_keeps_full_baseline_and_times_resizing(monkeypatch):
+    import io
+    from PIL import Image
+
+    seen = {"baseline": [], "candidate": []}
+
+    def observe(name):
+        def check(body):
+            image_urls = [
+                item["image_url"]["url"].split(",", 1)[1]
+                for item in body["messages"][1]["content"]
+                if item["type"] == "image_url"
+            ]
+            seen[name].append(tuple(
+                Image.open(io.BytesIO(base64.b64decode(encoded))).size
+                for encoded in image_urls
+            ))
+        return check
+
+    clock = Clock()
+    original_resize = Image.Image.resize
+
+    def costed_resize(image, *args, **kwargs):
+        clock.ms += 45
+        return original_resize(image, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "resize", costed_resize)
+    traces = host()
+    r = PairedOfflineVisionRunner(
+        traces=traces,
+        baseline=worker("hud_change", observe=observe("baseline")),
+        candidate=worker("hud_change", observe=observe("candidate")),
+        clock_ms=clock, candidate_max_pixels=1024,
+    )
+    older, newer, *_ = frames(1, width=80, height=64)
+    result = r.run_pair(1, older, newer, **approvals())
+    assert result.baseline_status == result.candidate_status == "accepted"
+    assert seen["baseline"] == [((80, 64), (80, 64))]
+    assert len(seen["candidate"]) == 1
+    assert len(set(seen["candidate"][0])) == 1
+    width, height = seen["candidate"][0][0]
+    assert width < 80 and height < 64 and width * height <= 1024
+    # The independent frame digest still belongs to the native-resolution pixels.
+    assert (traces._entries[result.ticket.serial].frame.sha256
+            == hashlib.sha256(bytes(newer.rgb)).hexdigest())
+    traces.seal_predictions()
+    traces.record_truth(
+        result.ticket, labels=(("hud_change", "hud"),),
+        truth_source="studio_engine", independent_scorer=True)
+    report = traces.owner_report(owner_approved=True)
+    assert report["candidate"]["p95_latency_ms"] >= 90
+    assert report["baseline"]["p95_latency_ms"] < 90
+    assert report["verdict"] == "inconclusive"
+
+
+def test_small_frames_unchanged_and_candidate_default_off():
+    for setting in (None, 400):
+        seen = {"baseline": [], "candidate": []}
+        def observer(name):
+            return lambda body: seen[name].append(body["messages"][1]["content"])
+        traces = host()
+        r = PairedOfflineVisionRunner(
+            traces=traces,
+            baseline=worker("hud_change", observe=observer("baseline")),
+            candidate=worker("hud_change", observe=observer("candidate")),
+            clock_ms=Clock(), candidate_max_pixels=setting,
+        )
+        older, newer, *_ = frames(1)
+        r.run_pair(1, older, newer, **approvals())
+        assert seen["baseline"] == seen["candidate"]
+
+
+def test_candidate_budget_rejects_malformed_or_unbounded_values():
+    for value in (-1, True, 71, 0, 1.0, 8_294_401, "1024"):
+        traces = host()
+        with pytest.raises(ValueError, match="candidate_max_pixels"):
+            PairedOfflineVisionRunner(
+                traces=traces, baseline=worker("hud_change"),
+                candidate=worker("hud_change"), candidate_max_pixels=value)
+
+
+def test_candidate_resize_exception_aborts_cohort_and_never_runs_candidate(monkeypatch):
+    from PIL import Image
+
+    def failed_resize(*args, **kwargs):
+        raise RuntimeError("simulated private frame fault")
+
+    monkeypatch.setattr(Image.Image, "resize", failed_resize)
+    traces = host()
+    a = worker("hud_change")
+    b = worker("hud_change")
+    r = PairedOfflineVisionRunner(
+        traces=traces, baseline=a, candidate=b, clock_ms=Clock(),
+        candidate_max_pixels=1024,
+    )
+    older, newer, *_ = frames(1, width=80, height=64)
+    with pytest.raises(RuntimeError, match="private frame fault"):
+        r.run_pair(1, older, newer, **approvals())
+    assert r.metrics()["poisoned"]
+    assert not traces.metrics()["enabled"]
+    assert a.metrics()["requests"] == 1
+    assert b.metrics()["requests"] == 0
+
+
+def test_candidate_resize_buffers_scrubbed_after_return(monkeypatch):
+    original = PairedOfflineVisionRunner._candidate_pair
+    buffers = []
+
+    def capture(*args):
+        a, b, owned = original(*args)
+        buffers.extend(owned)
+        return a, b, owned
+
+    monkeypatch.setattr(PairedOfflineVisionRunner, "_candidate_pair", staticmethod(capture))
+    traces = host()
+    r = PairedOfflineVisionRunner(
+        traces=traces, baseline=worker("hud_change"),
+        candidate=worker("hud_change"), clock_ms=Clock(),
+        candidate_max_pixels=1024,
+    )
+    older, newer, *_ = frames(1, width=80, height=64)
+    r.run_pair(1, older, newer, **approvals())
+    assert len(buffers) == 2
+    assert all(not any(buffer) for buffer in buffers)
