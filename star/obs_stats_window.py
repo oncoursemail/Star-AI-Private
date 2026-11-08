@@ -9,6 +9,7 @@ OBS output-thread skipped frames are an *output/encoding pressure proxy*, not
 proof of a hardware encoder's precise failure mode. Independent OBS logs and
 actual recordings are required to attribute performance problems.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -55,10 +56,12 @@ class ObsLagWindow:
 class ObsStatsWindow:
     """Bounded window on one local OBS instance; no I/O or task control."""
 
-    def __init__(self, *, min_window_ms: int = 250,
-                 max_window_ms: int = 5000) -> None:
-        if (type(min_window_ms) is not int or type(max_window_ms) is not int
-                or not 100 <= min_window_ms < max_window_ms <= 30000):
+    def __init__(self, *, min_window_ms: int = 250, max_window_ms: int = 5000) -> None:
+        if (
+            type(min_window_ms) is not int
+            or type(max_window_ms) is not int
+            or not 100 <= min_window_ms < max_window_ms <= 30000
+        ):
             raise ValueError("invalid OBS sampling interval")
         self._min_ms = min_window_ms
         self._max_ms = max_window_ms
@@ -67,39 +70,49 @@ class ObsStatsWindow:
         self._last_seen_ms: float | None = None
         self._counts = {"samples": 0, "windows": 0, "rejected": 0, "resets": 0}
 
+    def _clear(self) -> None:
+        self._before = None
+        self._last_seen_ms = None
+
+    def _reject(self) -> None:
+        """A broken authentication/clock/schema boundary destroys continuity."""
+        self._counts["rejected"] += 1
+        self._counts["resets"] += 1
+        self._clear()
+
     def reset(self) -> None:
         """Call on OBS restart, reconnect, or recording/stream session change."""
         with self._lock:
-            self._before = None
-            self._last_seen_ms = None
+            self._clear()
 
-    def ingest(self, data: Mapping[str, object], *, host_ms: float,
-               host_verified: bool = False) -> ObsLagWindow | None:
+    def ingest(self, data: Mapping[str, object], *, host_ms: float, host_verified: bool = False) -> ObsLagWindow | None:
         """Return a usable window only after two trusted, ordered samples.
 
         data is specifically OBS WebSocket v5 GetStats responseData. The
         host must authenticate and authorize the source before calling.
         """
-        now = _valid_clock(host_ms)
-        if type(host_verified) is not bool:
-            raise ValueError("host_verified must be a strict boolean")
-        if not isinstance(data, Mapping):
-            raise TypeError("GetStats responseData must be a mapping")
         with self._lock:
-            if not host_verified or (self._last_seen_ms is not None and
-                                     now <= self._last_seen_ms):
-                self._counts["rejected"] += 1
-                return None
-            # Extract only four expected fields, never persist arbitrary OBS
-            # response data (e.g. third-party plugin fields or identifying text).
-            # Explicit tuple fields keep static types precise and prevent
-            # accidental schema broadening if OBS adds additional counters.
-            values = (
-                _valid_counter(data.get("renderSkippedFrames")),
-                _valid_counter(data.get("renderTotalFrames")),
-                _valid_counter(data.get("outputSkippedFrames")),
-                _valid_counter(data.get("outputTotalFrames")),
-            )
+            try:
+                now = _valid_clock(host_ms)
+                if type(host_verified) is not bool:
+                    raise ValueError("host_verified must be a strict boolean")
+                if not isinstance(data, Mapping):
+                    raise TypeError("GetStats responseData must be a mapping")
+                if not host_verified or (self._last_seen_ms is not None and now <= self._last_seen_ms):
+                    self._reject()
+                    return None
+                # Extract four allowlisted fields. Malformed evidence means
+                # we cannot prove OBS continuity *between* valid snapshots.
+                # Never bridge over an invalid or unauthenticated sample.
+                values = (
+                    _valid_counter(data.get("renderSkippedFrames")),
+                    _valid_counter(data.get("renderTotalFrames")),
+                    _valid_counter(data.get("outputSkippedFrames")),
+                    _valid_counter(data.get("outputTotalFrames")),
+                )
+            except (ValueError, TypeError, OverflowError):
+                self._reject()
+                raise
             self._last_seen_ms = now
             self._counts["samples"] += 1
             prev = self._before
@@ -108,17 +121,14 @@ class ObsStatsWindow:
                 return None
             old_ms, old = prev
             elapsed = now - old_ms
-            if (elapsed > self._max_ms or
-                    any(new < prior for new, prior in zip(values, old))):
+            if elapsed > self._max_ms or any(new < prior for new, prior in zip(values, old)):
                 self._counts["resets"] += 1
                 self._before = (now, values)
                 return None
             if elapsed < self._min_ms:
                 return None  # maintain earlier baseline to avoid tiny windows
             self._before = (now, values)
-            drskip, drtotal, doskip, dototal = (
-                new - prior for new, prior in zip(values, old)
-            )
+            drskip, drtotal, doskip, dototal = (new - prior for new, prior in zip(values, old))
             # OBS counts skipped frames *within* its total frame count.
             # Its own status bar computes skipped / total, not
             # skipped / (skipped + total). The latter underreports GPU
