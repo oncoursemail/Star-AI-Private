@@ -19,6 +19,20 @@ dotnet build tools/star-process-loopback/Star.ProcessLoopback.csproj -c Release
 dotnet tools/star-process-loopback/bin/Release/net9.0/Star.ProcessLoopback.dll --self-test
 ```
 
+## Owner-device silent native activation check (new, optional)
+
+A first test on the owner's Windows 11 build 26200 **successfully activated real process-specific native loopback capture** against a separately compiled, **silent** `StarVoiceProbe.exe` fixture. It does not play sound, capture a microphone, open OBS, listen to another app or claim verified physical silence. The fixture is not the production STAR voice process. An on-device, owner-invoked 900ms run produced 19 diagnostic records, 91 PCM callbacks, 43,680 sample frames and a maximum normalized peak of **zero**. This demonstrates that this Windows setup can produce zero-amplitude PCM callback frames even with no fixture audio playback; these are never proof of physical silence.
+
+From the repository root in PowerShell, with a locally installed .NET 9 SDK:
+
+```powershell
+.\\tools\\star-process-loopback\\private-silent-probe.ps1 -OwnerApproved -DurationMs 900
+```
+
+The probe is **disabled by default** and refuses to launch without explicit `-OwnerApproved`. It builds in an isolated temporary directory, pins the target to its own child process, validates diagnostic count invariants and refuses any asserted streaming/physical-silence authority. It outputs one bounded **aggregate JSON** summary; no PCM or private content is retained. The script may restore the pinned NAudio dependency. Do **not** run it on a browser, game or general audio process; it does not accept an arbitrary PID. GitHub Actions tests only syntax and the default-deny path, and never performs a valid native capture.
+
+See [the measured owner-device result and intelligence roadmap](../../docs/research/STAR_20261107_OWNER_WINDOWS_NATIVE_LOOPBACK_AND_REALTIME_INTELLIGENCE.md). A real dedicated STAR speech playback + device-stop + OBS recording-only trial remains the next unverified milestone.
+
 ## Owner-supervised local voice test (explicit, bounded)
 
 ```powershell
