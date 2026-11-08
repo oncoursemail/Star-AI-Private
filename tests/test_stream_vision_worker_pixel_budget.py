@@ -204,8 +204,15 @@ class WorkerPixelBudgetTests(unittest.TestCase):
             return old_resize(size)
         image.resize = reverse_clock
         result = rig.capture.capture_and_process_once()
-        self.assertEqual(result.state, "worker_resize_stale")
+        self.assertEqual(result.state, "worker_resize_clock_reversed")
         self.assertEqual(len(rig.vision_calls), 0)
+        # Hold the reservation under clock uncertainty; after the trusted
+        # clock recovers, the host must settle it as unsuccessful.
+        self.assertTrue(rig.vision.status()["inflight"])
+        rig.now[0] += 20
+        self.assertFalse(rig.vision.acknowledge_worker_stopped(
+            result.admission.lease, worker_stopped=True, succeeded=False,
+        ))
         self.assertFalse(rig.vision.status()["inflight"])
 
     def test_explicit_worker_nontermination_keeps_quarantine(self):
