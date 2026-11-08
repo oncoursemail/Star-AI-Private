@@ -126,8 +126,12 @@ def audit_game_gap_failure_atlas(
 
     positive = sum(item.directional_loss > 0 for item in slices)
     negative = sum(item.directional_loss < 0 for item in slices)
-    if negative:
+    if positive and negative:
         distribution = "opposing_scenario_directions"
+    elif negative == len(slices):
+        distribution = "realtime_advantage_in_all_scenarios"
+    elif negative:
+        distribution = "realtime_advantage_in_some_scenarios"
     elif positive == len(slices):
         distribution = "deficit_in_all_scenarios"
     elif positive >= 2:

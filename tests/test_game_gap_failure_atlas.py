@@ -249,3 +249,18 @@ def test_scenario_progress_is_local_not_pooled():
     atlas = audit_game_gap_failure_atlas(protocol, pairs)
     assert [s.realtime_mean_progress for s in atlas.scenarios] == [0.8, 0.2]
     assert [s.paused_mean_progress for s in atlas.scenarios] == [0.9, 0.9]
+
+
+def test_realtime_advantage_across_every_scenario_is_not_opposing():
+    protocol, pairs = evidence(paused_wins=set(), live_wins=set(range(20)), late=set())
+    atlas = audit_game_gap_failure_atlas(protocol, pairs)
+    assert atlas.distribution == "realtime_advantage_in_all_scenarios"
+    assert all(item.directional_loss < 0 for item in atlas.scenarios)
+    assert atlas.followup == "fresh_preregistered_holdout_probe"
+
+
+def test_realtime_advantage_in_one_scenario_is_not_opposing():
+    protocol, pairs = evidence(paused_wins=set(range(10)), live_wins=set(range(20)), late=set())
+    atlas = audit_game_gap_failure_atlas(protocol, pairs)
+    assert atlas.distribution == "realtime_advantage_in_some_scenarios"
+    assert [item.directional_loss for item in atlas.scenarios] == [0, -10]
