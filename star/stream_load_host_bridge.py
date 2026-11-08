@@ -20,6 +20,7 @@ from threading import RLock
 from typing import cast
 
 from .obs_stats_window import ObsLagWindow
+from .obs_stream_loss_window import ObsStreamLossWindow
 from .stream_load_governor import StreamLoadGovernor, StreamLoadSample
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
@@ -89,6 +90,7 @@ class StreamLoadHostBridge:
         *,
         max_receipt_skew_ms: int = 250,
         max_age_ms: int = 750,
+        require_verified_stream_network: bool = False,
     ) -> None:
         if type(governor) is not StreamLoadGovernor:
             raise TypeError("expected a host-owned StreamLoadGovernor")
@@ -96,6 +98,9 @@ class StreamLoadHostBridge:
             raise ValueError("receipt skew must be 50..1000 ms")
         if type(max_age_ms) is not int or not 100 <= max_age_ms <= 2000:
             raise ValueError("age limit must be 100..2000 ms")
+        if type(require_verified_stream_network) is not bool:
+            raise ValueError("stream network enforcement must be bool")
+        self._require_stream = require_verified_stream_network
         self._lock = RLock()
         self._governor = governor
         self._skew = max_receipt_skew_ms
@@ -148,6 +153,7 @@ class StreamLoadHostBridge:
         receipt: HostLoadReceipt,
         now_ms: float,
         host_verified: bool = False,
+        stream_network: ObsStreamLossWindow | None = None,
     ) -> bool:
         """Accept only a fresh, nonreplayed, continuous OBS/game interval.
 
@@ -170,6 +176,29 @@ class StreamLoadHostBridge:
                 render = _finite(obs.render_lag_pct, "OBS render loss", 0, 100)
                 encode = _finite(obs.output_lag_pct, "OBS output loss", 0, 100)
                 source = receipt.observed_at_ms
+                if self._require_stream or stream_network is not None:
+                    # Actual live stream observations must be from OBS
+                    # GetStreamStatus, never a default zero or a model guess.
+                    if type(stream_network) is not ObsStreamLossWindow:
+                        raise ValueError("verified OBS stream network window required")
+                    stream_time = _finite(stream_network.observed_ms, "stream network time", 0, _MAX_MS)
+                    stream_duration = _finite(stream_network.window_ms, "stream network interval", 100, 5000)
+                    loss = _finite(stream_network.network_dropped_pct, "stream network loss", 0, 100)
+                    delivered = stream_network.delivered_frames
+                    dropped = stream_network.dropped_frames
+                    if (
+                        type(delivered) is not int
+                        or type(dropped) is not int
+                        or delivered < 0
+                        or dropped < 0
+                        or delivered + dropped < 10
+                        or abs(100.0 * dropped / (delivered + dropped) - loss) > 1e-6
+                        or abs(receipt.network_dropped_pct - loss) > 1e-6
+                        or abs(stream_time - end) > self._skew
+                        or abs(stream_duration - duration) > self._skew
+                        or stream_time > now
+                    ):
+                        raise ValueError("network evidence must match genuine OBS stream interval")
                 if (
                     end > now
                     or now - end > self._age
