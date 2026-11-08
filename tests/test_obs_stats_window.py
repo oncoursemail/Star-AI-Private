@@ -135,11 +135,15 @@ def test_unauthenticated_and_replayed_frames_cannot_update_baseline():
     assert s.ingest(counters(rskip=20), host_ms=1000,
                     host_verified=True) is None
     assert s.ingest(counters(rskip=20), host_ms=1200, host_verified=False) is None
-    x = s.ingest(counters(rskip=2, rtotal=1100, ototal=1100), host_ms=1500,
+    # The unauthenticated middle observation destroyed continuity. One
+    # subsequent good sample must never resurrect the older baseline.
+    assert s.ingest(counters(rskip=2, rtotal=1100, ototal=1100), host_ms=1500,
+                    host_verified=True) is None
+    x = s.ingest(counters(rskip=4, rtotal=1200, ototal=1200), host_ms=2000,
                  host_verified=True)
-    assert x is not None
-    assert x.render_lag_pct == pytest.approx(100 * 2 / 100)
+    assert x is not None and x.render_lag_pct == pytest.approx(2)
     assert s.metrics()["rejected"] == 3
+    assert s.metrics()["resets"] >= 3
 
 
 @pytest.mark.parametrize("value", [-1, True, 2**60, float("inf"),
