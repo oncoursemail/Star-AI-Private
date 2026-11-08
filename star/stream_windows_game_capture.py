@@ -50,6 +50,10 @@ class CapturedVisionFrame:
     width: int
     height: int
     captured_ms: float
+    # The model sees the worker dimensions, while the independently pinned
+    # game capture remains full-resolution for novelty/identity evidence.
+    source_width: int | None = None
+    source_height: int | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +143,28 @@ def _clock_ms(clock: Callable[[], float]) -> float:
     return stamp
 
 
+def _worker_frame_size(width: int, height: int, budget: int) -> tuple[int, int]:
+    """Largest bounded proportional worker image under a pixel budget.
+
+    This changes only the pixels offered to the *trusted synchronous worker*.
+    The original captured frame is still fingerprinted at native resolution
+    to avoid confusing a resize artifact with a changed game scene.
+    """
+    if width * height <= budget:
+        return width, height
+    scale = math.sqrt(budget / (width * height))
+    w = max(9, min(width, int(width * scale)))
+    h = max(8, min(height, int(height * scale)))
+    while w * h > budget:
+        if w >= h and w > 9:
+            w -= 1
+        elif h > 8:
+            h -= 1
+        else:
+            raise ValueError("worker budget cannot fit a valid RGB frame")
+    return w, h
+
+
 class WindowsGameCaptureHost:
     """Bounded one-window observation adapter. No model-facing capture API.
 
@@ -161,6 +187,7 @@ class WindowsGameCaptureHost:
         hud_region: Region | None = None,
         focus_regions: tuple[Region, ...] = (),
         trusted_worker: Callable[[CapturedVisionFrame], WorkerReport] | None = None,
+        worker_max_pixels: int | None = None,
     ) -> None:
         if not isinstance(vision, StreamVisionHost):
             raise TypeError("real StreamVisionHost required")
@@ -183,6 +210,11 @@ class WindowsGameCaptureHost:
             raise ValueError("focus regions must be distinct")
         if trusted_worker is not None and not callable(trusted_worker):
             raise TypeError("trusted synchronous vision worker must be callable")
+        if (worker_max_pixels is not None and
+                (type(worker_max_pixels) is not int
+                 or not 72 <= worker_max_pixels <= MAX_CAPTURE_PIXELS)):
+            raise ValueError("worker_max_pixels must be a bounded RGB pixel budget")
+        self._worker_max_pixels = worker_max_pixels
         self._trusted_worker = trusted_worker
         self._vision = vision
         self._hwnd, self._pid = hwnd, pid
@@ -200,7 +232,7 @@ class WindowsGameCaptureHost:
             stale_discarded=0, identity_rejected=0, preflight_skipped=0,
             worker_runs=0, worker_accepted=0, worker_failed=0,
             worker_unconfirmed=0, perception_accepted=0,
-            perception_rejected=0,
+            perception_rejected=0, worker_resizes=0,
         )
 
     def enable(self, *, owner_approved: bool = False, capture_approved: bool = False) -> None:
@@ -277,7 +309,10 @@ class WindowsGameCaptureHost:
 
         image = None
         rgb = None
+        resized = None
         pixels: bytes | bytearray | None = None
+        worker_pixels: bytearray | None = None
+        worker_width = worker_height = 0
         try:
             before = self._probe(self._hwnd)
             if not self._window_valid(before):
@@ -322,6 +357,33 @@ class WindowsGameCaptureHost:
                 self._counts["admitted" if decision.admitted else "deferred"] += 1
             if not process or not decision.admitted:
                 return CaptureDispatch(decision, "not_processed")
+            # Pixel budgeting is opt-in, only AFTER full-resolution novelty
+            # verification and never a second screen/whole-desktop capture.
+            worker_width, worker_height = width, height
+            assert isinstance(pixels, bytearray)
+            worker_pixels = pixels
+            if self._worker_max_pixels is not None and width * height > self._worker_max_pixels:
+                worker_width, worker_height = _worker_frame_size(
+                    width, height, self._worker_max_pixels,
+                )
+                resized = rgb.resize((worker_width, worker_height))
+                if getattr(resized, "size", None) != (worker_width, worker_height):
+                    raise ValueError("resize returned unexpected dimensions")
+                worker_pixels = bytearray(resized.tobytes())
+                if len(worker_pixels) != worker_width * worker_height * 3:
+                    raise ValueError("resize returned invalid RGB byte layout")
+                if _clock_ms(self._clock) - end > MAX_CAPTURE_AGE_MS:
+                    with self._lock:
+                        self._counts["stale_discarded"] += 1
+                    # No worker was started, but the vision reservation must
+                    # still be released with a confirmed non-success result.
+                    assert decision.lease is not None
+                    self._vision.acknowledge_worker_stopped(
+                        decision.lease, worker_stopped=True, succeeded=False,
+                    )
+                    return CaptureDispatch(decision, "worker_resize_stale")
+                with self._lock:
+                    self._counts["worker_resizes"] += 1
             # Admission is a scheduler lease, NOT proof of model completion.
             lease = decision.lease
             if lease is None or self._trusted_worker is None:
@@ -340,7 +402,8 @@ class WindowsGameCaptureHost:
             with self._lock:
                 self._counts["worker_runs"] += 1
             frame = CapturedVisionFrame(
-                memoryview(pixels).toreadonly(), width, height, end,
+                memoryview(worker_pixels).toreadonly(), worker_width,
+                worker_height, end, source_width=width, source_height=height,
             )
             try:
                 report = self._trusted_worker(frame)
@@ -370,8 +433,8 @@ class WindowsGameCaptureHost:
             packet = report.perception
             packet_matches = (
                 packet is None or (
-                    packet.captured_ms == end and packet.width == width
-                    and packet.height == height
+                    packet.captured_ms == end and packet.width == worker_width
+                    and packet.height == worker_height
                 )
             )
             try:
@@ -401,10 +464,12 @@ class WindowsGameCaptureHost:
             return deny("window_capture_backend_failed")
         finally:
             # Explicitly release native image resources and the worker's pixels.
+            if isinstance(worker_pixels, bytearray) and worker_pixels is not pixels:
+                worker_pixels[:] = b"\x00" * len(worker_pixels)
             if isinstance(pixels, bytearray):
                 pixels[:] = b"\x00" * len(pixels)
             closed_objects: set[int] = set()
-            for img in (rgb, image):
+            for img in (resized, rgb, image):
                 if img is None or id(img) in closed_objects:
                     continue
                 closed_objects.add(id(img))
