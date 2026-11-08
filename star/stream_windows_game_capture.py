@@ -374,7 +374,14 @@ class WindowsGameCaptureHost:
                     if len(worker_pixels) != worker_width * worker_height * 3:
                         raise ValueError("resize returned invalid RGB byte layout")
                     resized_at = _clock_ms(self._clock)
-                    if resized_at < end or resized_at - end > MAX_CAPTURE_AGE_MS:
+                    if resized_at < end:
+                        # The device clock itself is now untrustworthy. Do
+                        # not forge a completion timestamp or claim that the
+                        # governor released its lease under a reversed clock.
+                        # A trusted host must recover its clock and explicitly
+                        # acknowledge the non-started worker.
+                        return CaptureDispatch(decision, "worker_resize_clock_reversed")
+                    if resized_at - end > MAX_CAPTURE_AGE_MS:
                         with self._lock:
                             self._counts["stale_discarded"] += 1
                         # No worker was started, but the vision reservation must
