@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 from star.gameplay_skill_bank import GameTrial, GameplaySkillBank, wilson_lower
+from star.game_practice_curriculum import PracticeTarget, recommend_practice
 
 PRACTICE = hashlib.sha256(b"fixture-only-practice-key").digest()
 VALIDATION = hashlib.sha256(b"fixture-only-independent-evaluator-key").digest()
@@ -32,13 +33,15 @@ class GameplaySkillBankTests(unittest.TestCase):
 
     def add(self, split="practice", outcome="success", *, action="jump",
             game="obby", version="v1", objective="cross", situation="bridge",
-            at=NOW) -> GameTrial:
+            at=NOW, digest=None) -> GameTrial:
         self.count += 1
         trial = GameTrial(
             trial_id=f"trial{self.count}", game_id=game, game_version=version,
             objective_id=objective, situation_id=situation, action_id=action,
             run_id=f"run{self.count}", split=split, outcome=outcome,
-            evidence_sha256=DIGEST, observed_unix_s=at)
+            evidence_sha256=(digest if digest is not None else
+                hashlib.sha256(f"independent-game-event-{self.count}".encode()).hexdigest()),
+            observed_unix_s=at)
         self.bank.ingest(trial, receipt(trial), now_unix_s=NOW)
         return trial
 
@@ -50,6 +53,105 @@ class GameplaySkillBankTests(unittest.TestCase):
         self.assertEqual(info.status, "no_evidence")
         self.assertIsNone(info.action_id)
         self.assertFalse(info.authorized_to_play)
+
+    def test_recent_curriculum_window_does_not_reuse_eight_day_old_wins(self):
+        # A lifetime-ish 90-day bank aggregate would report 12/13 success
+        # after ONE current failure. That should not unlock harder games.
+        for _ in range(12):
+            self.add(at=NOW - 8 * 86400)
+        self.add(outcome="failure", at=NOW)
+        old = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )
+        self.assertEqual((old[0].trials, old[0].successes), (13, 12))
+        recent = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+            max_age_s=7 * 86400,
+        )
+        self.assertEqual((recent[0].trials, recent[0].successes), (1, 0))
+        advice = recommend_practice(
+            self.bank, targets=(PracticeTarget("obby", "v1", "cross", "bridge", "jump", 1),),
+            now_unix_s=NOW, owner_approved=True,
+        )
+        self.assertEqual(advice.status, "rehearse")
+        self.assertEqual((advice.trials, advice.successes), (1, 0))
+        self.assertFalse(advice.authorized_to_play)
+        for invalid in (0, True, -1, 90 * 86400 + 1):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.bank.practice_evidence(
+                    "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+                    max_age_s=invalid,
+                )
+
+    def test_latest_failure_blocks_practice_curriculum_difficulty_unlock(self):
+        # Twenty recent signed wins cannot conceal the most recent failure.
+        for _ in range(20):
+            self.add(at=NOW - 2 * 86400)
+        self.add(outcome="failure", at=NOW)
+        practice = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+            max_age_s=7 * 86400,
+        )
+        self.assertEqual((practice[0].trials, practice[0].successes,
+                          practice[0].most_recent_success), (21, 20, False))
+        advice = recommend_practice(
+            self.bank, targets=(
+                PracticeTarget("obby", "v1", "cross", "bridge", "jump", 1),
+                PracticeTarget("obby", "v1", "cross", "boss", "jump", 4),
+            ), now_unix_s=NOW, owner_approved=True,
+            spaced_review_after_s=86400,
+        )
+        self.assertEqual(advice.status, "rehearse")
+        self.assertEqual(advice.target.situation_id, "bridge")
+        self.assertFalse(advice.authorized_to_play)
+
+    def test_last_timestamp_tied_failure_wins_independently_of_ingest_order(self):
+        self.add(outcome="failure", at=NOW - 60)
+        self.add(outcome="success", at=NOW - 60)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )
+        self.assertIs(evidence[0].most_recent_success, False)
+
+    def test_signed_success_streak_requires_distinct_seconds_and_restarts_on_failure(self):
+        for _ in range(6):
+            self.add(outcome="success", at=NOW - 5)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertEqual(evidence.consecutive_success_seconds, 1)
+        self.add(outcome="failure", at=NOW - 4)
+        self.add(outcome="success", at=NOW - 3)
+        self.add(outcome="success", at=NOW - 2)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertEqual(evidence.consecutive_success_seconds, 2)
+        self.add(outcome="success", at=NOW - 1)
+        self.assertEqual(self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0].consecutive_success_seconds, 3)
+        # A failure at the same second removes the ambiguous newest bucket.
+        self.add(outcome="failure", at=NOW - 1)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertIs(evidence.most_recent_success, False)
+        self.assertEqual(evidence.consecutive_success_seconds, 0)
+        # Independent validation is intentionally excluded from the streak.
+        self.add(split="validation", outcome="success", at=NOW)
+        self.assertEqual(self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0].consecutive_success_seconds, 0)
+
+    def test_validation_failure_never_changes_practice_last_outcome(self):
+        self.add(split="practice", outcome="success", at=NOW - 60)
+        self.add(split="validation", outcome="failure", at=NOW)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )
+        self.assertEqual((evidence[0].trials, evidence[0].successes), (1, 1))
+        self.assertIs(evidence[0].most_recent_success, True)
 
     def test_practice_requires_several_independent_runs(self):
         for _ in range(4):
@@ -258,6 +360,42 @@ class GameplaySkillBankTests(unittest.TestCase):
         for s, n in ((-1, 5), (6, 5), (1, 0), (True, 4)):
             with self.assertRaises(ValueError):
                 wilson_lower(s, n)
+
+
+    def test_replayed_capture_is_not_many_independent_skill_trials(self):
+        # Valid signatures and distinct run IDs do NOT make one observation independent.
+        for _ in range(5):
+            self.add(digest=DIGEST)
+        self.assertEqual(self.advice().status, "no_evidence")
+        p = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW)
+        self.assertEqual((p[0].trials, p[0].successes), (1, 1))
+
+    def test_fresh_replay_does_not_revive_stale_capture(self):
+        self.add(at=NOW - 8 * 86400, digest=DIGEST)
+        self.add(at=NOW, digest=DIGEST)
+        summary = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge",
+            now_unix_s=NOW, max_age_s=7 * 86400)
+        self.assertEqual(summary, ())
+
+    def test_conflicting_signed_outcomes_for_one_capture_fail_closed(self):
+        self.add(outcome="success", digest=DIGEST)
+        self.add(outcome="failure", digest=DIGEST)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.bank.practice_evidence(
+                "obby", "v1", "cross", "bridge", now_unix_s=NOW)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.advice()
+
+    def test_replayed_validation_capture_cannot_qualify_skill(self):
+        for _ in range(5):
+            self.add()
+        for _ in range(8):
+            self.add("validation", digest=DIGEST)
+        info = self.advice()
+        self.assertNotEqual(info.status, "ready_for_host_review")
+        self.assertLess(info.validation_trials, 8)
 
 
 if __name__ == "__main__":

@@ -91,22 +91,26 @@ class TestStudioVisionQoS(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(duplicate.evidence.frame.perception_confidence, 0)
         self.assertEqual(self.qos.metrics()["duplicates"], 1)
 
-    async def test_offline_cadence_and_exponential_duplicate_backoff(self):
+    async def test_private_rehearsal_cadence_and_duplicate_backoff(self):
         await self.arm()
         self.assertEqual((await self.qos.sample(tele())).reason, "new_visual_evidence")
-        self.tick[0] = 1250
+        # Playing a game offline is STILL realtime; the first period is 1s.
+        self.tick[0] = 1999
+        self.assertEqual((await self.qos.sample(tele())).reason, "visual_sampling_cooldown")
+        self.tick[0] = 2000
         self.assertEqual((await self.qos.sample(tele())).reason,
                          "identical_scene_no_new_action_evidence")
-        self.tick[0] = 1749
+        # A duplicate doubles the 1s period to 2s, then 4s.
+        self.tick[0] = 3999
         self.assertEqual((await self.qos.sample(tele())).reason, "visual_sampling_cooldown")
-        self.tick[0] = 1750
+        self.tick[0] = 4000
         self.assertFalse((await self.qos.sample(tele())).evidence.changed)
-        self.tick[0] = 2750
+        self.tick[0] = 8000
         self.mcp.image = PNG2
         self.assertTrue((await self.qos.sample(tele())).evidence.changed)
-        self.tick[0] = 2999
+        self.tick[0] = 8999
         self.assertEqual((await self.qos.sample(tele())).reason, "visual_sampling_cooldown")
-        self.tick[0] = 3000
+        self.tick[0] = 9000
         self.assertTrue((await self.qos.sample(tele())).attempted)
         self.assertEqual(self.qos.metrics()["duplicates_in_row"], 1)
         self.assertEqual(self.captures(), 5)
@@ -122,12 +126,13 @@ class TestStudioVisionQoS(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.captures(), 0)
         self.assertTrue((await self.qos.sample(tele(live=True))).attempted)
 
-    async def test_offline_low_fps_and_voice_pressure_still_protected(self):
+    async def test_offline_low_fps_gpu_and_voice_pressure_still_protected(self):
         await self.arm()
-        self.assertEqual((await self.qos.sample(tele(fps=29))).reason,
-                         "realtime_game_or_voice_pressure")
-        self.assertEqual((await self.qos.sample(tele(backlog=999))).reason,
-                         "realtime_game_or_voice_pressure")
+        for stream_telemetry in (tele(fps=29), tele(fps=44),
+                                 tele(backlog=999), tele(vram=500)):
+            with self.subTest(telemetry=stream_telemetry):
+                self.assertEqual((await self.qos.sample(stream_telemetry)).reason,
+                                 "stream_vision_deferred")
         self.assertEqual(self.captures(), 0)
 
     async def test_error_backoff_bounded_and_recovery(self):

@@ -33,7 +33,7 @@ def test_benchmark_really_calls_local_model_and_counts_slots():
             await asyncio.sleep(.02)
             self.active-=1
             return SimpleNamespace(choices=[
-                SimpleNamespace(message=SimpleNamespace(content="A square has four equal sides"))
+                SimpleNamespace(message=SimpleNamespace(content="A square has four equal sides"), finish_reason="stop")
             ],usage=SimpleNamespace(completion_tokens=8))
     async def go():
         f=Fake()

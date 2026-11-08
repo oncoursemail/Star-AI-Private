@@ -289,3 +289,88 @@ def test_cli_scores_and_compares_existing_raw_files_and_rejects_saved_grades(art
     assert json.loads(capsys.readouterr().out)["comparison_status"] == "artifact_consistent"
     raw.write_text(json.dumps(scores), encoding="utf-8")
     assert bench.main(["compare", "--baseline", str(raw), "--candidate", str(raw)]) == 2
+
+
+def _app_stamp(run):
+    """Only predeclared source identity may vary in an app-axis trial."""
+    return {key: run["identity"][key] for key in ("app_commit", "source_sha256")}
+
+
+def _app_pair(artifacts):
+    suite, oracles = artifacts
+    baseline, candidate = raw_run(suite, oracles), raw_run(suite, oracles)
+    candidate["identity"]["app_commit"] = "f" * 40
+    candidate["identity"]["source_sha256"] = "e" * 64
+    kwargs = {"axis": "app", "expected_baseline_app": _app_stamp(baseline),
+              "expected_candidate_app": _app_stamp(candidate)}
+    return suite, oracles, baseline, candidate, kwargs
+
+
+def test_app_axis_compares_software_revisions_without_switching_model_or_backend(artifacts):
+    suite, oracles, baseline, candidate, kwargs = _app_pair(artifacts)
+    answer(candidate["rows"][0], {"remaining_pencils": 0})
+    result = bench.compare_runs(suite, oracles, baseline, candidate, **kwargs)
+    assert result["axis"] == "app" and result["comparison_status"] == "artifact_consistent"
+    assert result["candidate"]["counts"] == {"incorrect": 1, "pass": 9}
+    assert result["changes"][0]["task_id"] == "GF-01"
+    assert result["provenance"] == "operator_declared_not_authenticated"
+    assert "authorized_to_promote" not in result
+
+
+@pytest.mark.parametrize("field", [
+    "model", "backend_build", "adapter_sha256", "request_builder_sha256", "mode", "options",
+])
+def test_app_axis_rejects_confounded_model_prompt_adapter_backend_or_sampling(artifacts, field):
+    suite, oracles, baseline, candidate, kwargs = _app_pair(artifacts)
+    if field == "model":
+        candidate["identity"]["model"] = model("changed")
+    elif field == "options":
+        candidate["identity"]["options"]["temperature"] = 0.4
+    else:
+        candidate["identity"][field] = "changed" if field in ("backend_build", "mode") else "0" * 64
+    with pytest.raises(ValueError):
+        bench.compare_runs(suite, oracles, baseline, candidate, **kwargs)
+
+
+@pytest.mark.parametrize("variant", [
+    "missing", "mismatched_candidate", "same_app_commit", "same_source_digest",
+    "extra_key", "malformed_hash", "wrong_axis", "model_pair_conflict",
+])
+def test_app_axis_refuses_undeclared_or_fake_app_changes(artifacts, variant):
+    suite, oracles, baseline, candidate, kwargs = _app_pair(artifacts)
+    if variant == "missing":
+        kwargs["expected_candidate_app"] = None
+    elif variant == "mismatched_candidate":
+        kwargs["expected_candidate_app"] = _app_stamp(baseline)
+    elif variant == "same_app_commit":
+        candidate["identity"]["app_commit"] = baseline["identity"]["app_commit"]
+        kwargs["expected_candidate_app"] = _app_stamp(candidate)
+    elif variant == "same_source_digest":
+        candidate["identity"]["source_sha256"] = baseline["identity"]["source_sha256"]
+        kwargs["expected_candidate_app"] = _app_stamp(candidate)
+    elif variant == "extra_key":
+        kwargs["expected_candidate_app"]["verified"] = True
+    elif variant == "malformed_hash":
+        kwargs["expected_candidate_app"]["source_sha256"] = "not-a-hash"
+    elif variant == "wrong_axis":
+        kwargs["axis"] = "same"
+    else:
+        kwargs["expected_baseline_model"] = model()
+    with pytest.raises(ValueError):
+        bench.compare_runs(suite, oracles, baseline, candidate, **kwargs)
+
+
+def test_app_axis_cli_requires_two_explicit_app_identities(artifacts, tmp_path, capsys):
+    suite, oracles, baseline, candidate, kwargs = _app_pair(artifacts)
+    before, after = tmp_path / "baseline.json", tmp_path / "candidate.json"
+    before.write_text(json.dumps(baseline), encoding="utf-8")
+    after.write_text(json.dumps(candidate), encoding="utf-8")
+    args = [
+        "compare", "--baseline", str(before), "--candidate", str(after),
+        "--axis", "app", "--baseline-app", json.dumps(kwargs["expected_baseline_app"]),
+        "--candidate-app", json.dumps(kwargs["expected_candidate_app"]),
+    ]
+    assert bench.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["axis"] == "app"
+    assert bench.main(args[:-2]) == 2
+    assert "no model was called" in capsys.readouterr().out

@@ -25,6 +25,8 @@ IMPORT_TO_PACKAGE = {"PIL": "pillow", "comtypes": "comtypes", "numpy": "numpy", 
                      "faster_whisper": "faster-whisper", "httpx": "httpx", "kokoro_onnx": "kokoro-onnx", "mss": "mss",
                      "onnxruntime": "onnxruntime-gpu", "pyvirtualcam": "pyvirtualcam", "soundcard": "soundcard",
                      "sounddevice": "sounddevice", "winsdk": "winsdk", "torch": "torch", "pyworld": "pyworld"}
+# Opt-in engines the owner installs by hand from their own requirements file; the home installer must not pull them in.
+OPTIONAL_IMPORTS = {"pocket_tts": ("requirements-voice-pocket.txt", "pocket-tts")}
 
 
 def locked() -> dict[str, str]:
@@ -43,6 +45,9 @@ def test_every_third_party_import_of_her_abilities_is_installed():
                     top = name.split(".")[0]
                     if top not in stdlib and top != "star":
                         found.setdefault(top, f"{path.relative_to(ROOT)}")
+    for module, (req, package) in OPTIONAL_IMPORTS.items():
+        if found.pop(module, None) is not None:
+            assert re.search(rf"^{re.escape(package)}==", (ROOT / req).read_text(encoding="utf-8"), re.M), (module, req)
     missing = {m: where for m, where in found.items() if m not in IMPORT_TO_PACKAGE}
     assert not missing, f"imported but not in requirements-home.in / IMPORT_TO_PACKAGE: {missing}"
     have = locked()

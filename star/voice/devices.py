@@ -101,6 +101,7 @@ class SoundSpeaker:
         self._lock = threading.Lock()
         self._buffer = bytearray()
         self._played = 0                    # samples played since reset()
+        self._first_output_callback_at: float | None = None  # host monotonic; not proof of hearing
         self._levels: collections.deque = collections.deque(maxlen=64)     # (time, rms) of recent output blocks
         self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16", device=_device(device),
                                           callback=self._callback)
@@ -111,6 +112,10 @@ class SoundSpeaker:
             chunk = bytes(self._buffer[:wanted])
             del self._buffer[:wanted]
             self._played += len(chunk) // 2
+            # Only the first non-silent output callback needs a timestamp;
+            # all subsequent realtime callbacks avoid the extra scan.
+            if self._first_output_callback_at is None and chunk and any(chunk):
+                self._first_output_callback_at = time.monotonic()
         out[:len(chunk)] = chunk
         if len(chunk) < wanted:
             out[len(chunk):] = b"\x00" * (wanted - len(chunk))
@@ -145,9 +150,49 @@ class SoundSpeaker:
         with self._lock:
             self._buffer.clear()
 
+    # Opt-in native control for a *dedicated* SoundSpeaker managed by the
+    # trusted epoch host. Ordinary calls continue to use application-only
+    # stop() above; no PortAudio operations run on the realtime callback.
+    def native_output_state(self) -> str:
+        """PortAudio stream state, never a physical-audibility attestation."""
+        if bool(self._stream.active) and not bool(self._stream.stopped):
+            return "running"
+        if bool(self._stream.stopped) and not bool(self._stream.active):
+            return "stopped"
+        return "unknown"
+
+    def abort_pending_output(self) -> bool:
+        """Discard application PCM and request a strict non-draining abort.
+
+        Unlike stop(), this calls PortAudio abort(ignore_errors=False).
+        Device output latency and Windows/OBS loopback silence are *not*
+        independently observed here.
+        """
+        self.stop()
+        self._stream.abort(ignore_errors=False)
+        return self.native_output_state() == "stopped"
+
+    def restart_after_abort(self) -> bool:
+        """Restart only a stopped, empty native stream; requires host gate."""
+        if self.native_output_state() != "stopped" or self.pending_seconds() != 0:
+            return False
+        self._stream.start()
+        return self.native_output_state() == "running"
+
     def reset(self) -> None:
         with self._lock:
             self._played = 0
+            self._first_output_callback_at = None
+
+    def first_output_callback_at(self) -> float | None:
+        """First nonzero PCM returned by PortAudio's host output callback.
+
+        Same monotonic clock as CallSession's default. This callback can run
+        ahead of DAC playback. It is not proof that speakers, OBS, or a
+        virtual microphone were audible to anyone.
+        """
+        with self._lock:
+            return self._first_output_callback_at
 
     def pending_seconds(self) -> float:
         with self._lock:

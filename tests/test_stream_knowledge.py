@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from star.knowledge import KnowledgeStore
 from star.stream_knowledge import KnowledgePacket, public_knowledge_packet
@@ -20,9 +21,9 @@ class StreamKnowledgeTests(unittest.TestCase):
         self.addCleanup(self.store.db.close)
 
     def note(self, text, *, project="game", reviewed=True,
-             source="manual://owner-approved-guide", kind="fact"):
+             source="manual://owner-approved-guide", kind="fact", revision="v1"):
         ident = self.store.add_note(project=project, kind=kind, text=text,
-                                    source=source, revision="v1")
+                                    source=source, revision=revision)
         if reviewed:
             self.store.review_note(project=project, note_id=ident,
                                    evidence="independently verified test evidence")
@@ -92,6 +93,80 @@ class StreamKnowledgeTests(unittest.TestCase):
         self.assertIsNotNone(p)
         self.assertLessEqual(len(p.note_ids), 4)
         self.assertLessEqual(len(p.context_record), 1400)
+
+    def test_revision_metadata_never_leaks_into_public_packet(self):
+        # Revisions are host-side provenance, not viewer-approved fact text.
+        secret_revision = "internal-private-revision-token-DO-NOT-SHOW"
+        ident = self.note("The checkpoint is behind the waterfall.",
+                          revision=secret_revision)
+        p = self.packet("checkpoint", [ident])
+        self.assertIsNotNone(p)
+        self.assertNotIn(secret_revision, p.context_record)
+        self.assertNotIn('"revision":', p.context_record)
+        self.assertIn("source_digest", p.context_record)
+
+    def test_oversized_ranked_fact_does_not_starve_shorter_approved_fact(self):
+        huge_id = self.note("checkpoint " + "雪" * 264)
+        small_id = self.note("checkpoint is behind the river stone.")
+        candidates = self.store.find("game", "checkpoint", reviewed_only=True,
+                                     limit=25)
+        by_id = {item.id: item for item in candidates}
+        self.assertIn(huge_id, by_id)
+        self.assertIn(small_id, by_id)
+        with patch.object(self.store, "find",
+                          return_value=[by_id[huge_id], by_id[small_id]]):
+            p = self.packet("checkpoint", [huge_id, small_id], limit=2)
+        self.assertIsNotNone(p)
+        self.assertEqual(p.note_ids, (small_id,))
+        self.assertNotIn("雪", p.context_record)
+        self.assertIn("river stone", p.context_record)
+        self.assertLessEqual(len(p.context_record), 1400)
+
+    def test_public_approved_fact_survives_ranked_unapproved_crowding(self):
+        public = self.note(
+            "The checkpoint is behind the river stone near the waterfall.")
+        for index in range(70):
+            self.note(
+                f"checkpoint checkpoint checkpoint checkpoint rival note {index}")
+        # Baseline reproduction: initial global top-25 retrieval omits the
+        # explicitly owner-approved fact; filtering afterward cannot recover it.
+        ranked = self.store.find("game", "checkpoint", reviewed_only=True, limit=25)
+        self.assertNotIn(public, {item.id for item in ranked})
+        original_fts = self.store._fts
+        try:
+            for enabled in (original_fts, False):
+                with self.subTest(fts=enabled):
+                    self.store._fts = enabled
+                    packet = self.packet("checkpoint", [public])
+                    self.assertIsNotNone(packet)
+                    self.assertEqual(packet.note_ids, (public,))
+                    self.assertIn("river stone", packet.context_record)
+                    self.assertNotIn("rival note", packet.context_record)
+        finally:
+            self.store._fts = original_fts
+
+    def test_public_allowed_note_ids_bound_retrieval_before_limit(self):
+        target = self.note("checkpoint is at the start of the bridge")
+        other = self.note("checkpoint private location details")
+        rows = self.store.find(
+            "game", "checkpoint", reviewed_only=True, limit=1,
+            allowed_note_ids=frozenset({target}))
+        self.assertEqual([row.id for row in rows], [target])
+        self.assertNotIn(other, [row.id for row in rows])
+
+    def test_public_filter_rejects_invalid_allowlists(self):
+        target = self.note("checkpoint follows the orange door")
+        for bad in ({target}, frozenset({True}),
+                    frozenset({-1}), frozenset(range(1, 131))):
+            with self.subTest(bad_type=type(bad).__name__, size=len(bad)):
+                with self.assertRaises(ValueError):
+                    self.store.find(
+                        "game", "checkpoint", reviewed_only=True,
+                        allowed_note_ids=bad)
+        self.assertEqual(
+            self.store.find(
+                "game", "checkpoint", reviewed_only=True,
+                allowed_note_ids=frozenset()), [])
 
     def test_invalid_input_types_rejected(self):
         ident = self.note("A checkpoint event was observed.")

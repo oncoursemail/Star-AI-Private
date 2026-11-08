@@ -10,10 +10,10 @@ def stream(*, live=False, game=False, vram=6000, fps=60, backlog=0):
 
 
 def snap(at, *, live=False, game=False, vram=6000, fps=60, backlog=0,
-         ram=16000, cpu=20, cpu_slots=2, gpu_slots=1):
+         ram=16000, cpu=20, cpu_slots=2, gpu_slots=1, private=False):
     return QoSSnapshot(
         at, stream(live=live, game=game, vram=vram, fps=fps, backlog=backlog),
-        ram, cpu, cpu_slots, gpu_slots,
+        ram, cpu, cpu_slots, gpu_slots, private_stream_rehearsal=private,
     )
 
 
@@ -28,14 +28,15 @@ def ready():
     return q
 
 
-def train_route(q, *, kind, device, start=1000, duration=200, steps=5, game=False):
+def train_route(q, *, kind, device, start=1000, duration=200, steps=5,
+                game=False, live=False, private=False):
     """Realistic synthetic host acknowledgements; NOT a hardware measurement."""
     for index in range(steps):
         at = start + index * 3000
         attempt = q.admit(
             job(f"cal-{kind}-{device}-{index}", at,
                 kind=kind, device=device, ttl=duration + 600),
-            snap(at, game=game), now_ms=at,
+            snap(at, game=game, live=live, private=private), now_ms=at,
         )
         assert attempt.admitted, attempt.reason
         assert attempt.device == device
@@ -102,7 +103,8 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
     assert not denied.admitted
     # Calibration must be captured while a game is active; idle samples
     # cannot certify live-game latency safety.
-    train_route(q, kind="vision", device="gpu", start=1000, game=True)
+    train_route(q, kind="vision", device="gpu", start=1000,
+                game=True, private=True)
     metrics = snap(17000, live=True, game=True)
     result = q.admit(
         job("image-live", 17000, kind="vision"), metrics, now_ms=17000
@@ -127,9 +129,9 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
 def test_live_game_prefers_calibrated_cpu_voice_even_with_faster_gpu():
     q = ready()
     train_route(q, kind="speech", device="cpu", start=1000,
-                duration=320, game=True)
+                duration=320, game=True, private=True)
     train_route(q, kind="speech", device="gpu", start=17000,
-                duration=100, game=True)
+                duration=100, game=True, private=True)
     attempt = q.admit(
         job("live-voice", 34000, kind="speech", ttl=1100),
         snap(34000, live=True, game=True), now_ms=34000,
@@ -150,10 +152,87 @@ def test_cpu_fallback_is_allowed_during_low_gpu_memory_without_claiming_speed():
     assert result.reason == "unmeasured_host_must_verify"
 
 
+def test_low_fps_live_game_refuses_explicit_gpu_speech_even_with_headroom():
+    q = ready()
+    denied = q.admit(
+        job("fast-gpu", 100, kind="speech", device="gpu"),
+        snap(100, live=True, game=True, fps=44, vram=7500),
+        now_ms=100,
+    )
+    assert not denied.admitted
+    assert denied.reason == "protect_low_fps_game_from_gpu_voice"
+    assert q.status()["inflight"] == 0
+
+    # One high-FPS sample is not enough; verify sustained recovery without
+    # large telemetry gaps before the renderer may share its GPU with speech.
+    for at in (200, 700, 1200, 1700):
+        recovering = q.admit(
+            job(f"gpu-recover-{at}", at, kind="speech", device="gpu"),
+            snap(at, live=True, game=True, fps=60, vram=7500),
+            now_ms=at,
+        )
+        assert recovering.reason == "protect_low_fps_game_from_gpu_voice"
+    healthy = q.admit(
+        job("gpu-ok", 2200, kind="speech", device="gpu"),
+        snap(2200, live=True, game=True, fps=60, vram=7500),
+        now_ms=2200,
+    )
+    assert healthy.admitted and healthy.device == "gpu"
+
+
+def test_low_fps_never_falls_back_to_gpu_when_cpu_slots_are_full():
+    q = ready()
+    metrics = snap(100, live=True, game=True, fps=49.9,
+                   cpu_slots=0, gpu_slots=1, vram=7500)
+    denied = q.admit(job("auto-low", 100), metrics, now_ms=100)
+    assert not denied.admitted
+    assert denied.reason == "low_fps_cpu_voice_unavailable"
+    assert q.status()["inflight"] == 0
+    for at in (200, 700, 1200, 1700):
+        recovering = q.admit(
+            job(f"auto-recover-{at}", at),
+            snap(at, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
+            now_ms=at,
+        )
+        assert recovering.reason == "low_fps_cpu_voice_unavailable"
+    healthy = q.admit(
+        job("auto-healthy", 2200),
+        snap(2200, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
+        now_ms=2200,
+    )
+    assert healthy.admitted and healthy.device == "gpu"
+
+
+def test_low_fps_cpu_voice_fails_closed_if_cpu_ram_or_load_is_exhausted():
+    q = ready()
+    for ix, kwargs in enumerate(({"ram": 550}, {"cpu": 95},
+                                 {"cpu_slots": 0})):
+        at = 1000 + ix * 100
+        denied = q.admit(
+            job(f"cpu-starved-{ix}", at, kind="speech", device="auto"),
+            snap(at, live=True, game=True, fps=33, vram=7500, **kwargs),
+            now_ms=at,
+        )
+        assert not denied.admitted
+        assert denied.reason == "low_fps_cpu_voice_unavailable"
+
+
+def test_low_fps_rule_does_not_mistake_idle_low_fps_for_active_game():
+    q = ready()
+    result = q.admit(
+        job("idle-game-counter", 100, kind="speech", device="gpu"),
+        snap(100, live=True, game=False, fps=30, vram=7500),
+        now_ms=100,
+    )
+    assert result.admitted and result.device == "gpu"
+
+
 def test_measured_p95_rejects_deadline_that_cannot_be_met():
     q = ready()
-    train_route(q, kind="speech", device="cpu", start=1000, duration=1500)
-    train_route(q, kind="speech", device="gpu", start=17000, duration=1200)
+    train_route(q, kind="speech", device="cpu", start=1000,
+                duration=1500, live=True)
+    train_route(q, kind="speech", device="gpu", start=17000,
+                duration=1200, live=True)
     result = q.admit(
         job("too-short", 35000, ttl=600),
         snap(35000, live=True), now_ms=35000,
@@ -318,7 +397,7 @@ def test_idle_calibration_cannot_certify_an_active_game():
     assert not denied.admitted
     assert denied.reason == "no_calibrated_deadline_safe_route_or_headroom"
     assert "vision:gpu:idle" in q.status()["route_p95_ms"]
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 def test_game_load_profile_does_not_trust_unloaded_model_latency():
@@ -338,14 +417,14 @@ def test_calibration_expires_in_two_minutes_and_status_clears_old_p95():
     q = ready()
     train_route(q, kind="vision", device="gpu", game=True)
     before = q.status()["route_p95_ms"]
-    assert before["vision:gpu:game_active"] == 200
+    assert before["vision:gpu:game_only"] == 200
     at = 200000
     denied = q.admit(
         job("expired-calibration", at, kind="vision", device="gpu"),
         snap(at, live=True, game=True), now_ms=at,
     )
     assert not denied.admitted
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 def test_bad_results_do_not_calibrate_active_game_profile():
@@ -358,7 +437,7 @@ def test_bad_results_do_not_calibrate_active_game_profile():
         if not attempt.admitted:
             break
         assert q.finish(attempt.ticket, now_ms=at + 100, succeeded=False)
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 
@@ -423,3 +502,125 @@ def test_disabled_expired_reservation_requires_host_stop():
     assert not q.finish(row.ticket, now_ms=1010, succeeded=True)
     q.enable(owner_approved=True)
     assert q.status()["inflight"] == 0
+
+def test_opt_in_circuit_recovers_after_cooldown_and_success_resets_failures():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 1000
+        row = q.admit(job(f"fail-{i}", at, device="cpu"),
+                      snap(at), now_ms=at)
+        assert row.admitted
+        assert q.finish(row.ticket, now_ms=at + 100, succeeded=False)
+
+    # Three failures must never restart the same route immediately.
+    early = q.admit(job("early", 8099, device="cpu"),
+                    snap(8099), now_ms=8099)
+    assert not early.admitted
+    recovered = q.admit(job("probe", 8100, device="cpu"),
+                        snap(8100), now_ms=8100)
+    assert recovered.admitted and recovered.device == "cpu"
+    assert recovered.reason == "unmeasured_circuit_recovery_probe"
+    assert recovered.predicted_p95_ms is None
+    assert q.status()["recovery_probes_inflight"] == 1
+    assert q.finish(recovered.ticket, now_ms=8200, succeeded=True)
+    assert q.status()["unhealthy_routes"] == 0
+    assert q.status()["recovery_probes_inflight"] == 0
+    assert q.admit(job("normal", 8400, device="cpu"),
+                   snap(8400), now_ms=8400).admitted
+
+
+def test_circuit_recovery_is_single_flight_and_exponential_on_repeat_failure():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + 500 * i
+        r = q.admit(job(f"fail-{i}", at, device="cpu"),
+                    snap(at, cpu_slots=2), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    # Last failure at 2100; cool down for 5 seconds.
+    probe = q.admit(job("probe", 7100, device="cpu"),
+                    snap(7100, cpu_slots=2), now_ms=7100)
+    assert probe.admitted
+    concurrent = q.admit(job("other", 7101, device="cpu"),
+                         snap(7101, cpu_slots=2), now_ms=7101)
+    assert not concurrent.admitted  # no parallel half-open requests
+    assert q.finish(probe.ticket, now_ms=7200, succeeded=False)
+    # Fourth failure doubles the quarantine to 10 seconds.
+    assert not q.admit(job("retry-too-early", 17199, device="cpu"),
+                       snap(17199), now_ms=17199).admitted
+    assert q.admit(job("second-probe", 17200, device="cpu"),
+                   snap(17200), now_ms=17200).admitted
+
+
+def test_recovery_never_probes_during_broadcast_and_expired_probe_stays_quarantined():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 500
+        r = q.admit(job(f"crash-{i}", at, device="cpu"),
+                    snap(at), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    assert not q.admit(job("live-probe", 7100, device="cpu"),
+                       snap(7100, live=True, game=True), now_ms=7100).admitted
+    r = q.admit(job("offline-probe", 7200, device="cpu", ttl=400),
+                snap(7200), now_ms=7200)
+    assert r.admitted
+    # The host has not proved this timed-out process stopped.
+    assert not q.admit(job("still-running", 25000, device="cpu"),
+                       snap(25000, cpu_slots=2), now_ms=25000).admitted
+    assert q.status()["expired_awaiting_host_stop"] == 1
+    assert q.status()["recovery_probes_inflight"] == 1
+    assert not q.finish(r.ticket, now_ms=25100, succeeded=True)
+    assert q.status()["recovery_probes_inflight"] == 0
+    assert q.status()["unhealthy_routes"] == 1
+    assert q.admit(job("next-safe-probe", 36200, device="cpu"),
+                   snap(36200), now_ms=36200).admitted
+
+
+@pytest.mark.parametrize("opts", [
+    {"allow_recovery_probes": 1},
+    {"recovery_cooldown_ms": True},
+    {"recovery_cooldown_ms": 999},
+    {"recovery_cooldown_ms": 150000},
+    {"recovery_cooldown_ms": float("nan")},
+])
+def test_recovery_configuration_rejects_unsafe_values(opts):
+    with pytest.raises(ValueError):
+        AdaptiveQoS(**opts)
+
+def test_recovery_probes_do_not_compete_with_unbroadcast_gameplay():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 500
+        r = q.admit(job(f"fail-game-{i}", at, device="gpu"),
+                    snap(at), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    assert not q.admit(job("game-running", 8000, device="gpu"),
+                       snap(8000, game=True), now_ms=8000).admitted
+    assert q.admit(job("game-idle", 8100, device="gpu"),
+                   snap(8100), now_ms=8100).admitted
+
+
+def test_recovered_route_discards_old_speed_calibration():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    train_route(q, kind="speech", device="cpu", duration=80)
+    assert q.status()["route_p95_ms"]["speech:cpu:idle"] == 80
+    for i in range(3):
+        at = 18000 + i * 500
+        row = q.admit(job(f"crashed-{i}", at, device="cpu"),
+                      snap(at), now_ms=at)
+        assert row.admitted
+        assert q.finish(row.ticket, now_ms=at + 100, succeeded=False)
+    repaired = q.admit(job("recovery", 25000, device="cpu"),
+                       snap(25000), now_ms=25000)
+    assert repaired.admitted
+    assert repaired.predicted_p95_ms is None
+    assert q.finish(repaired.ticket, now_ms=25100, succeeded=True)
+    # One slow/fast recovery run cannot prove the old p95 is still accurate.
+    assert "speech:cpu:idle" not in q.status()["route_p95_ms"]

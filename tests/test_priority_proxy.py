@@ -469,6 +469,14 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
     assert cont[0]["add_generation_prompt"] is False
     assert cont[0]["max_tokens"] == 30 - len(cont[0]["messages"][-1]["content"].split())
     assert fake.max_busy == 2 and p0_time < 2.0
+    # The HTTP client can finish reading before Handler._scheduled's finally
+    # publishes the resumed-segment counters. Wait for the audit write rather
+    # than mistaking scheduler bookkeeping timing for lost prompt-cache tokens.
+    # This still fails if the resumed upstream never reports cached tokens.
+    assert wait_for(
+        lambda: server.RequestHandlerClass.proxy.sched.view()["classes"]["P3"]["resume_cached_tokens"] > 0,
+        timeout=5.0,
+    )
     view = server.RequestHandlerClass.proxy.sched.view()
     assert view["classes"]["P3"]["preemptions"] == 1 and view["classes"]["P3"]["resumes"] == 1
     assert view["classes"]["P3"]["resume_cached_tokens"] > 0
@@ -496,12 +504,25 @@ def test_solo_p0_pauses_every_background_stream(stack):
     first_slots = {r["id_slot"] for r in fake.requests[:2]}
     assert {r["id_slot"] for r in cont} == first_slots == {0, 1}    # each answer resumed on its own slot
     assert [r["id_slot"] for r in fake.requests if r.get("max_tokens") == 8] == [2]   # the chat took the spare one
-    log = server.RequestHandlerClass.proxy.cfg.log
-    # The proxy writes a request's log row after it has answered (in its finally), so the client can be done first:
-    # reading at once found 1 of the 2 P3 rows on CI ("assert 1 == 2"), however long the answers were.
-    assert wait_for(lambda: len(_log_lines(log)) >= 3)
-    rows = [json.loads(line) for line in _log_lines(log)]
-    assert {r["class"] for r in rows} == {"P0", "P3"} and all(r["status"] == "ok" for r in rows)
+    # The HTTP client can read its complete reply before the handler's finally
+    # block has written its JSONL audit row. Await both background audit rows
+    # instead of racing the handler threads after client-side join().
+    proxy = server.RequestHandlerClass.proxy
+
+    def logged_rows():
+        with proxy._log_lock:
+            try:
+                with open(proxy.cfg.log, encoding="utf-8") as handle:
+                    return [json.loads(line) for line in handle]
+            except FileNotFoundError:
+                return []
+
+    assert wait_for(lambda: len(logged_rows()) == 3), "one P0 and two completed P3 audit rows are required"
+    rows = logged_rows()
+    assert len(rows) == 3
+    assert sum(r["class"] == "P0" for r in rows) == 1
+    assert sum(r["class"] == "P3" for r in rows) == 2
+    assert all(r["status"] == "ok" for r in rows)
     assert sum(r["pauses"] for r in rows if r["class"] == "P3") == 2
 
 

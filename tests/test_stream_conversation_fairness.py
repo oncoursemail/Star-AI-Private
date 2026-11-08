@@ -152,13 +152,17 @@ def test_expired_event_clears_serial_and_cannot_be_committed():
     assert not d.complete(old, now=13, spoken=True)
 
 
-def test_proposal_is_nonconsuming_and_can_be_used_later():
+def test_proposal_is_nonconsuming_but_only_latest_issued_plan_can_complete():
     d = director()
     d.offer(event("viewer_question", "q", 10), now=10)
     a = d.propose(now=10)
     b = d.propose(now=10)
-    assert a == b
-    assert d.complete(a, now=10, spoken=True)
+    assert a == b and a is not b
+    # Re-proposal must revoke the old object, even when its fields match.
+    # A stale TTS callback cannot consume or cooldown the current event.
+    assert not d.complete(a, now=10, spoken=True)
+    assert d.metrics()["queued"] == 1
+    assert d.complete(b, now=10, spoken=True)
     assert not d.complete(b, now=10, spoken=True)
 
 

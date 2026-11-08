@@ -13,12 +13,14 @@ hidden holdout results as stream conversation or training hints.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 from hashlib import sha256
 import math
 import re
 from threading import RLock, get_ident
-from typing import Mapping, cast
+from typing import Mapping
 
 from .gameplay_skill_bank import GameTrial
 from .stream_director import StreamSignal
@@ -35,7 +37,7 @@ def _clock_s(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("monotonic time must be a finite positive number")
     try:
-        number = float(cast(float, value))
+        number = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("monotonic time unavailable") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK_S:
@@ -105,11 +107,17 @@ class VerifiedGameReactionHost:
         self._last_clock: float | None = None
         self._last_offered = float("-inf")
         self._successes_announced: set[str] = set()
+        # One grounded relief moment per action/episode, not endless cheers.
+        self._comebacks_announced: set[str] = set()
         self._failures_announced: set[str] = set()
         # Keep consecutive failures within a one-minute gameplay window.
         self._failure_streaks: dict[str, tuple[int, float]] = {}
+        # Arrival order is not game event order. A per-action event-time
+        # watermark guards live commentary while the session retains the
+        # verified historical facts in its aggregate memory.
+        self._latest_observed_s: dict[str, int] = {}
         self._counts = dict(verified=0, offered=0, rejected=0, quiet=0,
-                            private=0, stale=0, stage_busy=0)
+                            private=0, stale=0, stage_busy=0, out_of_order=0)
 
     def enable(self, *, owner_approved: bool = False,
                broadcast_approved: bool = False) -> None:
@@ -122,8 +130,10 @@ class VerifiedGameReactionHost:
             if self._episode.metrics()["enabled"] is not True:
                 raise RuntimeError("start signed episode first")
             self._successes_announced.clear()
+            self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
+            self._latest_observed_s.clear()
             self._last_clock = None
             self._last_offered = float("-inf")
             self._counts = dict.fromkeys(self._counts, 0)
@@ -167,10 +177,28 @@ class VerifiedGameReactionHost:
                 self._counts["stale"] += 1
                 return ReactionDecision("stale", True, False)
             action = trial.action_id
+            latest = self._latest_observed_s.get(action)
+            if latest is not None and trial.observed_unix_s <= latest:
+                # Second-resolution timestamps cannot establish which of
+                # two same-second actions happened last. Delayed signed facts
+                # remain in session history, but must not rewrite live streaks.
+                self._counts["out_of_order"] += 1
+                return ReactionDecision("out_of_order", True, False)
+            self._latest_observed_s[action] = trial.observed_unix_s
             kind: str
+            recovered = False
             if trial.outcome == "success":
-                self._failure_streaks.pop(action, None)
-                if action in self._successes_announced:
+                failed_count, last_failure = self._failure_streaks.pop(
+                    action, (0, float("-inf"))
+                )
+                # A new success after three *fresh signed failures* is a
+                # distinct, genuinely narratable comeback. Keep only one per
+                # game episode; no imaginary wins or endless repetition.
+                recovered = (
+                    failed_count >= 3 and 0 <= now - last_failure <= 60
+                    and action not in self._comebacks_announced
+                )
+                if action in self._successes_announced and not recovered:
                     self._counts["quiet"] += 1
                     return ReactionDecision("already_reacted", True, False)
                 kind = "game_success"
@@ -198,21 +226,36 @@ class VerifiedGameReactionHost:
                 return ReactionDecision("not_publishable", True, False)
             label = self._labels[action]
             if kind == "game_success":
-                detail = (f"Host-verified practice attempt for {label}: this one action "
-                          "succeeded. Do not claim the game was won or the skill mastered.")
+                if recovered:
+                    detail = (
+                        f"Host-verified practice: three recent attempts at {label} "
+                        "failed, then this one action succeeded. A brief, natural "
+                        "relieved reaction fits; do not claim the level was completed "
+                        "or the skill mastered."
+                    )
+                else:
+                    detail = (
+                        f"Host-verified practice attempt for {label}: this one action "
+                        "succeeded. Do not claim the game was won or the skill mastered."
+                    )
             else:
                 detail = (f"Host-verified practice: three recent attempts at {label} "
                           "failed. Briefly consider a different approach; do not invent why.")
             signal_id = "verified." + sha256(
                 (trial.trial_id + "\0" + trial.evidence_sha256).encode("ascii")
             ).hexdigest()[:40]
-            signal = StreamSignal(signal_id, kind, now, detail, evidence="observed")
+            signal = StreamSignal(
+                signal_id, kind, now, detail, evidence="observed",
+                game_scope=self._episode.game_scope,
+            )
             if not self._stage.offer(signal, now=now):
                 self._counts["stage_busy"] += 1
                 return ReactionDecision("stage_unavailable", True, False)
             self._last_offered = now
             if kind == "game_success":
                 self._successes_announced.add(action)
+                if recovered:
+                    self._comebacks_announced.add(action)
             else:
                 self._failures_announced.add(action)
             self._counts["offered"] += 1
@@ -227,8 +270,10 @@ class VerifiedGameReactionHost:
         with self._lock:
             self._enabled = False
             self._successes_announced.clear()
+            self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
+            self._latest_observed_s.clear()
             self._last_clock = None
             self._last_offered = float("-inf")
             self._episode.disable()

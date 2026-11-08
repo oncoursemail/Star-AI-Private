@@ -122,7 +122,7 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
         return await self.runner.take_step(self.proposal, now_unix_s=NOW)
 
     async def post(self, *, changed=True):
-        self.tick[0] = 1250
+        self.tick[0] = 2100
         if changed:
             self.mcp.image = PNG2
         return await self.runner.observe_after()
@@ -237,7 +237,7 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
             return PracticeProposal("delete_all", 50)
         result = await self.runner.take_step(wrong, now_unix_s=NOW)
         self.assertEqual(result.reason, "untrusted_or_off_curriculum_action")
-        self.tick[0] = 1250
+        self.tick[0] = 2100
         self.mcp.image = PNG2
         async def oversized(*args):
             return PracticeProposal("jump", 500)
@@ -265,6 +265,26 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.reason, "practice_revoked_before_input")
         self.assertFalse(self.port.keys)
 
+    async def test_post_action_feedback_waits_for_one_hz_game_capture(self):
+        # A screenshot taken only 250 ms after the preaction screenshot must
+        # NOT bypass the conservative 1-Hz active-game vision limit.
+        await self.start()
+        self.assertTrue((await self.send()).action_sent)
+        self.tick[0] = 1250
+        self.mcp.image = PNG2
+        early = await self.runner.observe_after()
+        self.assertEqual(early.reason, "usable_post_action_scene_missing")
+        self.assertIsNone(self.runner.evidence_for_evaluator())
+        self.assertEqual(self.mcp.calls.count("screen_capture"), 1)
+
+        # A genuinely new frame after the minimum cadence is the only source
+        # of independent post-action feedback; input success is not mastery.
+        self.tick[0] = 2100
+        ready = await self.runner.observe_after()
+        self.assertEqual(ready.status, "feedback_ready")
+        self.assertEqual(self.mcp.calls.count("screen_capture"), 2)
+        self.assertIsNotNone(self.runner.evidence_for_evaluator())
+
     async def test_duplicate_or_missing_after_scene_cannot_be_signed(self):
         await self.start()
         await self.send()
@@ -274,7 +294,7 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             self.runner.record_signed_outcome(
                 None, "fake", now_unix_s=NOW + 1)
-        self.tick[0] = 1750
+        self.tick[0] = 4200
         self.mcp.image = PNG2
         self.assertEqual((await self.runner.observe_after()).status,
                          "feedback_ready")
@@ -298,11 +318,11 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
     async def test_no_second_action_before_signed_feedback(self):
         await self.start()
         self.assertTrue((await self.send()).action_sent)
-        self.tick[0] = 1250
+        self.tick[0] = 2100
         self.mcp.image = PNG2
         self.assertEqual((await self.send()).reason, "independent_feedback_pending")
         self.assertEqual(self.port.keys, [("down", "SPACE"), ("up", "SPACE")])
-        await self.runner.observe_after()
+        self.assertEqual((await self.runner.observe_after()).status, "feedback_ready")
         self.assertEqual((await self.send()).reason, "independent_feedback_pending")
         self.assertEqual(self.port.keys, [("down", "SPACE"), ("up", "SPACE")])
 
@@ -349,7 +369,7 @@ class TestStudioPracticeRunner(unittest.IsolatedAsyncioTestCase):
         self.tick[0] += 15
         self.assertTrue(self.runner.record_signed_outcome(
             trial, receipt, now_unix_s=NOW + 1).accepted)
-        self.tick[0] = 2000
+        self.tick[0] += 100
         self.mcp.image = PNG
         result = await self.send()
         self.assertEqual(result.reason, "episode_attempt_already_consumed")

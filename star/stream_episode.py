@@ -11,6 +11,7 @@ authorization to control games, a live broadcaster, or a claim of model learning
 """
 from __future__ import annotations
 
+
 from dataclasses import dataclass
 from hashlib import sha256
 import json
@@ -35,6 +36,9 @@ class EpisodePacket:
 
     action_ids: tuple[str, ...]
     context_record: str
+    # A stable host-curated game/version/objective/situation fingerprint.
+    # This is context provenance, NOT a signature or authority to disclose.
+    game_scope: str = ""
 
     def user_message(self) -> dict[str, str]:
         return {"role": "user", "content": self.context_record}
@@ -74,6 +78,11 @@ class StreamEpisode:
             raise ValueError("lookback_seconds must be 30..7200")
         self._bank = bank
         self._scope = scope
+        # Compute once, outside the hot verified-reaction path. The delimiter
+        # cannot occur in bounded symbolic scope IDs, avoiding tuple ambiguity.
+        self._game_scope = "episode." + sha256(
+            chr(0).join(scope).encode("ascii")
+        ).hexdigest()[:40]
         self._max_events = max_events
         self._lookback = lookback_seconds
         self._lock = RLock()
@@ -84,8 +93,21 @@ class StreamEpisode:
         # Track all accepted IDs for the whole session, including evicted/aged
         # moments. Without this, replaying old signed trials could inflate stats.
         self._seen: set[str] = set()
+        # One signed capture is one practice observation, regardless of how
+        # many fresh trial IDs/run IDs the signer attached to the same bytes.
+        # Preserve this fence after moment eviction for the full session.
+        self._observations_seen: set[str] = set()
         self._counts = {"accepted": 0, "rejected": 0, "expired": 0,
-                        "evicted": 0, "packets": 0}
+                        "evicted": 0, "packets": 0, "duplicate_observations": 0}
+
+    @property
+    def game_scope(self) -> str:
+        """Opaque stable scene identity across game/version/objective/situation.
+
+        Never use a chat-provided string as a game identity. The trusted host
+        can bind this to StarStage.transition_game() for verified reactions.
+        """
+        return self._game_scope
 
     def start(self, *, owner_approved: bool = False, now_unix_s: int) -> None:
         now = _timestamp(now_unix_s)
@@ -96,6 +118,7 @@ class StreamEpisode:
                 raise RuntimeError("disable before beginning another episode")
             self._moments.clear()
             self._seen.clear()
+            self._observations_seen.clear()
             self._started = self._clock = now
             self._enabled = True
 
@@ -105,6 +128,7 @@ class StreamEpisode:
             self._started = self._clock = None
             self._moments.clear()
             self._seen.clear()
+            self._observations_seen.clear()
 
     def _advance(self, now: int) -> None:
         now = _timestamp(now)
@@ -141,7 +165,14 @@ class StreamEpisode:
             if not self._bank.verify_practice_trial(trial, now_unix_s=now):
                 self._counts["rejected"] += 1
                 return False
+            if trial.evidence_sha256 in self._observations_seen:
+                # A second HMAC-valid trial is not a second observed attempt.
+                # Reject even if the older moment was expired or evicted.
+                self._counts["rejected"] += 1
+                self._counts["duplicate_observations"] += 1
+                return False
             self._seen.add(digest)
+            self._observations_seen.add(trial.evidence_sha256)
             self._moments.append(_Moment(digest, trial.action_id, trial.outcome,
                                          trial.observed_unix_s))
             self._moments.sort(key=lambda m: (m.observed_unix_s, m.digest))
@@ -207,7 +238,9 @@ class StreamEpisode:
             if len(record) > _MAX_PACKET:
                 return None
             self._counts["packets"] += 1
-            return EpisodePacket(tuple(action_ids), record)
+            return EpisodePacket(
+                tuple(action_ids), record, game_scope=self._game_scope,
+            )
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw IDs, receipts, on-air text, players, screenshots or timestamps."""

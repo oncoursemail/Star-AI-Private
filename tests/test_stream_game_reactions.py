@@ -70,7 +70,8 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertTrue(result.practice_recorded)
         self.assertTrue(result.reaction_queued)
         self.assertIn("practice_successes", result.episode.context_record)
-        plan = self.stage.prepare(now=501)
+        # The exact signed episode scope now reaches the live speech director.
+        plan = self.stage.prepare(now=501, current_game_scope=self.episode.game_scope)
         self.assertEqual(plan.kind, "game_success")
         self.assertEqual(plan.expression, "joy")
         self.assertEqual(plan.mode, "cat")
@@ -130,6 +131,114 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertEqual(plan.kind, "game_observation")
         self.assertEqual(plan.expression, "focus")
         self.assertIn("three recent attempts", plan.context_record)
+
+    def test_signed_comeback_is_a_second_grounded_moment_after_setbacks(self):
+        first = trial(1)
+        self._ingest(first)
+        self.assertTrue(self._send(first).reaction_queued)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovery = trial(18)
+        self._ingest(recovery)
+        result = self._send(recovery)
+        self.assertEqual(result.status, "queued_for_review")
+        self.assertTrue(result.reaction_queued)
+        plan = self.stage.prepare(now=518)
+        self.assertIsNotNone(plan)
+        self.assertEqual((plan.kind, plan.expression), ("game_success", "joy"))
+        self.assertIn("three recent attempts", plan.context_record)
+        self.assertIn("then this one action succeeded", plan.context_record)
+        self.assertIn("the left jump", plan.context_record)
+        self.assertIn("do not claim the level was completed", plan.context_record)
+        for secret in (recovery.trial_id, recovery.run_id, recovery.evidence_sha256):
+            self.assertNotIn(secret, plan.context_record)
+
+    def test_no_false_comeback_from_two_failures_or_unverified_claims(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        unverified = trial(4, outcome="failure")
+        self.assertEqual(self._send(unverified).status, "unverified")
+        recovered = trial(18)
+        self._ingest(recovered)
+        self.assertEqual(self._send(recovered).status, "already_reacted")
+        self.assertEqual(self.bridge.metrics()["offered"], 1)
+
+    def test_replayed_capture_cannot_invent_three_failures_and_a_comeback(self):
+        first = trial(1, outcome="failure")
+        replay1 = replace(trial(2, outcome="failure"),
+                          evidence_sha256=first.evidence_sha256)
+        replay2 = replace(trial(3, outcome="failure"),
+                          evidence_sha256=first.evidence_sha256)
+        for event in (first, replay1, replay2):
+            self._ingest(event)
+        self.assertEqual(self._send(first).status, "deliberate_silence")
+        for duplicate in (replay1, replay2):
+            self.assertEqual(self._send(duplicate).status, "unverified")
+        success = trial(18)
+        self._ingest(success)
+        self.assertTrue(self._send(success).reaction_queued)
+        plan = self.stage.prepare(now=518)
+        self.assertIsNotNone(plan)
+        self.assertIn("one action succeeded", plan.context_record)
+        self.assertNotIn("three recent attempts", plan.context_record)
+        self.assertEqual(self.bridge.metrics()["verified"], 2)
+
+    def test_old_signed_failures_cannot_invent_a_fresh_comeback(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        stale = trial(2, outcome="failure")
+        self._ingest(stale)
+        self.assertEqual(
+            self._send(stale, at=NOW + 8, clock=508).status, "stale"
+        )
+        for n in (9, 10):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovered = trial(22)
+        self._ingest(recovered)
+        self.assertEqual(self._send(recovered).status, "already_reacted")
+
+    def test_comeback_is_one_per_episode_not_repeated_emotional_spam(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovered = trial(18)
+        self._ingest(recovered)
+        self.assertTrue(self._send(recovered).reaction_queued)
+        for n in (19, 20, 21):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        repeat = trial(40)
+        self._ingest(repeat)
+        self.assertEqual(self._send(repeat).status, "already_reacted")
+        self.assertEqual(self.bridge.metrics()["offered"], 2)
+
+    def test_recovery_outside_sixty_second_streak_is_not_new_success(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        late = trial(90)
+        self._ingest(late)
+        self.assertEqual(self._send(late).status, "already_reacted")
+
 
     def test_failure_reaction_once_only_even_if_more_failures(self):
         for n in range(1, 6):
@@ -242,6 +351,94 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertTrue(first.reaction_queued)
         self.assertFalse(second.practice_recorded)
         self.assertEqual(self.bridge.metrics()["verified"], 1)
+
+    def test_delayed_earlier_success_cannot_erase_real_comeback(self):
+        # A signed success from BEFORE three failures arrives after them.
+        # Delivery order is not evidence of chronological recovery.
+        first = trial(1)
+        self._ingest(first)
+        self.assertTrue(self._send(first).reaction_queued)
+        for n in (2, 3, 4):
+            failure = trial(n, outcome="failure")
+            self._ingest(failure)
+            self._send(failure, at=NOW + 4, clock=504)
+        delayed = trial(5, observed=NOW + 1)
+        self._ingest(delayed)
+        result = self._send(delayed, at=NOW + 4, clock=504)
+        self.assertEqual(result.status, "out_of_order")
+        self.assertTrue(result.practice_recorded)
+        self.assertFalse(result.reaction_queued)
+
+        # The actual later success is the only chronological recovery.
+        recovered = trial(18)
+        self._ingest(recovered)
+        result = self._send(recovered)
+        self.assertEqual(result.status, "queued_for_review")
+        self.assertTrue(result.reaction_queued)
+        plan = self.stage.prepare(now=518)
+        self.assertIsNotNone(plan)
+        self.assertIn("then this one action succeeded", plan.context_record)
+
+    def test_delayed_failure_cannot_invent_a_3_failure_streak(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        late_failure = trial(4, outcome="failure")
+        self._ingest(late_failure)
+        self.assertEqual(self._send(late_failure).status, "deliberate_silence")
+        for n in (2, 3):
+            delayed = trial(n, outcome="failure")
+            self._ingest(delayed)
+            result = self._send(delayed, at=NOW + 4, clock=504)
+            self.assertEqual(result.status, "out_of_order")
+            self.assertTrue(result.practice_recorded)
+        # A genuinely new failure is only the second chronologically ordered one.
+        newer = trial(5, outcome="failure")
+        self._ingest(newer)
+        self.assertEqual(self._send(newer).status, "deliberate_silence")
+        recovered = trial(18)
+        self._ingest(recovered)
+        self.assertEqual(self._send(recovered).status, "already_reacted")
+        self.assertEqual(self.bridge.metrics()["out_of_order"], 2)
+
+    def test_equal_timestamp_cannot_prove_a_new_ordered_attempt(self):
+        first = trial(1, outcome="failure")
+        self._ingest(first)
+        self._send(first)
+        concurrent = trial(2, outcome="success", observed=NOW + 1)
+        self._ingest(concurrent)
+        decision = self._send(concurrent, at=NOW + 2, clock=502)
+        self.assertEqual(decision.status, "out_of_order")
+        self.assertTrue(decision.practice_recorded)
+        self.assertFalse(decision.reaction_queued)
+        self.assertEqual(self.bridge.metrics()["out_of_order"], 1)
+
+    def test_order_is_scoped_per_curated_action_not_global(self):
+        left = trial(3, action="jump_left")
+        right = trial(4, action="jump_right", observed=NOW + 2)
+        self._ingest(left)
+        self._ingest(right)
+        self.assertTrue(self._send(left).reaction_queued)
+        later_delivery = self._send(right, at=NOW + 3, clock=503)
+        self.assertTrue(later_delivery.practice_recorded)
+        self.assertEqual(later_delivery.status, "cooldown")
+        self.assertEqual(self.bridge.metrics()["out_of_order"], 0)
+
+    def test_new_episode_clears_live_event_time_watermark(self):
+        first = trial(1)
+        self._ingest(first)
+        self.assertTrue(self._send(first).reaction_queued)
+        self.bridge.shutdown()
+        self.episode.start(owner_approved=True, now_unix_s=NOW + 1)
+        self.stage.enable(owner_approved=True, mode="cat")
+        self.bridge.enable(owner_approved=True, broadcast_approved=True)
+        # New distinct capture at the same wall-second belongs to new
+        # explicitly approved session, not the prior episode's cue fence.
+        new_session = trial(2, observed=NOW + 1)
+        self._ingest(new_session)
+        result = self._send(new_session, at=NOW + 1, clock=501)
+        self.assertTrue(result.reaction_queued)
+        self.assertEqual(self.bridge.metrics()["out_of_order"], 0)
 
     def test_metrics_cannot_reveal_raw_game_secrets(self):
         item = trial(1, action="private_mission")
