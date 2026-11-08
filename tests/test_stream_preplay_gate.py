@@ -184,5 +184,111 @@ class PreplayGateTests(unittest.TestCase):
                                           audible_confirmed=True))
 
 
+    def test_unreviewed_timeout_reclaimed_on_next_preflight(self):
+        old_intent = self.plan()
+        self.turns.observe(VoiceFrame(12260, 30, 0, 0, True))
+        decision = self.gate.preflight(
+            now_s=12.26, star_speaking=False, gameplay_critical=False)
+        self.assertEqual(decision.status, "quiet")
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
+        self.assertEqual(self.gate.lifecycle_metrics()["unreviewed_candidate"], 0)
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+        self.assertFalse(self.gate.settle(
+            old_intent, now_s=12.26, audible_confirmed=True))
+        self.assertEqual(self.director.metrics()["completed"], 0)
+
+    def test_unreviewed_timeout_reclaimed_when_revalidated_too_late(self):
+        old_intent = self.plan()
+        self.turns.observe(VoiceFrame(12260, 30, 0, 0, True))
+        result = self.recheck(old_intent, now=12.26)
+        self.assertEqual((result.status, result.reason),
+                         ("denied", "speech_plan_timed_out"))
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+        self.assertEqual(self.recheck(old_intent, now=12.26).status, "denied")
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
+
+    def test_expiry_frees_capacity_for_new_legitimate_question(self):
+        old = self.plan()
+        self.turns.observe(VoiceFrame(12260, 30, 0, 0, True))
+        self.assertEqual(self.gate.preflight(
+            now_s=12.26, star_speaking=False, gameplay_critical=False).status,
+            "quiet")
+        self.assertTrue(self.director.offer(
+            StreamSignal("new-question", "viewer_question", 12.26,
+                         "Can you explain this move?", "viewer2", "reported"),
+            now=12.26))
+        next_plan = self.gate.preflight(
+            now_s=12.26, star_speaking=False, gameplay_critical=False)
+        self.assertEqual(next_plan.status, "candidate")
+        self.assertIsNot(next_plan.intent, old)
+        self.assertEqual(next_plan.intent.signal_id, "new-question")
+
+    def test_stale_vad_reap_does_not_claim_permission_or_silence(self):
+        self.plan()
+        decision = self.gate.preflight(
+            now_s=12.27, star_speaking=False, gameplay_critical=False)
+        self.assertEqual((decision.status, decision.reason),
+                         ("hold", "vad_missing_or_stale"))
+        self.assertFalse(decision.authorizes_playback)
+        self.assertFalse(decision.authorizes_broadcast)
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
+        self.assertEqual(self.director.metrics()["completed"], 0)
+
+    def test_reviewed_lease_is_never_watchdog_reaped_without_host_receipt(self):
+        intent = self.plan()
+        self.assertEqual(self.recheck(intent, now=12.05).status, "reviewed")
+        self.turns.observe(VoiceFrame(13000, 30, 0, 0, True))
+        self.assertEqual(self.gate.preflight(
+            now_s=13.0, star_speaking=False, gameplay_critical=False).reason,
+            "awaiting_previous_playout_receipt")
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 0)
+        self.assertEqual(self.gate.lifecycle_metrics()["awaiting_host_receipt"], 1)
+        # Only the trusted physical host can attest it stopped/never played.
+        self.assertTrue(self.gate.settle(
+            intent, now_s=13.01, audible_confirmed=False))
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+        self.assertEqual(self.gate.lifecycle_metrics()["awaiting_host_receipt"], 0)
+
+    def test_expiry_never_manufactures_spoken_cooldown(self):
+        self.plan()
+        self.turns.observe(VoiceFrame(12260, 30, 0, 0, True))
+        self.gate.preflight(now_s=12.26, star_speaking=False,
+                            gameplay_critical=False)
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertEqual(self.director.metrics()["proactive_recent_60s"], 0)
+        self.assertEqual(self.gate.lifecycle_metrics()["awaiting_host_receipt"], 0)
+
+    def test_invalid_revalidation_does_not_consume_candidate(self):
+        intent = self.plan()
+        for wrong in (float("nan"), float("inf"), True, "12.5"):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                self.recheck(intent, now=wrong)
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 0)
+        self.assertEqual(self.recheck(intent, now=12.03).status, "reviewed")
+
+    def test_unreviewed_recovery_is_atomic_under_parallel_preflights(self):
+        from concurrent.futures import ThreadPoolExecutor
+        self.plan()
+        self.turns.observe(VoiceFrame(12260, 30, 0, 0, True))
+        def attempt(_):
+            return self.gate.preflight(
+                now_s=12.26, star_speaking=False, gameplay_critical=False)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(attempt, range(16)))
+        self.assertTrue(all(item.status == "quiet" for item in outcomes))
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+
+    def test_disable_does_not_generate_phantom_recovery(self):
+        self.plan()
+        self.gate.disable()
+        decision = self.gate.preflight(
+            now_s=15.0, star_speaking=False, gameplay_critical=False)
+        self.assertEqual(decision.status, "disabled")
+        self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 0)
+
+
+
 if __name__ == "__main__":
     unittest.main()
