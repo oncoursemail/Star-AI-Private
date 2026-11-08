@@ -112,6 +112,16 @@ def test_good_differential_is_advisory_only():
         b"",
         b"x" * 65537,
     ],
+    ids=[
+        "no_pcm",
+        "no_callbacks",
+        "one_peak",
+        "over_level",
+        "native_invalid",
+        "no_final_newline",
+        "empty",
+        "oversize",
+    ],
 )
 def test_no_false_positive(badpositive):
     with pytest.raises(ValueError):
