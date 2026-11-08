@@ -63,7 +63,9 @@ internal static class Program
             Console.WriteLine("{\"fixture_self_test\":\"pass\",\"audio_playback_started\":false}");
             return 0;
         }
-        if (args is not ["--play-test-tone", "--owner-approved"])
+        bool standalone = args is ["--play-test-tone", "--owner-approved"];
+        bool paired = args is ["--play-test-tone", "--owner-approved", "--paired-lead-in"];
+        if (!standalone && !paired)
         {
             Console.Error.WriteLine("positive tone playback requires exact authorized arguments");
             return 2;
@@ -71,8 +73,9 @@ internal static class Program
         if (!OperatingSystem.IsWindows()) return 3;
         try
         {
-            // Lets the separately launched process-loopback observer activate first.
-            Thread.Sleep(600);
+            // Two independent capture observers need time to attach before
+            // the *paired* experiment begins. Standalone timing is unchanged.
+            Thread.Sleep(paired ? 1800 : 600);
             using var player = new WaveOut();
             player.Init(new FiniteTone());
             player.Play();

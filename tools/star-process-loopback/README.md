@@ -71,6 +71,43 @@ Use the silent negative control separately; neither control is a substitute
 for a signed production Star speech process or a complete nonbroadcast
 interruption-and-OBS rehearsal.
 
+## Differential process-tree isolation check (new; owner-only, **audible**)
+
+The next gate is stronger than standalone positive and silent tests: two
+**concurrent**, independent native process-loopback captures of *fresh child
+processes*. One child plays the quiet short tone, while the other remains
+deliberately silent. A private offline JSONL auditor accepts a **compatible
+trace pair** only if it sees both healthy, nonzero tone PCM activity **and**
+healthy zero-amplitude PCM callbacks in the unrelated child capture.
+Missing negative-control callbacks are *inconclusive*, not proof of isolation.
+
+This experiment requires the locally installed **.NET 9 SDK**, **Python
+3.12+** and both opt-ins, because a tone can be audible:
+
+```powershell
+.\tools\star-process-loopback\private-isolation-probe.ps1 -OwnerApproved -AllowAudibleTone -DurationMs 3000
+```
+
+Both native observers and all fixture executables run in temporary
+owner-controlled directories and are terminated/removed afterward.
+The script only captures its own two children (not arbitrary PIDs). The
+auditor `python -m star.process_loopback_isolation_audit` is read-only,
+requires owner approval, and rejects links, malformed/incomplete traces,
+unexpected nonzero activity in the silent process, and untrusted flags.
+It does not store PCM. Diagnostic JSONL counters are temporary and never
+forwarded to viewers or models. **CI checks source, synthetic traces,
+double-opt-in denial and builds only; it never performs this experiment.**
+
+The report deliberately marks `capture_source_identity_attested`,
+`physical_silence_verified`, `speech_or_interruption_verified`,
+`broadcast_authorized` and `gameplay_authorized` as **false**:
+raw JSONL cannot prove process provenance, physical sound or safe speech
+cancellation. The host process handles provide a separate local PID trust
+boundary. Independent owner-device acoustic and queue-state checks are
+still required.
+
+See the [cross-process research and performance plan](../../docs/research/STAR_20261108_CROSS_PROCESS_AUDIO_ISOLATION_AND_VTUBER_SPEED.md).
+
 ## Owner-supervised local voice test (explicit, bounded)
 
 ```powershell
@@ -92,7 +129,7 @@ Even though the CLI emits no audio bytes, its coarse activity timing can expose 
 3. Require post-stop observations against the same trusted capture/route generation, independent audio queue drained and avatar neutral, then review an OBS **recording-only**, nonbroadcast rehearsal.
 4. Confirm normal gameplay/OBS FPS, endpoint latency, GPU VRAM headroom and speech quality. Never turn this test's diagnostic output into authority to stream.
 
-No live process capture or Windows-native smoke test has yet been performed by this commit.
+A silent native-activation check on an owner Windows device was performed on November 7; neither this paired experiment nor real STAR speech, positive PCM playback, or audio interruption has yet been verified on that device.
 
 Sources: [Microsoft process loopback](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params), [NAudio 3 WasapiRecorder](https://naudio.github.io/NAudio/docs/WasapiRecorder.html), [NuGet NAudio.Wasapi 3.3.0](https://www.nuget.org/packages/NAudio.Wasapi/3.3.0).
 
