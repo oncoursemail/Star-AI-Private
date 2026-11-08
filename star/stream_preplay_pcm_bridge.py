@@ -17,6 +17,7 @@ quarantined until manual device recovery.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from threading import RLock
 
 from .stream_director import SpeechIntent
@@ -44,16 +45,23 @@ class StreamPreplayPCMBridge:
     def __init__(
         self, gate: StreamPreplayGate, sink: LocalEpochPCMSink, *,
         max_turn_pcm_ms: int = 30_000,
+        max_turn_wall_ms: int = 45_000,
     ) -> None:
         if type(gate) is not StreamPreplayGate or type(sink) is not LocalEpochPCMSink:
             raise TypeError("existing trusted preplay gate and PCM sink required")
         if type(max_turn_pcm_ms) is not int or not 1_000 <= max_turn_pcm_ms <= 60_000:
             raise ValueError("per-turn PCM budget must be 1..60 seconds")
+        if type(max_turn_wall_ms) is not int or not 1_000 <= max_turn_wall_ms <= 120_000:
+            raise ValueError("wall-clock turn budget must be 1..120 seconds")
+        self._max_turn_wall_ms = max_turn_wall_ms
         self._max_turn_pcm_ms = max_turn_pcm_ms
         # PCM is 16-bit mono; an integer byte budget avoids float rounding
         # errors and does not rely on a model-estimated speaking duration.
         self._max_pcm_bytes = sink.sample_rate * max_turn_pcm_ms // 500
         self._turn_pcm_bytes = 0
+        self._turn_started_s: float | None = None
+        self._last_watchdog_s: float | None = None
+        self._watchdog_stops = 0
         self._budget_stops = 0
         self._spoken_completions = 0
         self._gate = gate
@@ -104,6 +112,8 @@ class StreamPreplayPCMBridge:
             self._intent = review.intent
             self._epoch = epoch
             self._turn_pcm_bytes = 0
+            self._turn_started_s = float(now_s)
+            self._last_watchdog_s = float(now_s)
             return PCMBridgeAdvice("ready", "reviewed_intent_and_unique_native_epoch")
 
     def submit(self, intent: SpeechIntent, *, epoch: str, pcm16: bytes) -> bool:
@@ -197,6 +207,8 @@ class StreamPreplayPCMBridge:
             self._intent = None
             self._epoch = None
             self._turn_pcm_bytes = 0
+            self._turn_started_s = None
+            self._last_watchdog_s = None
             self._stopping = False
             self._enabled = True
             self._spoken_completions += 1
@@ -263,9 +275,51 @@ class StreamPreplayPCMBridge:
             self._intent = None
             self._epoch = None
             self._turn_pcm_bytes = 0
+            self._turn_started_s = None
+            self._last_watchdog_s = None
             self._stopping = False
             self._stopped += 1
             return PCMBridgeAdvice("quiet", "native_epoch_drained_and_planner_released")
+
+    def watchdog(self, *, now_s: float) -> PCMBridgeAdvice:
+        """Poll from a trusted host clock, off the audio callback thread.
+
+        Prevent a stalled TTS generator or forgotten final playout receipt
+        from monopolizing Star's dialogue forever. A timeout requests a
+        PHYSICAL stop, never treats a timeout as silence or as spoken output,
+        and leaves the reviewed intent quarantined until a separate native
+        output-drain receipt. Host must poll while a turn is active; this
+        method does not launch a background timer or bypass authorization.
+        """
+        if type(now_s) not in (int, float):
+            raise ValueError("trusted monotonic seconds required")
+        try:
+            now = float(now_s)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError("invalid monotonic watchdog time") from exc
+        if not math.isfinite(now) or not 0 <= now <= 1e10:
+            raise ValueError("invalid monotonic watchdog time")
+        with self._lock:
+            if self._intent is None:
+                return PCMBridgeAdvice("disabled", "no_active_native_turn")
+            if self._stopping or self._faulted:
+                return PCMBridgeAdvice("held", "native_stop_or_manual_recovery_outstanding")
+            started = self._turn_started_s
+            last = self._last_watchdog_s
+            if started is None or last is None:
+                self._faulted = True
+                self.disable()
+                return PCMBridgeAdvice("fault", "native_turn_clock_missing")
+            if now < last:
+                raise ValueError("watchdog monotonic clock reversed")
+            self._last_watchdog_s = now
+            if (now - started) * 1000 < self._max_turn_wall_ms:
+                return PCMBridgeAdvice("ready", "native_turn_within_wallclock_budget")
+            self._watchdog_stops += 1
+            stopped = self.disable()
+            if stopped.state == "stop_requested":
+                return PCMBridgeAdvice("stop_requested", "native_turn_wallclock_timeout")
+            return stopped
 
     def metrics(self) -> dict[str, int | bool]:
         with self._lock:
@@ -278,6 +332,8 @@ class StreamPreplayPCMBridge:
                 "spoken_completions": self._spoken_completions,
                 "pcm_rejected": self._rejected,
                 "utterance_budget_stops": self._budget_stops,
+                "turn_wallclock_watchdog_stops": self._watchdog_stops,
+                "max_turn_wall_ms": self._max_turn_wall_ms,
                 "max_turn_pcm_ms": self._max_turn_pcm_ms,
                 "turn_pcm_ms_submitted": (
                     self._turn_pcm_bytes * 500 // self._sink.sample_rate

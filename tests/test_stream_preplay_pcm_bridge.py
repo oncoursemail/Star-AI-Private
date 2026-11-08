@@ -326,5 +326,68 @@ class PCMBridgeTests(unittest.TestCase):
                                       native_output_flushed=True)
 
 
+    def test_watchdog_stops_hung_tts_without_marking_speech_complete(self):
+        self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.admit().state, "ready")
+        self.assertEqual(self.bridge.watchdog(now_s=20.0).state, "ready")
+        self.assertEqual(self.bridge.watchdog(now_s=56.0).state, "ready")
+        overdue = self.bridge.watchdog(now_s=58.0)
+        self.assertEqual(overdue.state, "stop_requested")
+        self.assertEqual(overdue.reason, "native_turn_wallclock_timeout")
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(self.bridge.metrics()["turn_wallclock_watchdog_stops"], 1)
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertEqual(self.bridge.watchdog(now_s=59.0).state, "held")
+        self.assertEqual(self.speaker.stops, 1)
+        with self.assertRaises(RuntimeError):
+            self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.bridge.attest_quiet(
+            self.intent, epoch="voice_1", now_s=58.2,
+            host_verified=True, native_output_flushed=True).state, "quiet")
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertFalse(self.bridge.metrics()["native_epoch_active"])
+        self.assertEqual(self.bridge.watchdog(now_s=70.0).state, "disabled")
+
+    def test_watchdog_clock_and_configuration_are_strict(self):
+        for invalid in (0, True, 999, 120001, "45000", 3.0, None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                StreamPreplayPCMBridge(
+                    self.gate, self.sink, max_turn_wall_ms=invalid)
+        self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.admit().state, "ready")
+        for invalid in (float("nan"), float("inf"), -1, 10**1000, None, True, "20"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.bridge.watchdog(now_s=invalid)
+        self.assertEqual(self.bridge.watchdog(now_s=20.0).state, "ready")
+        with self.assertRaises(ValueError):
+            self.bridge.watchdog(now_s=19.0)
+        self.assertFalse(self.bridge.metrics()["faulted"])
+        self.assertEqual(self.speaker.stops, 0)
+
+    def test_watchdog_timeouts_include_normal_pcm_and_stop_failures(self):
+        self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.admit().state, "ready")
+        self.assertTrue(self.bridge.submit(
+            self.intent, epoch="voice_1", pcm16=b"aa"))
+        self.speaker.fail_stop = True
+        self.assertEqual(self.bridge.watchdog(now_s=59.0).state, "fault")
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertTrue(self.bridge.metrics()["faulted"])
+        with self.assertRaises(RuntimeError):
+            self.bridge.enable(owner_approved=True)
+
+    def test_watchdog_uses_elapsed_time_not_pcm_duration(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, max_turn_wall_ms=1_000)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="short_wall", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertEqual(bridge.watchdog(now_s=13.0).state, "ready")
+        self.assertEqual(bridge.watchdog(now_s=13.1).state, "stop_requested")
+        self.assertEqual(bridge.metrics()["turn_pcm_ms_submitted"], 0)
+        self.assertEqual(bridge.metrics()["turn_wallclock_watchdog_stops"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
