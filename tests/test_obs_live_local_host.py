@@ -130,6 +130,7 @@ def ready():
         load_reader=sensor,
         process_reader=lambda: list(identity),
         connect=lambda port, timeout: socket,
+        listener_check=lambda pid, port: True,
         clock=clock,
         token=lambda length: f"obs{next(serial):020d}",
         system_name=lambda: "Windows",
@@ -270,3 +271,42 @@ def test_rearm_requires_distinct_socket_epoch_and_stale_success_cannot_survive()
     with pytest.raises(RuntimeError):
         host.open(owner_approved=True, obs_pid=123, obs_created_unix_s=12345, password="secret")
     assert host.recommend().profile == "disabled"
+
+
+def test_socket_listener_owned_by_different_process_revokes():
+    host, socket, *_ = armed()
+    assert host.sample().status == "pending"
+    host._listener_check = lambda pid, port: False
+    assert host.sample().status == "rejected"
+    assert socket.closed
+    assert host.recommend().profile == "disabled"
+
+
+def test_real_listener_check_requires_exact_private_binding(monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from star.obs_live_local_host import _obs_listener_is_loopback_owned
+
+    psutil = ModuleType("psutil")
+    psutil.CONN_LISTEN = "LISTEN"
+    monkeypatch.setitem(sys.modules, "psutil", psutil)
+
+    def fake(ip, pid=123, status="LISTEN", port=4455):
+        return SimpleNamespace(
+            pid=pid,
+            status=status,
+            laddr=SimpleNamespace(ip=ip, port=port),
+        )
+
+    for candidate, allowed in (
+        ([fake("127.0.0.1")], True),
+        ([fake("0.0.0.0")], False),
+        ([fake("::1")], False),
+        ([fake("127.0.0.1", pid=999)], False),
+        ([fake("127.0.0.1"), fake("0.0.0.0")], False),
+        ([fake("127.0.0.1", port=8000)], False),
+        ([fake("127.0.0.1", status="ESTABLISHED")], False),
+        ([], False),
+    ):
+        psutil.net_connections = lambda kind: candidate
+        assert _obs_listener_is_loopback_owned(123, 4455) is allowed

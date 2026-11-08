@@ -38,6 +38,23 @@ _MAX_PROCESSES = 32768
 _MAX_REQUEST_IDS = 16384
 
 
+def _obs_listener_is_loopback_owned(pid: int, port: int) -> bool:
+    """Match a unique IPv4-loopback listening socket to the authorized OBS PID.
+
+    OS socket-table errors propagate; the caller fails closed on unknown
+    ownership. Wildcard/public listeners and duplicate bindings are rejected.
+    """
+    import psutil
+
+    matching = []
+    for row in psutil.net_connections(kind="tcp"):
+        if row.status == psutil.CONN_LISTEN and row.laddr and row.laddr.port == port:
+            matching.append(row)
+            if len(matching) > 1:
+                return False
+    return len(matching) == 1 and matching[0].pid == pid and matching[0].laddr.ip == "127.0.0.1"
+
+
 class ObsLoopbackLiveHost:
     """Local authenticated OBS readings joined to real, host-owned load data.
 
@@ -55,6 +72,7 @@ class ObsLoopbackLiveHost:
         pipeline: ObsLiveLoadPipeline | None = None,
         process_reader: Callable[[], Iterable[ProcessWitness]] = enumerate_windows_processes,
         connect: Callable[[int, float], _WebSocket] = _local_connection,
+        listener_check: Callable[[int, int], bool] = _obs_listener_is_loopback_owned,
         clock: Callable[[], float] = time.monotonic,
         token: Callable[[int], str] = secrets.token_hex,
         system_name: Callable[[], str] = platform.system,
@@ -65,6 +83,7 @@ class ObsLoopbackLiveHost:
                 load_reader,
                 process_reader,
                 connect,
+                listener_check,
                 clock,
                 token,
                 system_name,
@@ -77,6 +96,7 @@ class ObsLoopbackLiveHost:
         self._load_reader = load_reader
         self._process_reader = process_reader
         self._connect = connect
+        self._listener_check = listener_check
         self._clock = clock
         self._token = token
         self._system_name = system_name
@@ -84,12 +104,15 @@ class ObsLoopbackLiveHost:
         self._sock: _WebSocket | None = None
         self._pid: int | None = None
         self._created: float | None = None
+        self._port: int | None = None
         self._used_ids: set[str] = set()
         self._counts = dict(opened=0, samples=0, pending=0, accepted=0, revoked=0)
 
     def _origin_matches(self) -> bool:
         """Independently check exact PID, birth time and executable name."""
-        if self._pid is None or self._created is None:
+        if self._pid is None or self._created is None or self._port is None:
+            return False
+        if self._listener_check(self._pid, self._port) is not True:
             return False
         matches = 0
         for i, row in enumerate(self._process_reader()):
@@ -127,6 +150,7 @@ class ObsLoopbackLiveHost:
         self._sock = None
         self._pid = None
         self._created = None
+        self._port = None
         self._used_ids.clear()
         if sock is not None:
             try:
@@ -172,6 +196,7 @@ class ObsLoopbackLiveHost:
                 raise RuntimeError("OBS live observation requires an authorized Windows host")
             self._pid = obs_pid
             self._created = float(obs_created_unix_s)
+            self._port = port
             self._used_ids.clear()
             sock: _WebSocket | None = None
             try:
