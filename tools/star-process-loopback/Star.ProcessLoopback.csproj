@@ -7,7 +7,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
+  <!-- The SDK recursively includes *.cs: keep the independent playback fixture
+       out of the process-capture executable's compilation. -->
   <ItemGroup>
+    <Compile Remove="tone-fixture/**/*.cs" />
     <PackageReference Include="NAudio.Wasapi" Version="3.3.0" />
   </ItemGroup>
 </Project>

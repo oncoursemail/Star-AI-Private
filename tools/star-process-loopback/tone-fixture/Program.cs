@@ -17,7 +17,13 @@ internal sealed class FiniteTone : IWaveProvider
         if (buffer is null || offset < 0 || count < 0 ||
             offset > buffer.Length || count > buffer.Length - offset)
             throw new ArgumentException("invalid audio destination");
-        int frames = Math.Min(count / (Channels * 2), (int)(TotalFrames - _frame));
+        return Read(buffer.AsSpan(offset, count));
+    }
+
+    // NAudio 3 requires both span-based and byte-array provider methods.
+    public int Read(Span<byte> buffer)
+    {
+        int frames = Math.Min(buffer.Length / (Channels * 2), (int)(TotalFrames - _frame));
         for (int i = 0; i < frames; i++)
         {
             long frame = _frame++;
@@ -25,9 +31,9 @@ internal sealed class FiniteTone : IWaveProvider
             // Peak amplitude is ~0.03 of full scale, with 10ms fade in/out.
             short sample = (short)Math.Round(Math.Sin(2 * Math.PI * 440 * frame / Rate) *
                                              0.03 * fade * short.MaxValue);
-            int start = offset + i * Channels * 2;
-            BinaryPrimitives.WriteInt16LittleEndian(buffer.AsSpan(start, 2), sample);
-            BinaryPrimitives.WriteInt16LittleEndian(buffer.AsSpan(start + 2, 2), sample);
+            int start = i * Channels * 2;
+            BinaryPrimitives.WriteInt16LittleEndian(buffer.Slice(start, 2), sample);
+            BinaryPrimitives.WriteInt16LittleEndian(buffer.Slice(start + 2, 2), sample);
         }
         return frames * Channels * 2;
     }
