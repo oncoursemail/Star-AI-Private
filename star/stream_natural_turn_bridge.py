@@ -1,7 +1,8 @@
 """Host-only composer of verified quiet, game urgency, and stream event priority.
 
 No microphones, models, PCM, OBS, game input, broadcasts or viewer chat are
-accessed. Decisions are advisory. Host must authenticate owner VAD, attest
+accessed. An optional trusted resource governor gates optional speech using
+fresh host-derived OBS/game telemetry. Decisions are advisory. Host must authenticate owner VAD, attest
 actual playback, physically stop/flush PCM, and neutralize avatar motion.
 Off by default, fail closed on stale VAD and unconfirmed physical stop.
 """
@@ -13,6 +14,7 @@ from threading import RLock
 from typing import cast
 
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
+from .stream_load_governor import StreamLoadGovernor
 from .stream_turntaking import TurnTakingGate, VoiceFrame
 
 
@@ -49,14 +51,20 @@ class NaturalTurnBridge:
     def __init__(
         self, *, director: StreamDirector | None = None,
         turn_gate: TurnTakingGate | None = None,
+        load_governor: StreamLoadGovernor | None = None,
     ) -> None:
         if director is not None and type(director) is not StreamDirector:
             raise TypeError("expected StreamDirector")
         if turn_gate is not None and type(turn_gate) is not TurnTakingGate:
             raise TypeError("expected TurnTakingGate")
+        if load_governor is not None and type(load_governor) is not StreamLoadGovernor:
+            raise TypeError("expected trusted StreamLoadGovernor")
         self._lock = RLock()
         self._director = director if director is not None else StreamDirector()
         self._turn = turn_gate if turn_gate is not None else TurnTakingGate()
+        # Opt-in: bind the real producer, never accept model-supplied advice.
+        # Its host-monotonic seconds must share this bridge's millisecond clock.
+        self._load_governor = load_governor
         self._enabled = False
         self._last_now_ms: float | None = None
         self._last_playout_active = False
@@ -199,9 +207,21 @@ class NaturalTurnBridge:
                     "hold", "audio_turn_" + turn.reason if turn.hold
                     else "star_already_speaking",
                 )
+            # The old bridge omitted this already-supported director gate.
+            # Reading the governor HERE (rather than caching a past healthy
+            # profile) makes stale, disconnected or overloaded OBS telemetry
+            # suppress optional speech BEFORE launching any TTS work.
+            load_advice = None
+            if self._load_governor is not None:
+                try:
+                    load_advice = self._load_governor.recommend(now_s=now / 1000)
+                except ValueError:
+                    self._pending_intent = None
+                    return NaturalTurnDecision("hold", "resource_clock_invalid")
             intent = self._director.propose(
                 now=now / 1000, voice_speaking=False,
                 viewer_speaking=False, gameplay_critical=False,
+                load_advice=load_advice,
             )
             if intent is None:
                 self._pending_intent = None

@@ -267,3 +267,115 @@ def test_owner_event_or_new_guest_voice_invalidates_pending_tts():
     assert intent is not None
     host.offer(signal(850, signal_id="danger", kind="game_danger"), now_ms=850)
     assert not host.complete(intent, now_ms=860, host_confirmed_spoken=True)
+
+
+def load_sample(sample_id: str, measured_at_s: float, *,
+                render_missed_pct: float = 0.0):
+    from star.stream_load_governor import StreamLoadSample
+    return StreamLoadSample(
+        sample_id=sample_id, measured_at_s=measured_at_s,
+        game_p95_frame_ms=12.0, game_target_fps=60.0,
+        obs_render_missed_pct=render_missed_pct,
+        obs_encode_skipped_pct=0.0, obs_network_dropped_pct=0.0,
+        gpu_vram_used_mb=3800.0, gpu_vram_total_mb=8192.0,
+        tts_first_audio_p95_ms=190.0,
+    )
+
+
+def load_governor(*, warmed: bool = True):
+    from star.stream_load_governor import StreamLoadGovernor
+    governor = StreamLoadGovernor()
+    governor.enable(owner_approved=True)
+    if warmed:
+        for number, stamp in enumerate((0.1, 0.2, 0.39), start=1):
+            assert governor.ingest(
+                load_sample(f"normal_{number}", stamp),
+                now_s=stamp + .001, host_verified=True,
+            )
+        assert governor.recommend(now_s=.4).profile == "normal"
+    return governor
+
+
+def test_opt_in_governor_allows_verified_normal_load_and_mutes_on_obs_lag():
+    governor = load_governor()
+    host = NaturalTurnBridge(load_governor=governor)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    prepared = decide(host)
+    assert prepared.action == "prepare"
+    assert prepared.intent is not None
+    assert governor.ingest(
+        load_sample("severe_render_lag", 0.405, render_missed_pct=4.0),
+        now_s=0.406, host_verified=True,
+    )
+    assert governor.recommend(now_s=.41).profile == "critical"
+    suppressed = decide(host, 410)
+    assert suppressed.action == "hold"
+    assert suppressed.reason == "no_safe_event_due"
+    assert not host.complete(
+        prepared.intent, now_ms=415, host_confirmed_spoken=True,
+    )
+    # Real high-priority game danger can still be considered during OBS lag.
+    assert host.offer(signal(420, signal_id="danger", kind="game_danger"),
+                      now_ms=420)
+    urgent = decide(host, 420)
+    assert urgent.action == "prepare"
+    assert urgent.intent is not None
+    assert urgent.intent.kind == "game_danger"
+    assert not urgent.authorizes_playback
+
+
+def test_opt_in_governor_fails_quiet_without_fresh_authenticated_telemetry():
+    governor = load_governor(warmed=False)
+    host = NaturalTurnBridge(load_governor=governor)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    assert decide(host).reason == "no_safe_event_due"
+    # Three verified healthy samples are required, not one forged 'normal'.
+    assert governor.ingest(
+        load_sample("only_one", .405), now_s=.406, host_verified=True)
+    assert decide(host, 410).reason == "no_safe_event_due"
+
+
+def test_stale_stream_samples_revoke_prepared_speech_not_already_spoken():
+    governor = load_governor()
+    host = NaturalTurnBridge(load_governor=governor)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    old_plan = decide(host).intent
+    assert old_plan is not None
+    ready(host, at=4000)
+    assert decide(host, 4000).reason == "no_safe_event_due"
+    assert not host.complete(old_plan, now_ms=4010, host_confirmed_spoken=True)
+
+
+def test_backward_resource_clock_rejects_planning_and_drops_prepared_intent():
+    governor = load_governor()
+    host = NaturalTurnBridge(load_governor=governor)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    intent = decide(host).intent
+    assert intent is not None
+    # Advance resource producer's monotonic clock separately from this bridge.
+    assert governor.ingest(
+        load_sample("advanced_host_clock", 2.0),
+        now_s=2.001, host_verified=True,
+    )
+    held = decide(host, 405)
+    assert held.action == "hold"
+    assert held.reason == "resource_clock_invalid"
+    assert not host.complete(intent, now_ms=410, host_confirmed_spoken=True)
+
+
+def test_governor_must_be_exact_trusted_type_and_legacy_is_unchanged():
+    with pytest.raises(TypeError, match="trusted StreamLoadGovernor"):
+        NaturalTurnBridge(load_governor=object())
+    host = NaturalTurnBridge()
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    assert decide(host).action == "prepare"
