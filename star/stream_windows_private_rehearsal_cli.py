@@ -13,7 +13,7 @@ Run on the owner-controlled Windows machine:
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from itertools import islice
 import json
 import platform
@@ -21,6 +21,7 @@ import re
 import time
 from typing import Callable, Iterable
 
+from .stream_recording_disk_guard import RecordingDiskGuard
 from .stream_windows_rehearsal_preflight import (
     GpuHeadroom,
     ProcessWitness,
@@ -60,6 +61,11 @@ class PrivateRehearsalReadiness:
     obs_recording_verified: bool = False
     authorizes_gameplay: bool = False
     authorizes_broadcast: bool = False
+    # Readiness for an explicitly selected local recording volume. No file paths.
+    recording_storage_checked: bool = False
+    recording_storage_ready: bool = False
+    recording_free_mib: int | None = None
+    recording_required_mib: int | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
@@ -178,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--gpu-index", type=int, default=0)
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--interval-ms", type=int, default=500)
+    parser.add_argument("--recording-dir", type=str, default=None,
+                        help="optional existing local OBS recording output folder; never logged")
     args = parser.parse_args(argv)
     if not args.observe:
         print(_unavailable("explicit_observe_flag_required").to_json())
@@ -190,6 +198,30 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (PermissionError, TypeError, ValueError):
         result = _unavailable("invalid_probe_configuration")
+    # A normal process/GPU candidate is NOT a recording candidate. Rehearsals
+    # that save local output must explicitly probe their actual output volume.
+    if args.recording_dir is not None and result.status != "unavailable":
+        try:
+            disk = RecordingDiskGuard(args.recording_dir).check(owner_approved=True)
+        except (PermissionError, TypeError, ValueError):
+            disk = None
+        if disk is None:
+            result = replace(result, status="unavailable",
+                             reasons=result.reasons + ("recording_disk_probe_invalid",))
+        else:
+            reasons = result.reasons
+            if disk.status != "candidate":
+                reasons += (disk.reason,)
+            result = replace(
+                result,
+                status=(result.status if disk.status == "candidate"
+                        else "unavailable" if disk.status == "unavailable" else "deferred"),
+                reasons=reasons,
+                recording_storage_checked=True,
+                recording_storage_ready=disk.status == "candidate",
+                recording_free_mib=disk.free_mib,
+                recording_required_mib=disk.required_mib,
+            )
     print(result.to_json())
     return 0 if result.status == "candidate" else 1
 

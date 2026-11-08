@@ -13,6 +13,7 @@ from star.stream_windows_private_rehearsal_cli import (
     check_private_rehearsal_readiness,
     main,
 )
+from star.stream_recording_disk_guard import RecordingDiskAdvice
 from star.stream_windows_rehearsal_preflight import GpuHeadroom, ProcessWitness
 
 
@@ -263,6 +264,74 @@ class ReadinessTests(unittest.TestCase):
                 exit_code = main(["--observe"])
         self.assertEqual(exit_code, 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "candidate")
+
+
+    def test_cli_recording_guard_defers_low_disk_without_exposing_path(self) -> None:
+        ready = replace(run(), status="candidate")
+        class FakeGuard:
+            def __init__(self, directory: str):
+                self.directory = directory
+            def check(self, *, owner_approved: bool = False) -> RecordingDiskAdvice:
+                self_status = "deferred" if owner_approved else "unavailable"
+                return RecordingDiskAdvice(self_status, "insufficient_recording_disk_headroom",
+                                           1650, 10768)
+        output = io.StringIO()
+        with patch("star.stream_windows_private_rehearsal_cli.check_private_rehearsal_readiness",
+                   return_value=ready), patch(
+                       "star.stream_windows_private_rehearsal_cli.RecordingDiskGuard", FakeGuard):
+            with redirect_stdout(output):
+                exit_code = main(["--observe", "--recording-dir", "C:\\private\\recordings"])
+        self.assertEqual(exit_code, 1)
+        data = json.loads(output.getvalue())
+        self.assertEqual(data["status"], "deferred")
+        self.assertTrue(data["recording_storage_checked"])
+        self.assertFalse(data["recording_storage_ready"])
+        self.assertEqual(data["recording_free_mib"], 1650)
+        self.assertIn("insufficient_recording_disk_headroom", data["reasons"])
+        self.assertNotIn("private", output.getvalue())
+
+    def test_cli_recording_guard_advisory_is_not_recording_permission(self) -> None:
+        ready = replace(run(), status="candidate")
+        class FakeGuard:
+            def __init__(self, directory: str):
+                pass
+            def check(self, *, owner_approved: bool = False) -> RecordingDiskAdvice:
+                return RecordingDiskAdvice("candidate", "recording_storage_headroom_observed",
+                                           20000, 10768)
+        output = io.StringIO()
+        with patch("star.stream_windows_private_rehearsal_cli.check_private_rehearsal_readiness",
+                   return_value=ready), patch(
+                       "star.stream_windows_private_rehearsal_cli.RecordingDiskGuard", FakeGuard):
+            with redirect_stdout(output):
+                code = main(["--observe", "--recording-dir", "C:\\recordings"])
+        self.assertEqual(code, 0)
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["recording_storage_ready"])
+        self.assertFalse(result["obs_recording_verified"])
+        self.assertFalse(result["authorizes_broadcast"])
+        self.assertFalse(result["authorizes_gameplay"])
+
+    def test_cli_requires_observe_before_recording_disk_access(self) -> None:
+        output = io.StringIO()
+        with patch("star.stream_windows_private_rehearsal_cli.RecordingDiskGuard",
+                   side_effect=AssertionError("disk must not be touched")):
+            with redirect_stdout(output):
+                code = main(["--recording-dir", "C:\\recordings"])
+        self.assertEqual(code, 2)
+        self.assertFalse(json.loads(output.getvalue())["recording_storage_checked"])
+
+    def test_cli_disk_guard_configuration_error_does_not_leak(self) -> None:
+        ready = replace(run(), status="candidate")
+        output = io.StringIO()
+        with patch("star.stream_windows_private_rehearsal_cli.check_private_rehearsal_readiness",
+                   return_value=ready):
+            with redirect_stdout(output):
+                code = main(["--observe", "--recording-dir", "relative/secret"])
+        self.assertEqual(code, 1)
+        data = json.loads(output.getvalue())
+        self.assertEqual(data["status"], "unavailable")
+        self.assertIn("recording_disk_probe_invalid", data["reasons"])
+        self.assertNotIn("secret", output.getvalue())
 
 
 if __name__ == "__main__":
