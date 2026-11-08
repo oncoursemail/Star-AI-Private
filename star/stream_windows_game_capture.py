@@ -373,7 +373,8 @@ class WindowsGameCaptureHost:
                     worker_pixels = bytearray(resized.tobytes())
                     if len(worker_pixels) != worker_width * worker_height * 3:
                         raise ValueError("resize returned invalid RGB byte layout")
-                    if _clock_ms(self._clock) - end > MAX_CAPTURE_AGE_MS:
+                    resized_at = _clock_ms(self._clock)
+                    if resized_at < end or resized_at - end > MAX_CAPTURE_AGE_MS:
                         with self._lock:
                             self._counts["stale_discarded"] += 1
                         # No worker was started, but the vision reservation must
