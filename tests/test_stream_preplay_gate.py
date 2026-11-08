@@ -280,6 +280,67 @@ class PreplayGateTests(unittest.TestCase):
         self.assertEqual(self.gate.lifecycle_metrics()["expired_unreviewed"], 1)
         self.assertEqual(self.director.metrics()["abandoned"], 1)
 
+    def test_disable_after_review_blocks_restart_until_host_drained(self):
+        intent = self.plan()
+        self.assertEqual(self.recheck(intent).status, "reviewed")
+        self.gate.disable()
+        self.assertEqual(self.gate.lifecycle_metrics()["restart_quarantined"], 1)
+        self.assertEqual(self.gate.preflight(
+            now_s=12.10, star_speaking=False,
+            gameplay_critical=False).status, "disabled")
+        with self.assertRaisesRegex(RuntimeError, "physical_audio_drain_receipt"):
+            self.gate.enable(owner_approved=True)
+        self.assertFalse(self.gate.acknowledge_host_drain(
+            intent, now_s=12.12, host_verified=False, audio_drained=True))
+        self.assertFalse(self.gate.acknowledge_host_drain(
+            intent, now_s=12.12, host_verified=True, audio_drained=False))
+        self.assertFalse(self.gate.acknowledge_host_drain(
+            object(), now_s=12.12, host_verified=True, audio_drained=True))
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertTrue(self.gate.acknowledge_host_drain(
+            intent, now_s=12.12, host_verified=True, audio_drained=True))
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+        self.assertFalse(self.gate.acknowledge_host_drain(
+            intent, now_s=12.12, host_verified=True, audio_drained=True))
+        self.gate.enable(owner_approved=True)
+        self.assertEqual(self.gate.lifecycle_metrics()["restart_quarantined"], 0)
+        self.assertFalse(self.gate.settle(
+            intent, now_s=12.12, audible_confirmed=True))
+        self.assertEqual(self.director.metrics()["completed"], 0)
+
+    def test_unreviewed_disable_abandons_without_restart_quarantine(self):
+        intent = self.plan()
+        self.gate.disable()
+        self.assertEqual(self.gate.lifecycle_metrics()["restart_quarantined"], 0)
+        self.assertEqual(self.director.metrics()["abandoned"], 1)
+        self.gate.enable(owner_approved=True)
+        self.assertFalse(self.gate.settle(
+            intent, now_s=12.10, audible_confirmed=True))
+        self.assertEqual(self.director.metrics()["completed"], 0)
+
+    def test_repeated_disable_does_not_erase_physical_stop_requirement(self):
+        intent = self.plan()
+        self.recheck(intent)
+        self.gate.disable()
+        self.gate.disable()
+        self.assertEqual(self.gate.lifecycle_metrics()["restart_quarantined"], 1)
+        with self.assertRaises(RuntimeError):
+            self.gate.enable(owner_approved=True)
+        for bad in (1, "yes", None):
+            with self.assertRaises(ValueError):
+                self.gate.acknowledge_host_drain(
+                    intent, now_s=12.12, host_verified=bad, audio_drained=True)
+        for bad in (True, float("nan"), float("inf"), -1, "12"):
+            with self.assertRaises(ValueError):
+                self.gate.acknowledge_host_drain(
+                    intent, now_s=bad, host_verified=True, audio_drained=True)
+        with self.assertRaises(ValueError):
+            self.gate.acknowledge_host_drain(
+                intent, now_s=11.0, host_verified=True, audio_drained=True)
+        self.assertEqual(self.gate.lifecycle_metrics()["restart_quarantined"], 1)
+        self.assertTrue(self.gate.acknowledge_host_drain(
+            intent, now_s=12.15, host_verified=True, audio_drained=True))
+
     def test_disable_does_not_generate_phantom_recovery(self):
         self.plan()
         self.gate.disable()
