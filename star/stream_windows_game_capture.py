@@ -188,6 +188,7 @@ class WindowsGameCaptureHost:
         focus_regions: tuple[Region, ...] = (),
         trusted_worker: Callable[[CapturedVisionFrame], WorkerReport] | None = None,
         worker_max_pixels: int | None = None,
+        max_result_age_ms: float | None = None,
     ) -> None:
         if not isinstance(vision, StreamVisionHost):
             raise TypeError("real StreamVisionHost required")
@@ -214,6 +215,15 @@ class WindowsGameCaptureHost:
                 (type(worker_max_pixels) is not int
                  or not 72 <= worker_max_pixels <= MAX_CAPTURE_PIXELS)):
             raise ValueError("worker_max_pixels must be a bounded RGB pixel budget")
+        if max_result_age_ms is not None and (
+            type(max_result_age_ms) not in (int, float)
+            or not math.isfinite(float(max_result_age_ms))
+            or not 100 <= float(max_result_age_ms) <= MAX_CAPTURE_AGE_MS
+        ):
+            raise ValueError("max_result_age_ms must be 100..1500 milliseconds")
+        self._max_result_age_ms = (
+            float(max_result_age_ms) if max_result_age_ms is not None else None
+        )
         self._worker_max_pixels = worker_max_pixels
         self._trusted_worker = trusted_worker
         self._vision = vision
@@ -233,6 +243,7 @@ class WindowsGameCaptureHost:
             worker_runs=0, worker_accepted=0, worker_failed=0,
             worker_unconfirmed=0, perception_accepted=0,
             perception_rejected=0, worker_resizes=0,
+            worker_pre_dispatch_stale=0, worker_result_stale=0,
         )
 
     def enable(self, *, owner_approved: bool = False, capture_approved: bool = False) -> None:
@@ -278,6 +289,10 @@ class WindowsGameCaptureHost:
 
         The frame memory is zeroized on EVERY exit. A worker retaining the view
         afterward sees zeros, and may not queue this view for later processing.
+
+        Optional max_result_age_ms is an end-to-end *freshness limit*, not a
+        worker-cancellation mechanism. Late packets cannot become game facts;
+        nonterminated workers still hold their leases until physical stop.
         """
         if self._trusted_worker is None:
             raise RuntimeError("no trusted synchronous vision worker configured")
@@ -417,6 +432,28 @@ class WindowsGameCaptureHost:
                 with self._lock:
                     self._counts["worker_failed"] += 1
                 return CaptureDispatch(decision, "capture_revoked_before_worker")
+            # Opt-in end-to-end deadline: a frame may have become obsolete
+            # while fingerprinting or resizing, before inference even starts.
+            # A reversed/unavailable monotonic clock is not proof of a safe
+            # lease settlement; the host must recover and reconcile it.
+            if self._max_result_age_ms is not None:
+                try:
+                    dispatch_ms = _clock_ms(self._clock)
+                except ValueError:
+                    with self._lock:
+                        self._counts["worker_unconfirmed"] += 1
+                    return CaptureDispatch(decision, "worker_dispatch_clock_untrusted")
+                if dispatch_ms < end:
+                    with self._lock:
+                        self._counts["worker_unconfirmed"] += 1
+                    return CaptureDispatch(decision, "worker_dispatch_clock_untrusted")
+                if dispatch_ms - end > self._max_result_age_ms:
+                    self._vision.acknowledge_worker_stopped(
+                        lease, worker_stopped=True, succeeded=False,
+                    )
+                    with self._lock:
+                        self._counts["worker_pre_dispatch_stale"] += 1
+                    return CaptureDispatch(decision, "worker_pre_dispatch_stale")
             with self._lock:
                 self._counts["worker_runs"] += 1
             frame = CapturedVisionFrame(
@@ -455,11 +492,24 @@ class WindowsGameCaptureHost:
                     and packet.height == worker_height
                 )
             )
+            result_stale = False
+            if self._max_result_age_ms is not None:
+                try:
+                    completed_ms = _clock_ms(self._clock)
+                except ValueError:
+                    with self._lock:
+                        self._counts["worker_unconfirmed"] += 1
+                    return CaptureDispatch(decision, "worker_result_clock_untrusted", True)
+                if completed_ms < end:
+                    with self._lock:
+                        self._counts["worker_unconfirmed"] += 1
+                    return CaptureDispatch(decision, "worker_result_clock_untrusted", True)
+                result_stale = completed_ms - end > self._max_result_age_ms
             try:
                 accepted = self._vision.acknowledge_worker_stopped(
                     lease, worker_stopped=True,
                     succeeded=(report.succeeded and session_live and window_live
-                               and packet_matches),
+                               and packet_matches and not result_stale),
                 )
             except Exception:
                 with self._lock:
@@ -467,12 +517,16 @@ class WindowsGameCaptureHost:
                 return CaptureDispatch(decision, "worker_stop_unconfirmed", True)
             with self._lock:
                 self._counts["worker_accepted" if accepted else "worker_failed"] += 1
+                if result_stale:
+                    self._counts["worker_result_stale"] += 1
                 if packet is not None:
                     self._counts[
                         "perception_accepted" if accepted else "perception_rejected"
                     ] += 1
             return CaptureDispatch(
-                decision, "worker_result_accepted" if accepted else "worker_result_discarded",
+                decision,
+                ("worker_result_stale" if result_stale else
+                 "worker_result_accepted" if accepted else "worker_result_discarded"),
                 True, accepted, packet if accepted else None,
             )
         except Exception:
