@@ -15,9 +15,9 @@ It is OFF by default; existing callers continue seeing native image dimensions. 
 - Reject invalid worker pixel budgets; allow only 72 through 8,294,400 pixels. Without an explicit budget, legacy full-resolution behavior is preserved.
 - Keep independent full-resolution fingerprinting, focus/novelty policy and host telemetry admission. Never treat a downscaled preview as independent game-truth evidence.
 - Send a properly dimensioned, temporary read-only RGB view to the installed trusted worker. Include the original source size separately so it can correctly interpret coordinate scaling; accepted categorical `VisualPacket` output must match the **worker** dimensions/timestamp, not the native input dimensions.
-- Reject stale resize operations before invoking a worker. Settle the unused vision lease as unsuccessful rather than leaving a stuck inference reservation.
+- Reject stale resize operations before invoking a worker. Settle a timed-out, unused vision lease as unsuccessful; a **reversed host clock** cannot attest an orderly release, so it returns a named error and preserves the lease until the trusted clock recovers and the host explicitly settles it.
 - Scrub both the original bytearray and resized worker bytearray on completion/failure, close image resources, and keep worker-nontermination quarantine intact. Do not log pixel data or private window identities.
-- Add deterministic mocked tests: budget admission, default behavior, source/work dimensions, source full-resolution fingerprint, byte zeroization, geometry mismatch, duplicate suppression, failed resize lease release, slow resize, and unconfirmed worker stop.
+- Add 13 deterministic mocked tests: budget admission, default behavior, source/work dimensions, source full-resolution fingerprint, byte zeroization, geometry mismatch, duplicate suppression, failed resize lease release, slow resize, and unconfirmed worker stop.
 
 **Usage sketch (authorized host only):**
 
