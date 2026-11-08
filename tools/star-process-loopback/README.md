@@ -83,3 +83,38 @@ webhook cannot supply native JSONL or assert these conditions.
 The `--self-test` now exercises atomic cross-thread activity-window
 accounting with synthetic float packets. It starts **no** Windows capture.
 See `docs/research/STAR_20261107_PROCESS_VOICE_ACTIVITY_INTEGRITY_AND_REALTIME_GENERALIST.md`.
+
+
+## Independent portable-artifact admission gate (manifest v2)
+
+A GitHub-hosted workflow passing its synthetic checks is not proof that the
+downloaded EXE is still the one that CI built. The v2 manifest includes a
+SHA-256 for the README in addition to the EXE, and the job summary prints the
+SHA-256 of the **manifest itself**. Before downloading/extracting, separately
+pin the job summary's manifest digest, EXE digest, checkout commit and checkout
+tree from a trusted CI interface. Hashes copied from the downloaded manifest
+are not independent and cannot establish provenance.
+
+From the Star repo with Python 3.12+, in a private local terminal (no executable
+will be run or audio captured):
+
+```powershell
+python -m star.process_loopback_artifact_audit `
+  --artifact-dir C:\Star\voice-artifact `
+  --approved-root C:\Star `
+  --expected-manifest-sha256 <independent-manifest-sha256> `
+  --expected-executable-sha256 <independent-executable-sha256> `
+  --expected-checkout-commit <independent-git-commit> `
+  --expected-checkout-tree <independent-git-tree> `
+  --owner-approved
+```
+
+The gate checks the exact three-file layout, independent manifest and EXE
+digests, README digest from the pinned manifest, source commit/tree and
+negative nonbroadcast/noncapture attestations. It rejects links, hardlinks,
+unknown files, malformed JSON, and changed bytes. It returns only a sanitized
+boolean summary. Even success does **not** authorize executable launching,
+real recording, game control or broadcasting; those require distinct
+owner-approved Windows host checks. Old v1 artifacts are intentionally denied.
+
+See [research and acceptance plan](../../docs/research/STAR_20261107_WINDOWS_ARTIFACT_ADMISSION_AND_REALTIME_LEARNING.md).

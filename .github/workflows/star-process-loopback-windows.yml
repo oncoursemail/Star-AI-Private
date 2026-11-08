@@ -7,8 +7,10 @@ on:
       - 'tools/star-process-loopback/**'
       - 'star/process_loopback_activity.py'
       - 'star/process_loopback_private_audit_cli.py'
+      - 'star/process_loopback_artifact_audit.py'
       - 'tests/test_process_loopback_activity.py'
       - 'tests/test_process_loopback_private_audit_cli.py'
+      - 'tests/test_process_loopback_artifact_audit.py'
       - '.github/workflows/star-process-loopback-windows.yml'
   workflow_dispatch:
 
@@ -63,11 +65,13 @@ jobs:
           Copy-Item -LiteralPath $exe -Destination $artifactDir
           Copy-Item -LiteralPath 'tools/star-process-loopback/README.md' -Destination $artifactDir
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $readmeHash = (Get-FileHash -LiteralPath 'tools/star-process-loopback/README.md' -Algorithm SHA256).Hash.ToLowerInvariant()
           $manifest = @{
-            schema = 'star.process_loopback.windows_diagnostic_artifact.v1'
+            schema = 'star.process_loopback.windows_diagnostic_artifact.v2'
             checkout_commit = (git rev-parse HEAD).Trim()
             checkout_tree = (git rev-parse 'HEAD^{tree}').Trim()
             executable_sha256 = $hash
+            readme_sha256 = $readmeHash
             platform = 'windows-x64'
             requires_installed_dotnet = $false
             self_test_passed = $true
@@ -76,7 +80,10 @@ jobs:
             permitted_to_stream = $false
           } | ConvertTo-Json -Depth 3
           [System.IO.File]::WriteAllText((Join-Path $artifactDir 'manifest.json'), $manifest + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+          $manifestHash = (Get-FileHash -LiteralPath (Join-Path $artifactDir 'manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
           "Windows self-contained diagnostic: self-test PASS; invalid invocations rejected; live capture NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+          ("Manifest SHA-256 for independently pinned later review: " + $manifestHash) >> $env:GITHUB_STEP_SUMMARY
+          ("Source tree: " + (git rev-parse 'HEAD^{tree}').Trim()) >> $env:GITHUB_STEP_SUMMARY
           ("Executable SHA-256: " + $hash) >> $env:GITHUB_STEP_SUMMARY
       - name: Install Python only for offline native JSONL importer tests
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -96,11 +103,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path $isolated | Out-Null
           Copy-Item 'tests/test_process_loopback_activity.py' -Destination $isolated
           Copy-Item 'tests/test_process_loopback_private_audit_cli.py' -Destination $isolated
+          Copy-Item 'tests/test_process_loopback_artifact_audit.py' -Destination $isolated
           $env:PYTHONPATH = (Get-Location).Path
           $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
           python -m pytest -q --confcutdir $isolated --tb=short -p no:cacheprovider $isolated
           if ($LASTEXITCODE -ne 0) { throw 'Private JSONL Windows synthetic regression failed' }
-          "Private offline JSONL importer: Windows synthetic tests PASS; no audio captured." >> $env:GITHUB_STEP_SUMMARY
+          $artifactDir = 'artifacts/star-process-loopback-windows'
+          # Smoke-test the exact packaged artifact. CI hashes come from this
+          # run itself, NOT an independent owner-side trust anchor.
+          $manifestPath = Join-Path $artifactDir 'manifest.json'
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          python -m star.process_loopback_artifact_audit --artifact-dir (Resolve-Path $artifactDir).Path --approved-root (Resolve-Path artifacts).Path --expected-manifest-sha256 $manifestHash --expected-executable-sha256 $manifest.executable_sha256 --expected-checkout-commit $manifest.checkout_commit --expected-checkout-tree $manifest.checkout_tree --owner-approved
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged artifact byte-integrity preflight failed' }
+          "Private JSONL importer and portable artifact gate: Windows synthetic tests PASS; no audio captured." >> $env:GITHUB_STEP_SUMMARY
       - name: Upload short-lived portable diagnostic for private trial
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
