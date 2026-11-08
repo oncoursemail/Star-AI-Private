@@ -195,6 +195,19 @@ class WorkerPixelBudgetTests(unittest.TestCase):
         self.assertEqual(len(rig.vision_calls), 0)
         self.assertFalse(rig.vision.status()["inflight"])
 
+    def test_clock_reversal_during_resize_does_not_launch_model(self):
+        image = FakeImage()
+        rig = Rig(budget=4096, image=image)
+        old_resize = image.resize
+        def reverse_clock(size):
+            rig.now[0] -= 10
+            return old_resize(size)
+        image.resize = reverse_clock
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_resize_stale")
+        self.assertEqual(len(rig.vision_calls), 0)
+        self.assertFalse(rig.vision.status()["inflight"])
+
     def test_explicit_worker_nontermination_keeps_quarantine(self):
         rig = Rig(budget=4096, worker=lambda _: WorkerReport(False, False))
         result = rig.capture.capture_and_process_once()
