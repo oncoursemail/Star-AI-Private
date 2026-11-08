@@ -1,0 +1,28 @@
+# STAR — authenticated-host OBS/game load receipts and real-time intelligence
+
+**Date:** 2026-11-08. **Status:** code implemented locally/offline; production Windows OBS/game/voice source still must be wired and evaluated. This document is not proof of trained model intelligence or a deployed VTuber.
+
+## Concrete improvement in this PR
+
+Previous code connected StreamLoadGovernor to NaturalTurnBridge, but nobody was producing a trustworthy, synchronized set of inputs. New opt-in `StreamLoadHostBridge` accepts a real `ObsLagWindow` from the existing authenticated-host `ObsStatsWindow` and an independently observed `HostLoadReceipt` containing game frame p95, presentation count, OBS network loss, actual VRAM and local first-audio p95. It hands interval render/output loss rates into the governor. It does not poll OBS, infer missing measurements, transmit personal data, authorize game control or broadcast.
+
+The adapter checks that the timestamps share one monotonic clock, rejects overlapping/replayed OBS windows, rejects absent or impossible sensor values, and *immediately disables* previously healthy advice after invalid or unverified evidence. Re-arming requires an explicitly approved NEW OBS session ID. A host-provided `host_verified=True` alone is **not authentication**. Windows integration must verify the local obs-websocket v5 connection, OBS epoch identity, real game presentation callback, local GPU counter and voice timestamps itself. Counter reconnects must start a new session. Privacy: no raw OBS response messages, chat, audio, video or player IDs are retained. Optional by default.
+
+**Precision note:** OBS GetStats `outputSkippedFrames` is an output/encoder pressure *proxy* and must not be mistaken for definitive hardware encoder failure. Network-drop measurements must come from independently verified stream status and are not inferred from GetStats.
+
+## Deep research: priorities for a capable autonomous gaming VTuber
+
+1. **Real-time behavior:** [Gym-Anything-RT](https://arxiv.org/abs/2610.37567), Oct 27 2026, documents a large gap between paused reasoning and real-time playing on 100 generated minigames. STAR should use a 10–50 ms deadline-driven fast reaction controller and a slower, interruptible strategy controller. Never allow unreviewed language-model output to directly press keys.
+2. **Conversational timing:** [Proact-VL](https://www.microsoft.com/en-us/research/publication/proact-vl-a-proactive-videollm-for-real-time-ai-companions/), ICML 2026, evaluates spontaneous commentary timing and quality. STAR's turn arbiter needs *measured silence, output progress, resource pressure, and game urgency* before planning speech, plus separate audit for interruption and voice/rig cleanup.
+3. **Developing games:** [Roblox Studio goes agentic](https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic), Apr 15 2026, describes plan–build–test loops and controlled Studio tool access. [Studio MCP multi-agent update](https://devforum.roblox.com/t/studio-mcp-multi-agent-improvements-and-connected-ai-clients/4820583), Aug 19 2026, makes explicit `studio_id` routing necessary for parallel sessions. STAR should practice only in owner-approved private tests, run luau-analyze/StyLua and Studio playtests, record exact failure witnesses, and gate reuse on unseen holdouts.
+4. **Faster reasoning:** Benchmark three 8-GB VRAM profiles on identical owner-approved games with OBS record-only: (a) 4B fast reaction model, (b) 7–9B reasoner + deterministic controller, (c) speculative decoding with a small draft. Track first-token latency, 95th percentile capture-to-input latency, real-time win rate, game p1/p5 FPS and OBS drop rate. Avoid extrapolating Reddit/single-GPU throughput claims across architectures; no measured speedup is claimed from the bridge.
+5. **General intelligence:** Keep a hierarchical, source-attributed memory separating personal preferences, verified observations, tested gameplay mechanics, guessed strategies and public facts. Store contradictions and version/expiry, test retrievability and abstention, and forbid promotion based on self-evaluation alone. Periodic deliberate practice should use hidden scenarios and require independent witnessed improvement.
+6. **Human-like stream presentation:** Use proactive but *scarce* comments; voice characteristics, expressive blinking/gaze, co-speech gestures, context-relevant reactions, a stable persona, persistent projects, and respectful disagreement. Draw new jokes and interests from authentic stream events rather than pretending to be a person; disclose that STAR is an AI VTuber. Don't impersonate humans or claim subjective consciousness.
+
+## Acceptance gate before live use
+
+- Wire OBS GetStats only via authenticated local read-only v5 calls and trusted monotonically sampled intervals; bind each source to one OBS process/epoch.
+- Wire independent Windows game PresentMon/engine callbacks, VRAM probe, OBS GetStreamStatus network counters and audio first-output receipts on same clock; verify 3 consecutive healthy intervals.
+- Capture matched **private, nonbroadcast** sessions with bridge ON/OFF and unchanged game/config/model for >=20 preregistered matched cases. Record p95 first-audio, action latency, game FPS, GPU use and OBS missed/output frame deltas.
+- Abort on stale, missing, replayed or reset intervals; ensure the old green state never survives source loss. Simulate GPU congestion, encoder pressure, owner barge-in and TTS stall.
+- Review holdout results independently. No auto-promotion, auto-broadcast or claim that STAR mastered games from this code alone.
