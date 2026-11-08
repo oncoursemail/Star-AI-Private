@@ -71,6 +71,7 @@ class StreamPreplayGate:
         self._pending: SpeechIntent | None = None
         self._planned_at: float | None = None
         self._checked = False
+        self._expired_unreviewed = 0
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -92,6 +93,39 @@ class StreamPreplayGate:
         self._pending = None
         self._planned_at = None
         self._checked = False
+
+    def _reap_unreviewed(self, now: float) -> bool:
+        """Drop only a timed-out CANDIDATE, never a host-reviewed playout.
+
+        A reviewed plan may already be queued or physically playing. Its
+        output host MUST explicitly settle it after stop/PCM acknowledgement.
+        Automatically unlocking that plan would risk overlapping two voices.
+        """
+        pending = self._pending
+        planned = self._planned_at
+        if pending is None or planned is None or self._checked:
+            return False
+        if now - planned <= self._max_age_s and now <= pending.deadline_at:
+            return False
+        # Clear first: the expiring event may have become invalid in the
+        # director (scene reset/session change). Never retain a zombie lease.
+        self._clear()
+        self._director.complete(pending, now=now, spoken=False)
+        self._expired_unreviewed += 1
+        return True
+
+    def lifecycle_metrics(self) -> dict[str, int]:
+        """Non-sensitive watchdog counters, no event text or voice data."""
+        with self._lock:
+            return {
+                "expired_unreviewed": self._expired_unreviewed,
+                "unreviewed_candidate": int(
+                    self._pending is not None and not self._checked
+                ),
+                "awaiting_host_receipt": int(
+                    self._pending is not None and self._checked
+                ),
+            }
 
     def _check(self, now_s: float, star_speaking: bool, gameplay_critical: bool) -> float:
         if type(now_s) not in (int, float):
@@ -133,6 +167,7 @@ class StreamPreplayGate:
             now = self._check(now_s, star_speaking, gameplay_critical)
             if not self._enabled:
                 return PreplayDecision("disabled", "owner_opt_in_missing")
+            self._reap_unreviewed(now)
             blocked, load = self._safety(now, star_speaking)
             if blocked is not None:
                 return blocked
@@ -155,6 +190,10 @@ class StreamPreplayGate:
     ) -> PreplayDecision:
         with self._lock:
             now = self._check(now_s, star_speaking, gameplay_critical)
+            # Timed-out, never-reviewed candidates have never received a
+            # successful play recommendation. Unblock future grounded turns.
+            if self._enabled and self._pending is intent and self._reap_unreviewed(now):
+                return PreplayDecision("denied", "speech_plan_timed_out")
             if not self._enabled or self._pending is not intent or self._planned_at is None:
                 return PreplayDecision("denied", "unknown_or_stale_speech_plan")
             if self._checked:
