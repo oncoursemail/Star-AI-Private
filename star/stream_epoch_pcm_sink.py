@@ -88,6 +88,16 @@ class LocalEpochPCMSink:
         self._stops = 0
         self._bytes = 0
 
+    @property
+    def sample_rate(self) -> int:
+        """Validated host speaker sample rate; never obtained from model text."""
+        return self._rate
+
+    def buffered_ms(self) -> float | None:
+        """Read-only app queue measurement, NOT native/hardware quiet proof."""
+        with self._lock:
+            return self._pending_ms()
+
     def _pending_ms(self) -> float | None:
         try:
             value = self._backend.pending_seconds()

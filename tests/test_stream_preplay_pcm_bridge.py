@@ -109,6 +109,143 @@ class PCMBridgeTests(unittest.TestCase):
         self.assertEqual(self.speaker.queued, [b"aa"])
         self.assertEqual(self.bridge.metrics()["pcm_rejected"], 2)
 
+    def test_utterance_budget_stops_runaway_tts_and_requires_native_quiet(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, max_turn_pcm_ms=1_000,
+        )
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="voice_limit", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        # Five 200-ms chunks total exactly one second. Simulated native
+        # playback frees the application buffer, not the lifetime budget.
+        for _ in range(5):
+            self.speaker.pending = 0.0
+            self.assertTrue(bridge.submit(
+                self.intent, epoch="voice_limit", pcm16=b"aa" * 4800))
+        self.assertEqual(bridge.metrics()["turn_pcm_ms_submitted"], 1000)
+        self.speaker.pending = 0.0
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="voice_limit", pcm16=b"aa"))
+        self.assertEqual(bridge.metrics()["utterance_budget_stops"], 1)
+        self.assertTrue(bridge.metrics()["stop_outstanding"])
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(len(self.speaker.queued), 5)
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="voice_limit", pcm16=b"aa"))
+        with self.assertRaises(RuntimeError):
+            bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.attest_quiet(
+            self.intent, epoch="voice_limit", now_s=12.11,
+            host_verified=False, native_output_flushed=True).state, "held")
+        self.assertEqual(bridge.attest_quiet(
+            self.intent, epoch="voice_limit", now_s=12.12,
+            host_verified=True, native_output_flushed=True).state, "quiet")
+        self.assertEqual(bridge.metrics()["turn_pcm_ms_submitted"], 0)
+        self.assertFalse(bridge.metrics()["stop_outstanding"])
+        self.gate.enable(owner_approved=True)
+        bridge.enable(owner_approved=True)
+
+    def test_budget_validation_and_invalid_pcm_do_not_consume_allowance(self):
+        for invalid in (0, True, 999, 60_001, 3.5, "30000", None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                StreamPreplayPCMBridge(
+                    self.gate, self.sink, max_turn_pcm_ms=invalid)
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, max_turn_pcm_ms=1_000)
+        self.assertEqual(self.sink.sample_rate, 24_000)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="voice_invalid", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="voice_invalid", pcm16=b"odd"))
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="voice_invalid", pcm16="audio"))
+        self.assertEqual(bridge.metrics()["turn_pcm_ms_submitted"], 0)
+        self.assertEqual(bridge.metrics()["utterance_budget_stops"], 0)
+        self.assertEqual(self.speaker.stops, 0)
+        self.assertTrue(bridge.submit(
+            self.intent, epoch="voice_invalid", pcm16=b"aa"))
+        self.assertEqual(bridge.metrics()["turn_pcm_ms_submitted"], 0)
+        self.assertEqual(bridge.disable().state, "stop_requested")
+
+    def test_normal_spoken_completion_requires_independent_playout_evidence(self):
+        self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.admit().state, "ready")
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="voice_1", now_s=12.07,
+            host_verified=True, independent_audible_pcm=True,
+            native_output_flushed=True).reason,
+            "independent_audible_quiet_receipts_missing")
+        self.assertTrue(self.bridge.submit(
+            self.intent, epoch="voice_1", pcm16=b"aa" * 2400))
+        self.assertGreater(self.sink.buffered_ms(), 0)
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="voice_1", now_s=12.08,
+            host_verified=True, independent_audible_pcm=True,
+            native_output_flushed=True).reason, "app_pcm_not_naturally_drained")
+        self.assertEqual(self.speaker.stops, 0)
+        # Simulated buffer draining is not itself native audible receipt.
+        self.speaker.pending = 0.0
+        for flags in [
+            dict(host_verified=False, independent_audible_pcm=True,
+                 native_output_flushed=True),
+            dict(host_verified=True, independent_audible_pcm=False,
+                 native_output_flushed=True),
+            dict(host_verified=True, independent_audible_pcm=True,
+                 native_output_flushed=False),
+        ]:
+            self.assertEqual(self.bridge.complete_turn(
+                self.intent, epoch="voice_1", now_s=12.09, **flags).state,
+                "held")
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="wrong", now_s=12.09, host_verified=True,
+            independent_audible_pcm=True, native_output_flushed=True).state,
+            "held")
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="voice_1", now_s=12.10,
+            host_verified=True, independent_audible_pcm=True,
+            native_output_flushed=True).reason,
+            "host_witnessed_audible_turn_completed")
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(self.director.metrics()["completed"], 1)
+        self.assertEqual(self.bridge.metrics()["spoken_completions"], 1)
+        self.assertFalse(self.bridge.metrics()["native_epoch_active"])
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="voice_1", now_s=12.11,
+            host_verified=True, independent_audible_pcm=True,
+            native_output_flushed=True).state, "held")
+
+    def test_completion_failed_physical_stop_requires_manual_recovery(self):
+        self.bridge.enable(owner_approved=True)
+        self.admit()
+        self.assertTrue(self.bridge.submit(
+            self.intent, epoch="voice_1", pcm16=b"aa"))
+        self.speaker.pending = 0.0
+        self.speaker.fail_stop = True
+        self.assertEqual(self.bridge.complete_turn(
+            self.intent, epoch="voice_1", now_s=12.10,
+            host_verified=True, independent_audible_pcm=True,
+            native_output_flushed=True).state, "fault")
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        with self.assertRaises(RuntimeError):
+            self.bridge.enable(owner_approved=True)
+
+    def test_invalid_normal_completion_receipts_cannot_be_used(self):
+        self.bridge.enable(owner_approved=True)
+        self.admit()
+        self.assertTrue(self.bridge.submit(
+            self.intent, epoch="voice_1", pcm16=b"aa"))
+        for bad in (1, "yes", None):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.bridge.complete_turn(
+                    self.intent, epoch="voice_1", now_s=12.10,
+                    host_verified=bad,
+                    independent_audible_pcm=True, native_output_flushed=True)
+        self.assertFalse(self.bridge.metrics()["faulted"])
+
     def test_stop_requires_native_flush_before_unlock(self):
         self.bridge.enable(owner_approved=True)
         self.admit()
