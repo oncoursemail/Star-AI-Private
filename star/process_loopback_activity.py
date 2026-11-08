@@ -196,7 +196,7 @@ class ProcessLoopbackActivityVerifier:
             self._windows += 1
             if window_callbacks:
                 self._pcm_windows += 1
-                if peak >= self._threshold:
+                if peak is not None and peak >= self._threshold:
                     self._activity_windows += 1
             else:
                 self._unknown_windows += 1
