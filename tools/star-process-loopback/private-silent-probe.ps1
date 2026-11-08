@@ -74,12 +74,24 @@ try {
             throw 'Inconsistent native interval activity evidence.'
         }
         if ($i -gt 0) {
-            if ($row.activity_callbacks -gt 0) { $pcmWindows++ }
-            else { $unknownWindows++ }
+            if ($row.elapsed_ms -le $lastElapsed) {
+                throw 'Duplicated or non-increasing observation time.'
+            }
+            if ($row.activity_callbacks -gt 0) {
+                # A dedicated fixture which makes NO audio is a negative
+                # control: any nonzero PCM indicates an untrusted capture.
+                if ($row.activity_peak_milli -ne 0 -or $row.activity_rms_milli -ne 0) {
+                    throw 'Unexpected nonzero PCM from the silent-only fixture.'
+                }
+                $pcmWindows++
+            } else { $unknownWindows++ }
         }
         $lastElapsed = $row.elapsed_ms
         $priorCallbacks = $row.callback_generation
         $priorFrames = $row.sample_frames
+    }
+    if ($rows[$rows.Count - 1].max_peak_milli -ne 0) {
+        throw 'The silent fixture produced unexpected nonzero PCM.'
     }
     # This fixture never intentionally generates sound. In some Windows
     # configurations process-loopback still delivers *zero-amplitude PCM*.
@@ -93,6 +105,7 @@ try {
         pcm_windows = $pcmWindows
         missing_pcm_windows = $unknownWindows
         maximum_peak_milli = $rows[$rows.Count - 1].max_peak_milli
+        silent_fixture_negative_control_passed = $true
         audio_playback_tested = $false
         silence_verified = $false
         streaming_authorized = $false
