@@ -26,7 +26,9 @@ from .stream_visual_perception import VisualPacket
 from .stream_vision_trace_host import (
     HostFrameRef, PairedVisionTraceHost, VisionTraceTicket,
 )
-from .stream_windows_game_capture import CapturedVisionFrame, WorkerReport
+from .stream_windows_game_capture import (
+    CapturedVisionFrame, WorkerReport, MAX_CAPTURE_PIXELS, _worker_frame_size,
+)
 
 
 class UncertainVisionStop(RuntimeError):
@@ -65,6 +67,7 @@ class PairedOfflineVisionRunner:
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
         max_pair_gap_ms: int = 5000,
         max_capture_age_ms: int = 15000,
+        candidate_max_pixels: int | None = None,
     ) -> None:
         if type(traces) is not PairedVisionTraceHost:
             raise TypeError("exact owner-owned PairedVisionTraceHost required")
@@ -72,6 +75,10 @@ class PairedOfflineVisionRunner:
                 or type(candidate) is not LocalLlamaComparisonWorker
                 or baseline is candidate):
             raise TypeError("two distinct local comparison workers required")
+        if (candidate_max_pixels is not None
+                and (type(candidate_max_pixels) is not int
+                     or not 72 <= candidate_max_pixels <= MAX_CAPTURE_PIXELS)):
+            raise ValueError("candidate_max_pixels must be 72..8294400 or None")
         if not callable(clock_ms):
             raise TypeError("trusted monotonic clock required")
         if (type(max_pair_gap_ms) is not int
@@ -85,6 +92,7 @@ class PairedOfflineVisionRunner:
         self._clock_ms = clock_ms
         self._max_gap_ms = max_pair_gap_ms
         self._max_age_ms = max_capture_age_ms
+        self._candidate_max_pixels = candidate_max_pixels
         self._lock = RLock()
         self._poisoned = False
         self._last_clock = 0.0
@@ -123,24 +131,78 @@ class PairedOfflineVisionRunner:
             return "skipped"
         return "accepted"
 
+    @staticmethod
+    def _candidate_pair(
+        previous: CapturedVisionFrame, current: CapturedVisionFrame, budget: int,
+    ) -> tuple[CapturedVisionFrame, CapturedVisionFrame, list[bytearray]]:
+        """Resize only candidate model input; always retain native trace SHA.
+
+        Caller owns and must zero the returned mutable pixel buffers. Resizing
+        is deliberately *inside* the timed candidate variant, so any CPU work
+        is charged to candidate latency rather than hiding preprocessing cost.
+        """
+        width, height = _worker_frame_size(previous.width, previous.height, budget)
+        if (width, height) == (previous.width, previous.height):
+            return previous, current, []
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise RuntimeError("paired candidate resize requires Pillow") from exc
+        owned: list[bytearray] = []
+        frames: list[CapturedVisionFrame] = []
+        try:
+            for frame in (previous, current):
+                with Image.frombytes(
+                    "RGB", (frame.width, frame.height), bytes(frame.rgb)
+                ) as native:
+                    with native.resize(
+                        (width, height), resample=Image.Resampling.BILINEAR
+                    ) as resized:
+                        pixels = bytearray(resized.tobytes())
+                if len(pixels) != width * height * 3:
+                    pixels[:] = b"\x00" * len(pixels)
+                    raise ValueError("invalid resized RGB image layout")
+                owned.append(pixels)
+                frames.append(CapturedVisionFrame(
+                    memoryview(pixels).toreadonly(), width, height,
+                    frame.captured_ms, source_width=frame.width,
+                    source_height=frame.height,
+                ))
+            return frames[0], frames[1], owned
+        except BaseException:
+            for pixels in owned:
+                pixels[:] = b"\x00" * len(pixels)
+            raise
+
     def _run_variant(
         self, worker: LocalLlamaComparisonWorker,
         previous: CapturedVisionFrame, current: CapturedVisionFrame,
+        *, candidate: bool = False,
     ) -> tuple[str, VisualPacket | None, float, float]:
         """Return only a stopped worker's bounded categorical observation."""
         started = self._clock()
-        worker.enable(owner_approved=True, local_model_approved=True)
-        # Never reuse a previous-reference frame between experiments.
-        priming = worker(previous)
-        priming_status = self._status(priming)
-        if priming_status != "skipped":
-            if priming_status == "accepted":
-                raise RuntimeError("model generated a packet during priming")
-            return "error", None, started, self._clock()
-        result = worker(current)
-        status = self._status(result)
-        return status, result.perception if status == "accepted" else None, (
-            started), self._clock()
+        owned: list[bytearray] = []
+        try:
+            if candidate and self._candidate_max_pixels is not None:
+                previous, current, owned = self._candidate_pair(
+                    previous, current, self._candidate_max_pixels)
+            worker.enable(owner_approved=True, local_model_approved=True)
+            # Never reuse a previous-reference frame between experiments.
+            priming = worker(previous)
+            priming_status = self._status(priming)
+            if priming_status != "skipped":
+                if priming_status == "accepted":
+                    raise RuntimeError("model generated a packet during priming")
+                return "error", None, started, self._clock()
+            result = worker(current)
+            status = self._status(result)
+            return status, result.perception if status == "accepted" else None, (
+                started), self._clock()
+        finally:
+            # Even an invalid model response or an interrupted transport must
+            # not leave an unsanitized candidate RGB working buffer.
+            for pixels in owned:
+                pixels[:] = b"\x00" * len(pixels)
 
     def run_pair(
         self, sequence: int, previous: CapturedVisionFrame,
@@ -201,7 +263,8 @@ class PairedOfflineVisionRunner:
                 statuses: dict[str, str] = {}
                 for variant in order:
                     status, packet, started, finished = self._run_variant(
-                        self._workers[variant], older, newer)
+                        self._workers[variant], older, newer,
+                        candidate=(variant == "candidate"))
                     # Trace records only bounded labels and timings, never RGB.
                     self._traces.record_worker(
                         ticket, variant=variant, packet=packet, status=status,
