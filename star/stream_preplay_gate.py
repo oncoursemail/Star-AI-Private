@@ -259,6 +259,33 @@ class StreamPreplayGate:
             self._checked = True
             return PreplayDecision("reviewed", "host_must_separately_authorize_media", intent)
 
+    def reviewed_for_host(self, intent: SpeechIntent, *,
+                          now_s: float | None = None) -> bool:
+        """Read-only review identity check; with clock also require freshness.
+
+        Supply host monotonic time before first PCM admission. Omit only when
+        checking the same already-admitted turn's ongoing PCM submissions.
+        This does not authorize physical playback or prove quiet audio.
+        """
+        with self._lock:
+            if not (self._enabled and self._checked
+                    and self._pending is intent and self._quarantined is None):
+                return False
+            if now_s is None:
+                return True
+            if type(now_s) not in (int, float):
+                raise ValueError("trusted monotonic time required")
+            now = float(now_s)
+            if not math.isfinite(now) or not 0 <= now <= 1e10:
+                raise ValueError("invalid monotonic time")
+            if self._latest is not None and now < self._latest:
+                raise ValueError("monotonic clock reversed")
+            if (self._planned_at is None or now - self._planned_at > self._max_age_s
+                    or now > intent.deadline_at):
+                return False
+            self._latest = now
+            return True
+
     def settle(
         self, intent: SpeechIntent, *, now_s: float,
         audible_confirmed: bool = False,
