@@ -72,6 +72,9 @@ class StreamPreplayGate:
         self._planned_at: float | None = None
         self._checked = False
         self._expired_unreviewed = 0
+        # Once a candidate has been reviewed, PCM may already be queued.
+        # Disabling planning cannot prove that the physical host is drained.
+        self._quarantined: SpeechIntent | None = None
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -79,15 +82,59 @@ class StreamPreplayGate:
         with self._lock:
             if self._enabled:
                 raise RuntimeError("disable before restarting the speech session")
+            if self._quarantined is not None:
+                raise RuntimeError("physical_audio_drain_receipt_required")
             self._enabled = True
             self._latest = None
             self._clear()
 
     def disable(self) -> None:
+        """Stop planning; quarantine any reviewed turn until the output host drains.
+
+        This deliberately does NOT stop a real audio device. The trusted host
+        must stop/flush playback before acknowledging the quarantined intent.
+        Re-enabling the planner cannot accidentally overlap leftover PCM.
+        """
         with self._lock:
             self._enabled = False
-            self._latest = None
+            pending = self._pending
+            if pending is not None:
+                if self._checked:
+                    self._quarantined = pending
+                elif self._latest is not None:
+                    # Never mark an unreviewed candidate as audible.
+                    self._director.complete(pending, now=self._latest, spoken=False)
             self._clear()
+
+    def acknowledge_host_drain(
+        self, intent: SpeechIntent, *, now_s: float,
+        host_verified: bool = False, audio_drained: bool = False,
+    ) -> bool:
+        """Trusted host receipt for STOP+FLUSH; never proof of audible speech.
+
+        The host must authenticate its receipt and verify all queued/playing
+        audio for this intent has stopped. Caller booleans alone are NOT
+        cryptographic proof. This gate cannot independently inspect hardware.
+        """
+        if type(host_verified) is not bool or type(audio_drained) is not bool:
+            raise ValueError("drain receipt flags must be trusted booleans")
+        if type(now_s) not in (int, float):
+            raise ValueError("invalid drain receipt clock")
+        now = float(now_s)
+        if not math.isfinite(now) or not 0 <= now <= 1e10:
+            raise ValueError("invalid drain receipt clock")
+        with self._lock:
+            if self._latest is not None and now < self._latest:
+                raise ValueError("monotonic clock reversed")
+            if (self._enabled or self._quarantined is not intent
+                    or not host_verified or not audio_drained):
+                return False
+            # Only after the external host has independently confirmed the
+            # physical stop can the director abandon this pending response.
+            self._director.complete(intent, now=now, spoken=False)
+            self._quarantined = None
+            self._latest = now
+            return True
 
     def _clear(self) -> None:
         self._pending = None
@@ -119,6 +166,7 @@ class StreamPreplayGate:
         with self._lock:
             return {
                 "expired_unreviewed": self._expired_unreviewed,
+                "restart_quarantined": int(self._quarantined is not None),
                 "unreviewed_candidate": int(
                     self._pending is not None and not self._checked
                 ),
