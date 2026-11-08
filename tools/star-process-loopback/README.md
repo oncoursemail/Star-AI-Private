@@ -33,6 +33,44 @@ The probe is **disabled by default** and refuses to launch without explicit `-Ow
 
 See [the measured owner-device result and intelligence roadmap](../../docs/research/STAR_20261107_OWNER_WINDOWS_NATIVE_LOOPBACK_AND_REALTIME_INTELLIGENCE.md). A real dedicated STAR speech playback + device-stop + OBS recording-only trial remains the next unverified milestone.
 
+## Low-amplitude positive-control fixture (optional; **audible**)
+
+The previous silent fixture only showed native *activation* and often delivered
+zero-amplitude PCM. This additional **separately guarded** experiment produces
+a short, deliberately quiet 440 Hz tone in a new, dedicated `StarToneProbe.exe`
+child process, then validates that its process-tree loopback observation contains
+actual nonzero PCM. It never targets an existing process and never uses a
+microphone, game, OBS, browser, viewer chat, or production Star speech.
+**It can be audible on the default Windows speaker/headset**, so it is OFF by
+default, **never run by CI**, and requires both opt-in switches:
+
+```powershell
+.\\tools\\star-process-loopback\\private-tone-probe.ps1 -OwnerApproved -AllowAudibleTone -DurationMs 1800
+```
+
+The probe builds two pinned .NET 9 projects in a disposable temp folder.
+NAudio.WinMM 3.3.0 renders generated 16-bit stereo PCM at **3% of full-scale
+peak**, with a 10ms fade and a hard 2-second waveform bound. The tone child
+begins after a short lead-in so the process observer can subscribe first, and
+exits after bounded playback. The host refuses captures with invalid counters,
+missing positive windows, unexpected PCM levels, or authority claims. Only
+aggregate diagnostic JSON goes to the local terminal. The diagnostic source
+does not save any PCM, and the script clears its temporary build and kills its
+dedicated child in `finally`.
+
+`dotnet ...StarToneProbe.dll --self-test` checks its deterministic waveform
+without initializing an audio endpoint. GitHub Actions **only** builds and
+self-tests this fixture and rejects scripts lacking BOTH switches. The first
+source release has **not** established a passing actual Windows positive-tone
+run. A passing positive tone would establish only PCM activity from a
+controlled process, **not** physical speaker audibility, correct Star TTS
+output, speech recognition, cancellation, native packet queue drain, OBS
+recording, gaming proficiency, or broadcast permission.
+
+Use the silent negative control separately; neither control is a substitute
+for a signed production Star speech process or a complete nonbroadcast
+interruption-and-OBS rehearsal.
+
 ## Owner-supervised local voice test (explicit, bounded)
 
 ```powershell
