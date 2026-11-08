@@ -169,6 +169,18 @@ class WorkerPixelBudgetTests(unittest.TestCase):
         self.assertNotIn("private", repr(out))
         self.assertFalse(rig.vision.status()["inflight"])
 
+    def test_failed_downscale_returns_lease_to_scheduler(self):
+        image = FakeImage()
+        rig = Rig(budget=4096, image=image)
+        def bad_resize(_size):
+            return FakeImage(width=64, height=64, faulty=True)
+        image.resize = bad_resize
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.admission.reason, "window_capture_backend_failed")
+        self.assertFalse(rig.vision.status()["inflight"])
+        self.assertEqual(len(rig.vision_calls), 0)
+        self.assertTrue(image.closed)
+
     def test_slow_resize_discarded_before_worker_and_releases_lease(self):
         image = FakeImage()
         old_resize = image.resize
