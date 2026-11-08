@@ -122,9 +122,10 @@ class WorkerPixelBudgetTests(unittest.TestCase):
         self.assertEqual(rig.capture.status()["worker_resizes"], 0)
         self.assertEqual(len(rig.vision_calls), 0)
         self.assertIsNone(rig.image.resized_to)
-        self.assertTrue(rig.vision.acknowledge_worker_stopped(
+        self.assertFalse(rig.vision.acknowledge_worker_stopped(
             result.lease, worker_stopped=True, succeeded=False,
         ))
+        self.assertFalse(rig.vision.status()["inflight"])
 
     def test_accepts_matching_worker_geometry_packet(self):
         def report(frame):
