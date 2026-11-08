@@ -132,6 +132,10 @@ jobs:
           }
           $null = & dotnet $dll --help 2>$null
           if ($LASTEXITCODE -ne 2) { throw 'Test-tone fixture accepted unapproved invocation' }
+          # GitHub's pwsh wrapper exits with LASTEXITCODE even after a
+          # deliberately rejected CLI call. Clear that EXPECTED error only
+          # after asserting exactly the denied-command exit code above.
+          $global:LASTEXITCODE = 0
           "Private audible fixture: compiled, synthetic test PASS, double opt-in default OFF; no playback." >> $env:GITHUB_STEP_SUMMARY
       - name: Install Python only for offline native JSONL importer tests
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
