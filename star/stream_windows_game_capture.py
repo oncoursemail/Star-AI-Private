@@ -362,28 +362,38 @@ class WindowsGameCaptureHost:
             worker_width, worker_height = width, height
             assert isinstance(pixels, bytearray)
             worker_pixels = pixels
-            if self._worker_max_pixels is not None and width * height > self._worker_max_pixels:
-                worker_width, worker_height = _worker_frame_size(
-                    width, height, self._worker_max_pixels,
-                )
-                resized = rgb.resize((worker_width, worker_height))
-                if getattr(resized, "size", None) != (worker_width, worker_height):
-                    raise ValueError("resize returned unexpected dimensions")
-                worker_pixels = bytearray(resized.tobytes())
-                if len(worker_pixels) != worker_width * worker_height * 3:
-                    raise ValueError("resize returned invalid RGB byte layout")
-                if _clock_ms(self._clock) - end > MAX_CAPTURE_AGE_MS:
+            try:
+                if self._worker_max_pixels is not None and width * height > self._worker_max_pixels:
+                    worker_width, worker_height = _worker_frame_size(
+                        width, height, self._worker_max_pixels,
+                    )
+                    resized = rgb.resize((worker_width, worker_height))
+                    if getattr(resized, "size", None) != (worker_width, worker_height):
+                        raise ValueError("resize returned unexpected dimensions")
+                    worker_pixels = bytearray(resized.tobytes())
+                    if len(worker_pixels) != worker_width * worker_height * 3:
+                        raise ValueError("resize returned invalid RGB byte layout")
+                    if _clock_ms(self._clock) - end > MAX_CAPTURE_AGE_MS:
+                        with self._lock:
+                            self._counts["stale_discarded"] += 1
+                        # No worker was started, but the vision reservation must
+                        # still be released with a confirmed non-success result.
+                        assert decision.lease is not None
+                        self._vision.acknowledge_worker_stopped(
+                            decision.lease, worker_stopped=True, succeeded=False,
+                        )
+                        return CaptureDispatch(decision, "worker_resize_stale")
                     with self._lock:
-                        self._counts["stale_discarded"] += 1
-                    # No worker was started, but the vision reservation must
-                    # still be released with a confirmed non-success result.
-                    assert decision.lease is not None
+                        self._counts["worker_resizes"] += 1
+            except Exception:
+                # Resize failed BEFORE any model worker started. The trusted
+                # host can safely settle this reservation as non-success,
+                # unlike failures after worker dispatch (which quarantine).
+                if decision.lease is not None:
                     self._vision.acknowledge_worker_stopped(
                         decision.lease, worker_stopped=True, succeeded=False,
                     )
-                    return CaptureDispatch(decision, "worker_resize_stale")
-                with self._lock:
-                    self._counts["worker_resizes"] += 1
+                raise
             # Admission is a scheduler lease, NOT proof of model completion.
             lease = decision.lease
             if lease is None or self._trusted_worker is None:
