@@ -8,7 +8,7 @@ from star.stream_observe import ObservationGovernor
 from star.stream_vision_host import StreamVisionHost
 from star.stream_visual_perception import VisualFinding, VisualPacket
 from star.stream_windows_game_capture import (
-    CapturedVisionFrame, WindowsGameCaptureHost, WindowState, WorkerReport,
+    WindowsGameCaptureHost, WindowState, WorkerReport,
 )
 
 HWND, PID = 1111, 2222
@@ -41,7 +41,7 @@ class FakeImage:
 
 
 class Rig:
-    def __init__(self, worker=None, *, budget=None, image=None):
+    def __init__(self, worker=None, *, budget=None, image=None, max_age=None):
         self.now = [1000.0]
         self.cpu = [100, 1000]
         self.image = image if image is not None else FakeImage()
@@ -61,6 +61,7 @@ class Rig:
         self.vision.enable(owner_approved=True, capture_approved=True)
         self.capture = WindowsGameCaptureHost(
             self.vision, hwnd=HWND, pid=PID, worker_max_pixels=budget,
+            max_result_age_ms=max_age,
             clock_ms=lambda: self.now[0],
             probe=lambda _: WindowState(HWND, PID, True, False, 96, 96),
             grab=lambda _: self.image,
@@ -217,6 +218,125 @@ class WorkerPixelBudgetTests(unittest.TestCase):
 
     def test_explicit_worker_nontermination_keeps_quarantine(self):
         rig = Rig(budget=4096, worker=lambda _: WorkerReport(False, False))
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_stop_unconfirmed")
+        self.assertTrue(rig.vision.status()["inflight"])
+
+
+    def test_optional_result_age_must_be_bounded_finite_host_policy(self):
+        for invalid in (True, False, "250", 99, 1500.1, float("nan"), float("inf"), -1):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                Rig(max_age=invalid)
+
+    def test_default_off_preserves_existing_worker_completion_behavior(self):
+        def worker(_frame):
+            rig.now[0] += 300
+            return WorkerReport(True, True)
+
+        rig = Rig(worker=worker)
+        outcome = rig.capture.capture_and_process_once()
+        self.assertEqual(outcome.state, "worker_result_accepted")
+        self.assertEqual(rig.capture.status()["worker_result_stale"], 0)
+
+    def test_fast_result_at_exact_deadline_is_accepted(self):
+        def worker(frame):
+            rig.now[0] += 250
+            return WorkerReport(
+                True, True,
+                VisualPacket(frame.captured_ms, frame.width, frame.height,
+                             (VisualFinding("hud_change", "hud", 0.85),)),
+            )
+        rig = Rig(worker=worker, max_age=250)
+        result = rig.capture.capture_and_process_once()
+        self.assertTrue(result.worker_accepted)
+        self.assertIsNotNone(result.perception)
+        self.assertFalse(rig.vision.status()["inflight"])
+
+    def test_slow_synchronous_worker_cannot_publish_obsolete_game_event(self):
+        views = []
+        def worker(frame):
+            views.append(frame.rgb)
+            rig.now[0] += 300
+            return WorkerReport(
+                True, True,
+                VisualPacket(frame.captured_ms, frame.width, frame.height,
+                             (VisualFinding("hud_change", "hud", 0.85),)),
+            )
+        rig = Rig(worker=worker, max_age=250)
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_result_stale")
+        self.assertTrue(result.worker_invoked)
+        self.assertFalse(result.worker_accepted)
+        self.assertIsNone(result.perception)
+        self.assertEqual(bytes(views[0]), b"\x00" * (96 * 96 * 3))
+        self.assertFalse(rig.vision.status()["inflight"])
+        self.assertEqual(rig.capture.status()["worker_result_stale"], 1)
+        self.assertEqual(rig.capture.status()["perception_rejected"], 1)
+
+    def test_slow_fingerprinting_skips_model_before_dispatch(self):
+        rig = Rig(max_age=250)
+        original = rig.vision.consider_pixels
+        def slow_consider(*args, **kwargs):
+            result = original(*args, **kwargs)
+            rig.now[0] += 300
+            return result
+        rig.vision.consider_pixels = slow_consider
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_pre_dispatch_stale")
+        self.assertFalse(result.worker_invoked)
+        self.assertEqual(len(rig.vision_calls), 0)
+        self.assertFalse(rig.vision.status()["inflight"])
+        self.assertEqual(rig.capture.status()["worker_pre_dispatch_stale"], 1)
+
+    def test_slow_resize_skips_model_before_result_deadline(self):
+        image = FakeImage()
+        rig = Rig(image=image, max_age=250, budget=4096)
+        old_resize = image.resize
+        def slow_resize(size):
+            rig.now[0] += 300
+            return old_resize(size)
+        image.resize = slow_resize
+        outcome = rig.capture.capture_and_process_once()
+        self.assertEqual(outcome.state, "worker_pre_dispatch_stale")
+        self.assertFalse(outcome.worker_invoked)
+        self.assertFalse(rig.vision.status()["inflight"])
+        self.assertTrue(image.closed)
+
+    def test_reversed_clock_after_worker_fails_closed_until_trusted_recovery(self):
+        def worker(frame):
+            rig.now[0] -= 1
+            return WorkerReport(True, True)
+        rig = Rig(worker=worker, max_age=250)
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_result_clock_untrusted")
+        self.assertFalse(result.worker_accepted)
+        self.assertTrue(rig.vision.status()["inflight"])
+        rig.now[0] += 10
+        self.assertFalse(rig.vision.acknowledge_worker_stopped(
+            result.admission.lease, worker_stopped=True, succeeded=False,
+        ))
+        self.assertFalse(rig.vision.status()["inflight"])
+
+    def test_reversed_clock_before_dispatch_keeps_reservation(self):
+        rig = Rig(max_age=250)
+        original = rig.vision.consider_pixels
+        def reverse_clock(*args, **kwargs):
+            result = original(*args, **kwargs)
+            rig.now[0] -= 1
+            return result
+        rig.vision.consider_pixels = reverse_clock
+        result = rig.capture.capture_and_process_once()
+        self.assertEqual(result.state, "worker_dispatch_clock_untrusted")
+        self.assertFalse(result.worker_invoked)
+        self.assertTrue(rig.vision.status()["inflight"])
+        rig.now[0] += 10
+        self.assertFalse(rig.vision.acknowledge_worker_stopped(
+            result.admission.lease, worker_stopped=True, succeeded=False,
+        ))
+        self.assertFalse(rig.vision.status()["inflight"])
+
+    def test_non_terminated_worker_is_never_released_by_deadline(self):
+        rig = Rig(worker=lambda _: WorkerReport(False, False), max_age=250)
         result = rig.capture.capture_and_process_once()
         self.assertEqual(result.state, "worker_stop_unconfirmed")
         self.assertTrue(rig.vision.status()["inflight"])
