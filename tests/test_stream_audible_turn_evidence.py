@@ -283,3 +283,28 @@ def test_physical_queue_ack_does_not_count_as_heard():
     joiner.begin(r, session_id="nativeSession1", now_ms=1010)
     assert not joiner.heard(replace(heard(r), device_loopback_confirmed=False), now_ms=1225)
     assert health.metrics()["accepted"] == 0
+
+
+def test_rearm_requires_new_output_session_identifier():
+    health, joiner = make_session()
+    joiner.disable()
+    health.disable()
+    health.enable(owner_approved=True)
+    with pytest.raises(RuntimeError, match="replay"):
+        joiner.enable(owner_approved=True, session_id="nativeSession1")
+    joiner.enable(owner_approved=True, session_id="nativeSession2")
+    assert not joiner.metrics().faulted
+
+
+def test_reviewer_observation_cannot_predate_device_callback():
+    health, joiner = make_session()
+    r = request(0)
+    joiner.begin(r, session_id="nativeSession1", now_ms=1010)
+    witness = heard(r, observed_at_ms=1700)
+    joiner.heard(witness, now_ms=1710)
+    finished = review(witness, observed_at_ms=1600)
+    assert not joiner.reviewed(
+        finished, session_id="nativeSession1", current_scene_epoch="room0", now_ms=1760,
+    )
+    assert joiner.metrics().faulted
+    assert health.metrics()["accepted"] == 0
