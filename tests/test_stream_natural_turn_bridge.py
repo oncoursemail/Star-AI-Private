@@ -496,3 +496,202 @@ def test_opt_in_single_flight_disable_and_quiet_revoke_draft():
 def test_single_flight_configuration_rejects_untrusted_types(kwargs):
     with pytest.raises(ValueError):
         NaturalTurnBridge(**kwargs)
+
+
+# Live TTS worker must present its original plan at the final first-PCM
+# boundary. This is opt-in, advisory, and never an audio/broadcast permission.
+def review(host, intent, now=410, *, active=False, critical=False,
+           healthy=True, ready_pcm=True, verified=True):
+    return host.revalidate_prepared(
+        intent, now_ms=now, host_playout_active=active,
+        gameplay_critical=critical, output_healthy=healthy,
+        pcm_output_ready=ready_pcm, host_verified=verified,
+    )
+
+
+def test_strict_preplay_requires_fresh_review_before_spoken_commit():
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    intent = decide(host).intent
+    assert intent is not None
+    assert not host.complete(intent, now_ms=401, host_confirmed_spoken=True)
+    result = review(host, intent)
+    assert (result.action, result.reason) == ("reviewed", "fresh_preplay_candidate")
+    assert result.intent is intent
+    assert not result.authorizes_playback and not result.authorizes_broadcast
+    assert not result.authorizes_game_input
+    assert review(host, intent, 411).reason == "preplay_ticket_already_reviewed"
+    assert host.complete(intent, now_ms=420, host_confirmed_spoken=True)
+    assert not host.complete(intent, now_ms=421, host_confirmed_spoken=True)
+    assert host.metrics()["preplay_reviewed"] == 1
+    assert host.metrics()["preplay_denied"] == 1
+
+
+@pytest.mark.parametrize("kwargs,expected", [
+    ({"verified": False}, "physical_host_evidence_missing"),
+    ({"ready_pcm": False}, "physical_host_evidence_missing"),
+    ({"active": True}, "unsafe_native_output_or_gameplay"),
+    ({"critical": True}, "unsafe_native_output_or_gameplay"),
+    ({"healthy": False}, "unsafe_native_output_or_gameplay"),
+])
+def test_strict_preplay_denies_untrusted_or_unhealthy_native_handoff(kwargs, expected):
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    stale = decide(host).intent
+    assert stale is not None
+    assert review(host, stale, **kwargs).reason == expected
+    assert not host.complete(stale, now_ms=415, host_confirmed_spoken=True)
+
+
+def test_strict_preplay_denies_expired_worker_and_old_replaced_plan():
+    host = NaturalTurnBridge(
+        single_flight_tts=True, require_preplay_recheck=True,
+        preparation_lease_ms=300,
+    )
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    first = decide(host).intent
+    assert first is not None
+    assert review(host, first, 700).reason == "preplay_ticket_expired_or_scene_changed"
+    assert not host.complete(first, now_ms=705, host_confirmed_spoken=True)
+    ready(host, at=1000)
+    newest = decide(host, 1000).intent
+    assert newest is not None and newest is not first
+    assert review(host, first, 1001).reason == "stale_or_superseded_tts_ticket"
+    assert review(host, newest, 1010).action == "reviewed"
+
+
+def test_strict_preplay_fresh_vad_is_required_after_delayed_synthesis():
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    pending = decide(host).intent
+    assert pending is not None
+    assert review(host, pending, 600).reason.startswith("audio_turn_")
+    assert not host.complete(pending, now_ms=610, host_confirmed_spoken=True)
+
+
+def test_strict_preplay_revalidates_source_after_game_scene_rebind():
+    from star.stream_director import StreamDirector
+    director = StreamDirector()
+    host = NaturalTurnBridge(
+        director=director, single_flight_tts=True,
+        require_preplay_recheck=True,
+    )
+    host.enable(owner_approved=True)
+    director.bind_game_scope("game-a", owner_approved=True)
+    ready(host)
+    game_signal = StreamSignal(
+        "scene-event", "game_success", 0.4, "Finished a level!",
+        evidence="observed", game_scope="game-a",
+    )
+    assert host.offer(game_signal, now_ms=400)
+    pending = decide(host).intent
+    assert pending is not None
+    assert director.has_live_intent(pending, now=.4)
+    director.bind_game_scope("game-b", owner_approved=True)
+    assert not director.has_live_intent(pending, now=.405)
+    assert review(host, pending, 410).reason == "preplay_ticket_expired_or_scene_changed"
+    assert not host.complete(pending, now_ms=420, host_confirmed_spoken=True)
+
+
+def test_strict_preplay_revokes_on_observed_critical_load_between_tts_and_pcm():
+    governor = load_governor()
+    host = NaturalTurnBridge(
+        load_governor=governor, single_flight_tts=True,
+        require_preplay_recheck=True,
+    )
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    pending = decide(host).intent
+    assert pending is not None
+    assert governor.ingest(
+        load_sample("preplay_render_pressure", .405, render_missed_pct=4),
+        now_s=.406, host_verified=True,
+    )
+    assert review(host, pending, 410).reason == "resource_pressure_at_preplay"
+    assert not host.complete(pending, now_ms=415, host_confirmed_spoken=True)
+
+
+def test_strict_preplay_rejects_counterfeit_and_backward_host_clock():
+    from dataclasses import replace
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    pending = decide(host).intent
+    assert pending is not None
+    assert review(host, replace(pending), 405).reason == "stale_or_superseded_tts_ticket"
+    assert review(host, pending, 399).reason == "host_clock_reversed"
+    assert review(host, pending, 410).action == "reviewed"
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"require_preplay_recheck": 1, "single_flight_tts": True},
+    {"require_preplay_recheck": None, "single_flight_tts": True},
+    {"require_preplay_recheck": True},
+])
+def test_strict_preplay_config_fails_closed(kwargs):
+    with pytest.raises(ValueError):
+        NaturalTurnBridge(**kwargs)
+
+
+@pytest.mark.parametrize("bad_kwargs", [
+    {"host_playout_active": 1},
+    {"gameplay_critical": "false"},
+    {"output_healthy": None},
+    {"pcm_output_ready": 1},
+    {"host_verified": 1},
+])
+def test_strict_preplay_rejects_untyped_host_evidence(bad_kwargs):
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    intent = decide(host).intent
+    assert intent is not None
+    kwargs = {
+        "now_ms": 410, "host_playout_active": False,
+        "gameplay_critical": False, "output_healthy": True,
+        "pcm_output_ready": True, "host_verified": True,
+    }
+    kwargs.update(bad_kwargs)
+    with pytest.raises(ValueError):
+        host.revalidate_prepared(intent, **kwargs)
+
+
+def test_strict_preplay_concurrent_tts_callbacks_cannot_double_review():
+    from concurrent.futures import ThreadPoolExecutor
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    pending = decide(host).intent
+    assert pending is not None
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        decisions = list(pool.map(lambda _: review(host, pending), range(30)))
+    assert sum(item.action == "reviewed" for item in decisions) == 1
+    assert all(item.action in {"reviewed", "hold"} for item in decisions)
+    assert host.metrics()["preplay_reviewed"] == 1
+
+
+def test_strict_preplay_game_danger_preempts_older_synthesized_question():
+    host = NaturalTurnBridge(single_flight_tts=True, require_preplay_recheck=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    old = decide(host).intent
+    assert old is not None
+    assert host.offer(signal(410, signal_id="observed-danger", kind="game_danger"),
+                      now_ms=410)
+    assert review(host, old, 410).reason == "stale_or_superseded_tts_ticket"
+    current = decide(host, 410).intent
+    assert current is not None and current.kind == "game_danger"
+    assert review(host, current, 411).action == "reviewed"
