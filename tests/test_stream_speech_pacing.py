@@ -307,6 +307,8 @@ def test_stage_exposes_and_enforces_machine_readable_word_budget_before_tts():
 
 def test_stage_response_budget_counts_speakable_text_and_rejects_stale_plan():
     stage = StarStage(clock=lambda: 100.0)
+    invalid = stage.review_response(None, "Hello.", now=100.0)
+    assert not invalid.eligible and invalid.reason == "invalid_stage_plan"
     stage.enable(owner_approved=True)
     assert stage.offer(
         StreamSignal(
