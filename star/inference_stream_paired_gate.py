@@ -175,6 +175,9 @@ class StreamSpeedVerdict:
         "FPS, game skill, or OBS proof."
     )
     duplicate_summary_pairs: int = 0
+    improved_speakable_pairs: int = 0
+    non_tied_speakable_pairs: int = 0
+    paired_sign_test_p: float | None = None
 
 
 def _summary_pair_fingerprint(pair: StreamSpeedPair) -> str:
@@ -204,6 +207,20 @@ def _bootstrap_gain_ci(gains: list[float]) -> tuple[float, float]:
     means = sorted(sum(gains[rng.randrange(n)] for _ in range(n)) / n
                    for _ in range(2000))
     return round(means[49], 2), round(means[1949], 2)
+
+
+def _paired_sign_test(gains: list[float]) -> tuple[int, int, float]:
+    """Exact one-sided sign test: P(X >= observed positive gains), X~Bin(n,.5).
+
+    Zero changes have no direction and are excluded. This checks consistency
+    across paired sessions, not independence or authenticity of the sessions.
+    """
+    positives = sum(gain > 0 for gain in gains)
+    non_tied = sum(gain != 0 for gain in gains)
+    if not non_tied:
+        return positives, non_tied, 1.0
+    p_value = sum(math.comb(non_tied, k) for k in range(positives, non_tied + 1)) / (2 ** non_tied)
+    return positives, non_tied, p_value
 
 
 def compare_stream_speed(
@@ -267,6 +284,7 @@ def compare_stream_speed(
     new_done = [_number(p.candidate["complete_p95_ms"]) for p in complete]
     gains = [b - c for b, c in zip(base_speech, new_speech)]
     ci = _bootstrap_gain_ci(gains)
+    improved, non_tied, sign_p = _paired_sign_test(gains)
     # Missing outputs never disappear from the paired denominator.
     degraded = any(
         cast(int, p.candidate["completed"]) < cast(int, p.baseline["completed"])
@@ -284,7 +302,8 @@ def compare_stream_speed(
           or first.baseline["workload"] == "repeat"
           or replayed > 0):
         verdict = "inconclusive"
-    elif (ci[0] > gain_floor
+    elif (sign_p <= 0.05
+          and ci[0] > gain_floor
           and _p95(new_speech) < _p95(base_speech)
           and _p95(new_done) <= _p95(base_done) + complete_limit):
         verdict = "eligible_for_private_pilot"
@@ -296,6 +315,9 @@ def compare_stream_speed(
         round(_p95(base_done), 2), round(_p95(new_done), 2),
         round(sum(gains) / len(gains), 2), ci,
         duplicate_summary_pairs=replayed,
+        improved_speakable_pairs=improved,
+        non_tied_speakable_pairs=non_tied,
+        paired_sign_test_p=round(sign_p, 8),
     )
 
 
