@@ -34,6 +34,7 @@ from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
 from .stream_persona import event_message
+from .stream_speech_pacing import StreamSpeechPacer
 from .stream_turntaking import TurnAdvice
 from .stream_preplay_fence import PreplayAdvice, PreplayWitness, assess_preplay
 
@@ -125,10 +126,14 @@ class StarStage:
 
     def __init__(self, *,
                  director: StreamDirector | None = None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 speech_pacer: StreamSpeechPacer | None = None) -> None:
         self._director = director if director is not None else StreamDirector()
         if not isinstance(self._director, StreamDirector):
             raise TypeError("director must be a StreamDirector")
+        if speech_pacer is not None and type(speech_pacer) is not StreamSpeechPacer:
+            raise TypeError("speech_pacer must be a host-owned StreamSpeechPacer")
+        self._speech_pacer = speech_pacer
         self._clock = clock
         self._lock = RLock()
         self._enabled = False
@@ -157,6 +162,7 @@ class StarStage:
             "journal_recall_skipped": 0, "off_game_context": 0,
             "preplay_checked": 0, "preplay_blocked": 0,
             "off_game_memory": 0,
+            "pacing_deferred": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -397,6 +403,25 @@ class StarStage:
                 self._director.complete(intent, now=current, spoken=False)
                 self._counts["off_game_context"] += 1
                 return None
+            # Calibrate only from completed audible output on the actual
+            # device in this load regime; unknown host state adds no guess.
+            max_words = None
+            if self._speech_pacer is not None:
+                pace = self._speech_pacer.advise(
+                    intent, now_s=current,
+                    game_active=telemetry.game_active if telemetry else False,
+                    streaming_load=(
+                        telemetry.live or telemetry.private_stream_rehearsal
+                        if telemetry else False
+                    ),
+                    queued_audio_ms=telemetry.speech_backlog_ms if telemetry else 0,
+                    host_context_verified=telemetry is not None,
+                )
+                if pace.status == "hold":
+                    self._director.complete(intent, now=current, spoken=False)
+                    self._counts["pacing_deferred"] += 1
+                    return None
+                max_words = pace.max_words
             self._sequence += 1
             expression = _CUES[intent.kind]
             # An unconfirmed game inference can never trigger a victory dance
@@ -404,7 +429,7 @@ class StarStage:
             if intent.kind.startswith("game_") and intent.evidence != "observed":
                 expression = None
             guidance = _DELIVERY[intent.kind]
-            prompt = event_message(intent)["content"] + "\nDelivery: " + guidance
+            prompt = event_message(intent, max_words=max_words)["content"] + "\nDelivery: " + guidance
             # Public facts accompany only an actual viewer question, never an
             # unsolicited idle remark or high-priority gameplay interruption.
             if knowledge is not None and intent.kind == "viewer_question":
