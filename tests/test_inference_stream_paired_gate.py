@@ -308,3 +308,22 @@ def test_summary_rejects_unrecognized_private_fields():
     row["private_stream_transcript"] = "do not ingest"
     with pytest.raises(ValueError):
         pair(0, candidate=row)
+
+
+def test_optional_cache_audit_metadata_is_validated():
+    row = summary(300)
+    row["canary_mismatch_case_ids"] = []
+    row["category_latency_ms"] = {
+        "gaming": {"count": 4, "p50_ms": 120, "p95_ms": 180},
+    }
+    assert pair(0, baseline=row)
+
+    bad_ids = dict(row, canary_mismatch_case_ids=["slot-01"])
+    with pytest.raises(ValueError, match="case identities"):
+        pair(0, baseline=bad_ids)
+
+    bad_latency = dict(row, category_latency_ms={
+        "gaming": {"count": 4, "p50_ms": 180, "p95_ms": 120},
+    })
+    with pytest.raises(ValueError, match="p95"):
+        pair(0, baseline=bad_latency)

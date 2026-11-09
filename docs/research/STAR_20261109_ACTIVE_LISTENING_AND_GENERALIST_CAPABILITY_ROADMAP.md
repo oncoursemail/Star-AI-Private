@@ -235,5 +235,3 @@ Run warm and cold starts, A/B/A or randomized paired sessions, route/device chan
 ## Evidence boundary
 
 This document is a source-linked engineering roadmap. The new listener cue code is deterministic and offline-testable, but it does not itself perform ASR, capture WASAPI audio, render VTube Studio parameters, operate OBS, control a game, train a model, or broadcast. No neural inference speedup, game win-rate improvement, model-intelligence gain, or public-stream readiness is claimed.
-
-[executed on device: starai (04f6aa98-0095-4f4d-8546-724e7fb588fa)]

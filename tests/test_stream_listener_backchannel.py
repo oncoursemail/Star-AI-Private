@@ -183,5 +183,3 @@ class StreamListenerBackchannelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-[executed on device: starai (04f6aa98-0095-4f4d-8546-724e7fb588fa)]

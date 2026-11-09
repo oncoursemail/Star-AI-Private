@@ -35,6 +35,7 @@ _REPLAY_FIELDS = (
     "workload_sha256", "wall_ms", "first_visible_p95_ms",
     "first_speakable_p95_ms", "complete_p95_ms", "speakable_ready",
     "speakable_missing", "canary_mismatches", "statuses",
+    "canary_mismatch_case_ids", "category_latency_ms",
 )
 
 
@@ -76,6 +77,7 @@ def _summary(row: object) -> Mapping[str, object]:
         "first_visible_p50_ms", "first_speakable_p50_ms",
         "complete_p50_ms", "partial_visible_failures",
         "repeated_prompt_warning", "note",
+        "canary_mismatch_case_ids", "category_latency_ms",
     }
     if not expected.issubset(row) or not set(row).issubset(allowed):
         raise ValueError("expected only sanitized streaming benchmark fields")
@@ -98,6 +100,34 @@ def _summary(row: object) -> Mapping[str, object]:
         raise ValueError("invalid streaming status breakdown")
     if any(type(x) is not int or not 0 <= x <= requests for x in statuses.values()):
         raise ValueError("invalid status counts")
+    if "canary_mismatch_case_ids" in row:
+        mismatch_ids = row["canary_mismatch_case_ids"]
+        if (type(mismatch_ids) is not list or len(mismatch_ids) > requests
+                or len(mismatch_ids) != canary_errors
+                or any(type(value) is not str
+                       or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,39}", value) is None
+                       for value in mismatch_ids)
+                or len(set(mismatch_ids)) != len(mismatch_ids)):
+            raise ValueError("invalid canary mismatch case identities")
+    if "category_latency_ms" in row:
+        categories = row["category_latency_ms"]
+        if type(categories) is not dict or len(categories) > 16:
+            raise ValueError("invalid category latency summary")
+        category_total = 0
+        for category, measurements in categories.items():
+            if (type(category) is not str
+                    or re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,31}", category) is None
+                    or type(measurements) is not dict
+                    or set(measurements) != {"count", "p50_ms", "p95_ms"}):
+                raise ValueError("invalid category latency entry")
+            count = _integer(measurements["count"], 1, completed)
+            p50 = _number(measurements["p50_ms"])
+            p95 = _number(measurements["p95_ms"])
+            if p95 < p50:
+                raise ValueError("category p95 cannot be below p50")
+            category_total += count
+        if category_total > completed:
+            raise ValueError("category counts exceed completed responses")
     if (sum(statuses.values()) != requests or statuses["ok"] != completed
             or statuses["canary_mismatch"] != canary_errors):
         raise ValueError("status counts contradict completed responses")
@@ -188,7 +218,7 @@ def _summary_pair_fingerprint(pair: StreamSpeedPair) -> str:
     summaries still require trusted host experiment provenance.
     """
     measured = [
-        {key: row[key] for key in _REPLAY_FIELDS}
+        {key: row.get(key) for key in _REPLAY_FIELDS}
         for row in (pair.baseline, pair.candidate)
     ]
     encoded = json.dumps(measured, sort_keys=True, separators=(",", ":"), allow_nan=False)
