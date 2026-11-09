@@ -20,7 +20,7 @@ from typing import cast
 
 from .stream_long_session_voice_health import LongSessionVoiceHealth, ReviewedVoiceTurn
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_CLOCK = 1e13
 _MAX_WAIT_MS = 30_000.0
 _MAX_CAPTURE_AGE_MS = 5_000.0
