@@ -310,3 +310,67 @@ def test_real_listener_check_requires_exact_private_binding(monkeypatch):
     ):
         psutil.net_connections = lambda kind: candidate
         assert _obs_listener_is_loopback_owned(123, 4455) is allowed
+
+
+def test_recommend_invalidates_old_green_when_obs_process_exits_between_samples():
+    host, socket, _, identity = armed()
+    for _ in range(4):
+        assert host.sample().status in {"pending", "accepted"}
+    assert host.recommend().profile == "normal"
+    identity.clear()
+    # No new sample was taken. The decision boundary must independently check.
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+    assert not host.metrics()["armed"]
+
+
+def test_recommend_invalidates_old_green_on_listener_rebind_between_samples():
+    host, socket, *_ = armed()
+    for _ in range(4):
+        host.sample()
+    assert host.recommend().allow_optional_commentary
+    host._listener_check = lambda pid, port: False
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+    assert host.metrics()["revoked"] >= 1
+
+
+def test_recommend_expiry_is_stricter_than_governor_three_second_cache():
+    host, socket, clock, _ = armed()
+    for _ in range(4):
+        host.sample()
+    assert host.recommend().profile == "normal"
+    clock.ms += 749
+    assert host.recommend().profile == "normal"
+    clock.ms += 2  # Only 751 ms old; governor would still accept its 3s TTL.
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+    assert host.metrics()["armed"] is False
+
+
+def test_recommend_clock_fault_cannot_reuse_previous_normal_advice():
+    host, socket, clock, _ = armed()
+    for _ in range(4):
+        host.sample()
+    assert host.recommend().profile == "normal"
+    clock.ms = float("inf")
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+
+
+@pytest.mark.parametrize("value", [True, 0, 99, 2001, 750.0, float("nan")])
+def test_advice_ttl_requires_bounded_strict_host_configuration(value):
+    host, *_ = ready()
+    with pytest.raises(ValueError):
+        ObsLoopbackLiveHost(
+            load_reader=host._load_reader,
+            max_advice_age_ms=value,
+        )
+
+
+def test_recommend_before_initial_accepted_obs_interval_stays_warming():
+    host, socket, *_ = armed()
+    assert not host.recommend().allow_optional_commentary
+    assert host.sample().status == "pending"
+    assert not host.recommend().allow_optional_commentary
+    assert not socket.closed

@@ -76,7 +76,13 @@ class ObsLoopbackLiveHost:
         clock: Callable[[], float] = time.monotonic,
         token: Callable[[int], str] = secrets.token_hex,
         system_name: Callable[[], str] = platform.system,
+        max_advice_age_ms: int = 750,
     ) -> None:
+        # A resource recommendation needs fresher OBS evidence than the
+        # governor's generic multi-second sample-age allowance. This is a
+        # speech-admission boundary, not a per-render-frame callback.
+        if type(max_advice_age_ms) is not int or not 100 <= max_advice_age_ms <= 2000:
+            raise ValueError("OBS recommendation age must be 100..2000 ms")
         if not all(
             callable(fn)
             for fn in (
@@ -100,6 +106,8 @@ class ObsLoopbackLiveHost:
         self._clock = clock
         self._token = token
         self._system_name = system_name
+        self._max_advice_age_ms = max_advice_age_ms
+        self._last_accepted_ms: float | None = None
         self._lock = RLock()
         self._sock: _WebSocket | None = None
         self._pid: int | None = None
@@ -151,6 +159,7 @@ class ObsLoopbackLiveHost:
         self._pid = None
         self._created = None
         self._port = None
+        self._last_accepted_ms = None
         self._used_ids.clear()
         if sock is not None:
             try:
@@ -288,6 +297,7 @@ class ObsLoopbackLiveHost:
                 )
                 self._counts["samples"] += 1
                 if result.status == "accepted":
+                    self._last_accepted_ms = now_ms
                     self._counts["accepted"] += 1
                 elif result.status == "pending":
                     self._counts["pending"] += 1
@@ -307,7 +317,16 @@ class ObsLoopbackLiveHost:
                 # A stopped pipeline's advice is always disabled.
                 return self._pipeline.recommend(now_ms=0.0)
             try:
-                return self._pipeline.recommend(now_ms=_monotonic_ms(self._clock))
+                now_ms = _monotonic_ms(self._clock)
+                # Polling and recommending are different trust boundaries.
+                # OBS can exit, rebind its listener or restart after the last
+                # accepted sample but before the next speech decision.
+                if not self._origin_matches():
+                    raise RuntimeError("OBS process/socket ownership changed")
+                accepted_at = self._last_accepted_ms
+                if accepted_at is not None and (now_ms < accepted_at or now_ms - accepted_at > self._max_advice_age_ms):
+                    raise RuntimeError("last accepted OBS interval expired")
+                return self._pipeline.recommend(now_ms=now_ms)
             except Exception:
                 self._counts["revoked"] += 1
                 self._stop()
