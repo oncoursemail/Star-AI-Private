@@ -263,8 +263,12 @@ class AudibleTurnEvidenceAssembler:
             return True
 
     def reviewed(
-        self, review: CompletedVoiceReview, *, session_id: str,
-        current_scene_epoch: str, now_ms: float,
+        self,
+        review: CompletedVoiceReview,
+        *,
+        session_id: str,
+        current_scene_epoch: str,
+        now_ms: float,
     ) -> bool:
         """Join first physical sound and separately reviewed COMPLETE speech."""
         with self._lock:
