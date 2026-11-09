@@ -147,6 +147,12 @@ class OptionalGpuLeaseGate:
         except ValueError:
             self._revoke_all("resource_clock_invalid")
             return None, "resource_clock_invalid"
+        except Exception:
+            # A broken trusted telemetry adapter is not proof of headroom.
+            # Preserve all physical VRAM claims until an independent exit
+            # witness; do not leak exception contents into stream decisions.
+            self._revoke_all("resource_observer_failed")
+            return None, "resource_observer_failed"
         if advice.profile != "normal" or not advice.allow_extra_gpu_inference:
             self._revoke_all("resource_" + advice.profile)
             return advice, "resource_" + advice.profile
@@ -179,7 +185,13 @@ class OptionalGpuLeaseGate:
                 return reject("owner_opt_in_required")
             if not host_verified:
                 return reject("host_not_verified")
-            now, ordered = self._clock(now_s)
+            try:
+                now, ordered = self._clock(now_s)
+            except ValueError:
+                # Once running, malformed trusted host time cannot leave
+                # existing optional workers with an apparently valid lease.
+                self._revoke_all("host_clock_invalid")
+                return reject("host_clock_invalid")
             if not ordered:
                 return reject("host_clock_reversed")
             advice, reason = self._refresh(now)
@@ -216,7 +228,11 @@ class OptionalGpuLeaseGate:
             if not host_verified:
                 self._revoke_all("host_not_verified")
                 return OptionalGpuDecision("stop", "host_not_verified", lease)
-            now, ordered = self._clock(now_s)
+            try:
+                now, ordered = self._clock(now_s)
+            except ValueError:
+                self._revoke_all("host_clock_invalid")
+                return OptionalGpuDecision("stop", "host_clock_invalid", lease)
             if not ordered:
                 return OptionalGpuDecision("stop", "host_clock_reversed", lease)
             _, reason = self._refresh(now)
