@@ -55,12 +55,54 @@ def test_clear_measured_gain_eligible_only_for_private_pilot():
     assert report.gain_ci95_ms == (125, 125)
     assert report.baseline_speakable_p95_ms == 300
     assert report.candidate_speakable_p95_ms == 175
+    assert report.improved_speakable_pairs == 6
+    assert report.non_tied_speakable_pairs == 6
+    assert report.paired_sign_test_p == 0.015625
     assert "not attested" in report.note
 
 
 def test_low_gain_not_promoted():
     pairs = [pair(i, candidate=summary(280)) for i in range(6)]
     assert compare_stream_speed(pairs).verdict == "inconclusive"
+
+
+def test_one_lucky_tail_cannot_mask_inconsistent_paired_speech():
+    # Five large wins can make the bootstrap gain CI look positive although
+    # one of the six matched trials became slower. A 5/6 one-sided sign test
+    # is not significant at the predeclared 0.05 confidence threshold.
+    rows = [
+        pair(i, baseline=summary(300), candidate=summary(200))
+        for i in range(5)
+    ] + [pair(5, baseline=summary(200), candidate=summary(210))]
+    report = compare_stream_speed(rows)
+    assert report.gain_ci95_ms is not None
+    assert report.gain_ci95_ms[0] > 40
+    assert report.candidate_speakable_p95_ms < report.baseline_speakable_p95_ms
+    assert report.improved_speakable_pairs == 5
+    assert report.non_tied_speakable_pairs == 6
+    assert report.paired_sign_test_p == 0.109375
+    assert report.verdict == "inconclusive"
+
+
+def test_longer_consistent_paired_cohort_can_tolerate_one_nonwin():
+    rows = [
+        pair(i, baseline=summary(300), candidate=summary(200))
+        for i in range(7)
+    ] + [pair(7, baseline=summary(200), candidate=summary(210))]
+    report = compare_stream_speed(rows)
+    assert report.improved_speakable_pairs == 7
+    assert report.non_tied_speakable_pairs == 8
+    assert report.paired_sign_test_p == 0.03515625
+    assert report.verdict == "eligible_for_private_pilot"
+
+
+def test_ties_do_not_become_positive_speech_evidence():
+    rows = [pair(i, candidate=summary(300)) for i in range(6)]
+    report = compare_stream_speed(rows)
+    assert report.paired_sign_test_p == 1.0
+    assert report.improved_speakable_pairs == 0
+    assert report.non_tied_speakable_pairs == 0
+    assert report.verdict == "inconclusive"
 
 
 def test_slow_candidate_regresses():
