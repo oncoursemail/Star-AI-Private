@@ -8,7 +8,7 @@ STAR already has speech turn-taking, host-scoped gameplay events, private rehear
 
 The new StreamSpeechPacer takes independently observed first-audible and finished-audible timestamps from a trusted host, rejects stale/replayed/implausible sessions, and estimates conservative p90 seconds per spoken word for each current game/stream-load regime. StarStage can optionally ask for a length budget and add a **user-priority** short-turn guidance message. If the live event cannot fit, an optional reaction is withheld rather than reading stale commentary over current gameplay. Owner interrupts are still orchestrated by existing preemption logic. Legacy installations without the pacer behave as before.
 
-**Crucial limit:** this is a prompt-level word cap, not a hard output validator, speech-speed control, TTS scheduler or verified playout. A model can ignore the request; the trusted host must perform an actual output-length check and late-stage epoch/freshness recheck. Physical-audio attestation remains separate.
+**Enforcement boundary:** prompt guidance alone is not enforcement. The companion patch now exposes `StagePlan.max_words` and `StarStage.review_response()`, which counts normalized speakable text before TTS and rejects over-budget text whole instead of clipping a potentially misleading fragment. The gate must be called by the trusted host before synthesis. It does not guarantee physical speech duration or authorize audio/broadcast; late-stage scene, turn, worker-epoch and output-device checks plus physical STOP/FLUSH and audio attestation remain separate.
 
 ## Primary source investigations
 
