@@ -1,6 +1,7 @@
 """Offline tests: no GPU, OS processes, game, OBS, accounts, or network."""
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from unittest.mock import patch
 import unittest
 
 from star.stream_load_governor import StreamLoadGovernor, StreamLoadSample
@@ -25,7 +26,9 @@ def ready() -> tuple[StreamLoadGovernor, OptionalGpuLeaseGate]:
         assert gov.ingest(sample(f"good-{time_s}", time_s),
                           now_s=time_s, host_verified=True)
     gate = OptionalGpuLeaseGate(gov)
-    gate.enable(owner_approved=True)
+    gate.enable(
+        owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+    )
     return gov, gate
 
 
@@ -44,7 +47,12 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         self.assertEqual(request(gate).reason, "owner_opt_in_required")
         with self.assertRaises(PermissionError):
             gate.enable()
-        gate.enable(owner_approved=True)
+        with self.assertRaisesRegex(PermissionError, "native optional-worker sweep"):
+            gate.enable(owner_approved=True)
+        self.assertEqual(request(gate).reason, "owner_opt_in_required")
+        gate.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
         self.assertEqual(request(gate).reason, "resource_disabled")
         self.assertFalse(gate.metrics()["admitted"])
 
@@ -52,7 +60,9 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         gov = StreamLoadGovernor()
         gov.enable(owner_approved=True)
         gate = OptionalGpuLeaseGate(gov)
-        gate.enable(owner_approved=True)
+        gate.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
         self.assertEqual(request(gate, now_s=10).reason, "resource_telemetry_stale")
         gov.ingest(sample("one", 10), now_s=10, host_verified=True)
         self.assertEqual(request(gate, now_s=10).reason, "resource_warming")
@@ -83,7 +93,9 @@ class OptionalGpuLeaseTests(unittest.TestCase):
             gov.ingest(sample(str(time_s), time_s, used_mb=6300),
                        now_s=time_s, host_verified=True)
         gate = OptionalGpuLeaseGate(gov)
-        gate.enable(owner_approved=True)
+        gate.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
         self.assertEqual(request(gate).reason, "resource_normal")
         self.assertFalse(gate.metrics()["admitted"])
 
@@ -135,11 +147,15 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         self.assertEqual(gate.review(lease.lease_id, now_s=12,
                                      host_verified=True).action, "stop")
         with self.assertRaisesRegex(RuntimeError, "physical workers"):
-            gate.enable(owner_approved=True)
+            gate.enable(
+                owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+            )
         self.assertTrue(gate.acknowledge_stopped(
             lease.lease_id, host_verified=True, physical_worker_stopped=True,
         ))
-        gate.enable(owner_approved=True)
+        gate.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
         self.assertEqual(request(gate).action, "admit")
         self.assertNotEqual(request(gate).lease, lease)
 
@@ -158,8 +174,7 @@ class OptionalGpuLeaseTests(unittest.TestCase):
             work_kind="vision", vram_mb=1024, duration_s=2,
             now_s=1e9, host_verified=False,
         ).reason, "host_not_verified")
-        self.assertEqual(request(gate).action, "admit")
-        lease_id = "star-gpu-1-1"
+        lease_id = request(gate).lease.lease_id
         self.assertEqual(gate.review(lease_id, now_s=12,
                                      host_verified=False).action, "stop")
         self.assertEqual(request(gate).reason, "pending_physical_stop")
@@ -167,13 +182,15 @@ class OptionalGpuLeaseTests(unittest.TestCase):
             lease_id, host_verified=False, physical_worker_stopped=True,
         ))
         self.assertFalse(gate.acknowledge_stopped(
-            "star-gpu-1-999", host_verified=True, physical_worker_stopped=True,
+            "star-gpu-invalid-999", host_verified=True, physical_worker_stopped=True,
         ))
 
     def test_concurrent_requests_cannot_race_for_same_gpu_budget(self) -> None:
         gov, _ = ready()
         gate = OptionalGpuLeaseGate(gov, max_workers=2)
-        gate.enable(owner_approved=True)
+        gate.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
         barrier = Barrier(8)
 
         def allocate(_: int) -> str:
@@ -197,6 +214,69 @@ class OptionalGpuLeaseTests(unittest.TestCase):
                     gate.request(work_kind=kind, vram_mb=memory,
                                  duration_s=duration, now_s=12, host_verified=True)
         self.assertEqual(gate.metrics()["outstanding"], 0)
+
+
+    def test_new_host_requires_sweep_even_with_healthy_telemetry(self) -> None:
+        gov, previous = ready()
+        old = request(previous).lease
+        restarted = OptionalGpuLeaseGate(gov)
+        self.assertEqual(request(restarted).reason, "owner_opt_in_required")
+        for kwargs in (
+            {"host_verified": True},
+            {"optional_workers_quiescent": True},
+            {"host_verified": True, "optional_workers_quiescent": False},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(PermissionError):
+                restarted.enable(owner_approved=True, **kwargs)
+        self.assertFalse(restarted.metrics()["enabled"])
+        self.assertEqual(request(restarted).reason, "owner_opt_in_required")
+        self.assertTrue(previous.acknowledge_stopped(
+            old.lease_id, host_verified=True, physical_worker_stopped=True,
+        ))
+        # A real native process sweep is required here; the synthetic test
+        # models its independently checked assertion.
+        restarted.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
+        self.assertEqual(request(restarted).action, "admit")
+
+    def test_restart_receipts_never_reuse_id_or_release_new_worker(self) -> None:
+        gov, previous = ready()
+        old = request(previous).lease
+        self.assertTrue(previous.acknowledge_stopped(
+            old.lease_id, host_verified=True, physical_worker_stopped=True,
+        ))
+        with patch("star.stream_optional_gpu_leases.secrets.token_hex",
+                   return_value="f" * 32):
+            restarted = OptionalGpuLeaseGate(gov)
+        restarted.enable(
+            owner_approved=True, host_verified=True, optional_workers_quiescent=True,
+        )
+        fresh = request(restarted).lease
+        self.assertNotEqual(old.lease_id, fresh.lease_id)
+        self.assertFalse(restarted.acknowledge_stopped(
+            old.lease_id, host_verified=True, physical_worker_stopped=True,
+        ))
+        self.assertEqual(restarted.metrics()["outstanding"], 1)
+        self.assertEqual(restarted.review(
+            fresh.lease_id, now_s=12, host_verified=True,
+        ).action, "run")
+
+    def test_untrusted_sweep_claims_are_not_accepted(self) -> None:
+        gov = StreamLoadGovernor()
+        gate = OptionalGpuLeaseGate(gov)
+        for bad in (1, None, "yes"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                gate.enable(
+                    owner_approved=True, host_verified=bad,
+                    optional_workers_quiescent=True,
+                )
+            with self.subTest(quiescent=bad), self.assertRaises(ValueError):
+                gate.enable(
+                    owner_approved=True, host_verified=True,
+                    optional_workers_quiescent=bad,
+                )
+        self.assertFalse(gate.metrics()["enabled"])
 
 
 if __name__ == "__main__":
