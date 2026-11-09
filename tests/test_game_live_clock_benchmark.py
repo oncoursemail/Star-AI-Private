@@ -47,6 +47,7 @@ def test_good_faster_successful_agent_eligible_for_manual_pilot_only():
     assert report.progress_gain_ci95 == (.55, .55)
     assert report.candidate_action_p95_ms == 90
     assert report.baseline_action_p95_ms == 150
+    assert report.paired_win_sign_pvalue == pytest.approx(2 ** -24)
     assert not report.authorized_to_act
 
 
@@ -275,3 +276,46 @@ def test_post_inference_world_clock_speedup_is_not_live_gameplay():
     report = assess_live_clock(runs)
     assert report.verdict == "inconclusive"
     assert report.non_live_pairs == 1
+
+
+def test_replayed_initial_state_cannot_inflate_independent_pair_count():
+    # Different pair/episode IDs do NOT turn an identical game reset into
+    # a new holdout. Earlier the 24-case fixture still qualified.
+    runs = cohort()
+    runs[2] = replace(runs[2], scenario_id="map-0")
+    runs[3] = replace(runs[3], scenario_id="map-0")
+    with pytest.raises(ValueError, match="reused paired starting state"):
+        assess_live_clock(runs)
+
+
+def test_one_lucky_new_win_with_large_progress_claim_does_not_qualify():
+    # A large reported progress delta and faster actuation must not disguise
+    # weak paired win evidence. One discordant new win gives p=0.5.
+    runs = cohort()
+    runs = [
+        replace(row, objective_success=False)
+        if row.variant == "candidate" and row.pair_id != "pair-0" else row
+        for row in runs
+    ]
+    report = assess_live_clock(runs)
+    assert report.candidate_timely_successes == 1
+    assert report.progress_gain_ci95 == (.55, .55)
+    assert report.paired_win_sign_pvalue == pytest.approx(0.5)
+    assert report.verdict == "inconclusive"
+    assert not report.authorized_to_act
+
+
+def test_many_resets_from_one_stage_do_not_claim_broad_gameplay_readiness():
+    # Distinct host start-state fingerprints may represent different seeds,
+    # but all of them coming from the same stage is not transfer evidence.
+    runs = cohort()
+    runs = [
+        replace(row, scenario_id="only-stage",
+                initial_state_sha256=f"{int(row.pair_id.split('-')[1]):064x}")
+        for row in runs
+    ]
+    report = assess_live_clock(runs)
+    assert report.matched_pairs == 24
+    assert report.paired_win_sign_pvalue == pytest.approx(2 ** -24)
+    assert report.verdict == "inconclusive"
+    assert not report.authorized_to_act
