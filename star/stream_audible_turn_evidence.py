@@ -154,6 +154,7 @@ class AudibleTurnEvidenceAssembler:
         self._enabled = False
         self._fault: str | None = None
         self._session: str | None = None
+        self._used_sessions: set[str] = set()
         self._last_now_ms: float | None = None
         self._pending: SpeechRequestWitness | None = None
         self._audible: DeviceAudibleWitness | None = None
@@ -168,6 +169,8 @@ class AudibleTurnEvidenceAssembler:
         with self._lock:
             if self._enabled:
                 raise RuntimeError("disable before arming a new voice session")
+            if session in self._used_sessions or len(self._used_sessions) >= 64:
+                raise RuntimeError("native voice session ID replay or capacity exceeded")
             state = self._health.metrics()
             # A new native output session must start with a NEW, independently
             # warmed voice baseline. Never inherit a green previous session.
@@ -180,6 +183,7 @@ class AudibleTurnEvidenceAssembler:
             ):
                 raise RuntimeError("fresh owner-armed empty voice guard required")
             self._enabled = True
+            self._used_sessions.add(session)
             self._session = session
             self._last_now_ms = None
             self._pending = None
@@ -278,6 +282,7 @@ class AudibleTurnEvidenceAssembler:
                 or review.output_epoch != request.output_epoch
                 or not review.reviewer_confirmed
                 or not audible.first_audible_ms <= review.completed_audible_ms <= review.observed_at_ms <= now
+                or review.observed_at_ms < audible.observed_at_ms
                 or review.completed_audible_ms - audible.first_audible_ms > _MAX_TURN_MS
                 or now - review.observed_at_ms > _MAX_CAPTURE_AGE_MS
             ):
