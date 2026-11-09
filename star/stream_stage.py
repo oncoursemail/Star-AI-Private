@@ -105,6 +105,7 @@ class StagePlan:
     max_words: int | None = None  # machine-readable pre-TTS limit; not output authority
     pacing_scope: str = "none"  # intent | workload | cold_start | none; diagnostics only
     pacing_samples: int = 0  # samples used by the pacing estimator; not a trust token
+    voice_route_id: str = ""  # route bound at preparation; not output authority
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
@@ -371,8 +372,9 @@ class StarStage:
                 turn: TurnAdvice | None = None,
                 journal: StreamEpisodeJournal | None = None,
                 current_game_scope: str = "",
+                voice_route_id: str | None = None,
                 episode_broadcast_approved: bool = False) -> StagePlan | None:
-        """Propose a short reaction; measured overload favors silence and gameplay."""
+        """Propose a short reaction; missing route/load evidence favors silence."""
         current = _time(self._clock() if now is None else now)
         if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
             raise TypeError("knowledge must be a host-approved KnowledgePacket")
@@ -433,9 +435,14 @@ class StarStage:
                         if telemetry else False
                     ),
                     queued_audio_ms=telemetry.speech_backlog_ms if telemetry else 0,
+                    route_id=voice_route_id,
                     host_context_verified=telemetry is not None,
                 )
-                if pace.status == "hold":
+                # A configured pacer must never silently fall back to an
+                # unbounded reply when the current output route or host load
+                # evidence is missing. Legacy stages without a pacer retain
+                # their historical behavior.
+                if pace.status in {"hold", "no_host_context"}:
                     self._director.complete(intent, now=current, spoken=False)
                     self._counts["pacing_deferred"] += 1
                     return None
@@ -543,6 +550,7 @@ class StarStage:
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
                 source_sha256=intent.source_sha256, max_words=max_words,
                 pacing_scope=pacing_scope, pacing_samples=pacing_samples,
+                voice_route_id=voice_route_id if max_words is not None else "",
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
@@ -557,6 +565,7 @@ class StarStage:
 
     def review_response(
         self, plan: StagePlan, text: str, *, now: float | None = None,
+        voice_route_id: str | None = None,
     ) -> ResponseBudgetAdvice:
         """Hard-check the model's speakable text before TTS is allowed to start.
 
@@ -586,6 +595,16 @@ class StarStage:
                 return ResponseBudgetAdvice(
                     False, "response_deadline_expired", max_words=plan.max_words,
                 )
+            if plan.voice_route_id:
+                if voice_route_id is None or type(voice_route_id) is not str:
+                    return ResponseBudgetAdvice(
+                        False, "voice_route_unverified", max_words=plan.max_words,
+                    )
+                if voice_route_id != plan.voice_route_id:
+                    self._drop(interrupted=False, now=current)
+                    return ResponseBudgetAdvice(
+                        False, "voice_route_mismatch", max_words=plan.max_words,
+                    )
             if plan.max_words is not None and (
                 type(plan.max_words) is not int or not 4 <= plan.max_words <= 64
             ):
@@ -648,13 +667,15 @@ class StarStage:
             advice = assess_preplay(
                 kind=plan.kind, evidence=plan.evidence,
                 game_scope=plan.game_scope, witness=witness, now_s=current,
+                expected_voice_route_id=plan.voice_route_id,
             )
             if advice.eligible:
                 self._playout_clearance = (plan, current)
             else:
                 self._counts["preplay_blocked"] += 1
                 if advice.reason in {"owner_barge_in_yield",
-                                     "game_scene_changed_or_unpinned"}:
+                                     "game_scene_changed_or_unpinned",
+                                     "voice_route_changed_or_unverified"}:
                     self._drop(interrupted=True, now=current)
             return advice
 
