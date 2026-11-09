@@ -18,9 +18,10 @@ The new code does **not** speed up inference, inspect llama.cpp's private cache,
 
 The issue reporter described a version-specific `ngram-cache` problem in which a server slot's cached n-gram context and prompt-ingestion watermark could survive between requests. After a longer request, a shorter request on the same slot could skip ingestion of its new prompt and draft from stale context. The report described acceptance falling from 86% to 11% in that setup and noted that repeated-prompt benchmark harnesses could make results order-dependent.
 
-This is a **reported issue and reproduction**, not proof that every current llama.cpp release or every speculative mode is affected. The issue was closed as not planned. STAR should record the exact llama.cpp commit, build flags, model digest, slot count, and benchmark order when testing a candidate.
+This is a **reported issue and reproduction**, not proof that every current llama.cpp release or every speculative mode is affected. The issue itself was later closed as stale/not planned, but upstream PR #27866 (opened 2026-08-28) remains an open proposal for resetting the per-sequence context cache and adds a regression test. A separate October 11 commit referenced by the issue lives in a fork, not the upstream ggml-org repository. Therefore STAR must not assume the reset is present in an installed build: record the exact llama.cpp commit, build flags, model digest, slot count, and benchmark order, and check whether the upstream PR has merged before deciding the audit is redundant.
 
 Source: https://github.com/ggml-org/llama.cpp/issues/27852
+Proposed upstream reset and regression test (still open at research time): https://github.com/ggml-org/llama.cpp/pull/27866
 
 ### Distinguish the speculative modes
 

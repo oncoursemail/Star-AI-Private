@@ -10,7 +10,7 @@ from star.stream_budget import StreamTelemetry
 from star.stream_director import SpeechIntent, StreamSignal
 from star.stream_persona import event_message
 from star.stream_preplay_fence import PreplayWitness
-from star.stream_speech_pacing import StreamSpeechPacer
+from star.stream_speech_pacing import PacingAdvice, StreamSpeechPacer
 from star.stream_stage import StarStage
 from star.stream_turntaking import TurnAdvice
 
@@ -569,3 +569,28 @@ def test_unknown_host_intent_kind_cannot_train_a_pacing_bucket():
             host_confirmed=True,
         )
     assert p.metrics()["accepted"] == 0
+
+def test_stage_fails_closed_if_pacer_returns_budget_without_route(monkeypatch):
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    monkeypatch.setattr(
+        p,
+        "advise",
+        lambda *args, **kwargs: PacingAdvice(
+            status="bounded", reason="test_only", max_words=8, measured_samples=8,
+        ),
+    )
+    stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
+    stage.enable(owner_approved=True)
+    assert stage.offer(
+        StreamSignal(
+            "missing-route-budget", "game_success", 100.0, "Checkpoint cleared!",
+            evidence="observed", game_scope="obby.v3",
+        ),
+        now=100.0,
+    )
+    plan = stage.prepare(
+        now=100.0, current_game_scope="obby.v3", voice_route_id=None,
+    )
+    assert plan is None
+    assert stage.metrics()["pacing_deferred"] == 1

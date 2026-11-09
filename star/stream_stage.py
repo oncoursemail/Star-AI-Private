@@ -493,6 +493,10 @@ class StarStage:
                     self._counts["pacing_deferred"] += 1
                     return None
                 max_words = pace.max_words
+                if max_words is not None and not voice_route_id:
+                    self._director.complete(intent, now=current, spoken=False)
+                    self._counts["pacing_deferred"] += 1
+                    return None
                 pacing_scope = pace.calibration_scope
                 pacing_samples = pace.measured_samples
             self._sequence += 1
@@ -596,7 +600,7 @@ class StarStage:
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
                 source_sha256=intent.source_sha256, max_words=max_words,
                 pacing_scope=pacing_scope, pacing_samples=pacing_samples,
-                voice_route_id=voice_route_id if max_words is not None else "",
+                voice_route_id=(voice_route_id or "") if max_words is not None else "",
             )
             self._quiet_frame = None
             self._listener_backchannel.clear()
