@@ -389,5 +389,108 @@ class PCMBridgeTests(unittest.TestCase):
         self.assertEqual(bridge.metrics()["turn_wallclock_watchdog_stops"], 1)
 
 
+    def test_opt_in_submission_clock_enforces_wall_budget_without_polling(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, max_turn_wall_ms=1_000,
+            require_submit_clock=True,
+        )
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="clocked", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertTrue(bridge.submit(
+            self.intent, epoch="clocked", pcm16=b"aa", now_s=12.07))
+        self.assertTrue(bridge.submit(
+            self.intent, epoch="clocked", pcm16=b"aa", now_s=13.05))
+        # At the deadline, do not queue even one more tiny PCM frame.
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="clocked", pcm16=b"aa", now_s=13.06))
+        self.assertEqual(len(self.speaker.queued), 2)
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(bridge.metrics()["turn_wallclock_watchdog_stops"], 1)
+        self.assertTrue(bridge.metrics()["stop_outstanding"])
+        self.assertEqual(self.director.metrics()["completed"], 0)
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="clocked", pcm16=b"aa", now_s=13.07))
+        self.assertEqual(self.speaker.stops, 1)
+        with self.assertRaises(RuntimeError):
+            bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.attest_quiet(
+            self.intent, epoch="clocked", now_s=13.08, host_verified=True,
+            native_output_flushed=True).state, "quiet")
+
+    def test_opt_in_missing_submission_clock_forces_native_stop(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, require_submit_clock=True)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="clock", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertFalse(bridge.submit(self.intent, epoch="clock", pcm16=b"aa"))
+        self.assertEqual(self.speaker.queued, [])
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(bridge.metrics()["submit_clock_fault_stops"], 1)
+        self.assertTrue(bridge.metrics()["stop_outstanding"])
+        self.assertEqual(self.director.metrics()["completed"], 0)
+
+    def test_opt_in_reversed_submission_clock_quarantines_old_audio(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, require_submit_clock=True)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="clock", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertTrue(bridge.submit(
+            self.intent, epoch="clock", pcm16=b"aa", now_s=12.08))
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="clock", pcm16=b"bb", now_s=12.07))
+        self.assertEqual(self.speaker.queued, [b"aa"])
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(bridge.metrics()["submit_clock_fault_stops"], 1)
+        self.assertTrue(bridge.metrics()["stop_outstanding"])
+
+    def test_opt_in_nonfinite_clock_stops_instead_of_allowing_queued_pcm(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, require_submit_clock=True)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="clock", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="clock", pcm16=b"aa", now_s=float("nan")))
+        self.assertEqual(self.speaker.queued, [])
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertEqual(bridge.metrics()["submit_clock_fault_stops"], 1)
+        self.assertTrue(bridge.metrics()["stop_outstanding"])
+
+    def test_clock_flag_is_typed_and_existing_default_is_compatible(self):
+        for invalid in (0, 1, None, "true", 0.5):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                StreamPreplayPCMBridge(
+                    self.gate, self.sink, require_submit_clock=invalid)
+        self.assertFalse(self.bridge.metrics()["require_submit_clock"])
+        self.bridge.enable(owner_approved=True)
+        self.assertEqual(self.admit().state, "ready")
+        self.assertTrue(self.bridge.submit(
+            self.intent, epoch="voice_1", pcm16=b"aa"))
+        self.assertEqual(self.speaker.queued, [b"aa"])
+
+    def test_opt_in_stop_failure_fails_closed(self):
+        bridge = StreamPreplayPCMBridge(
+            self.gate, self.sink, require_submit_clock=True)
+        bridge.enable(owner_approved=True)
+        self.assertEqual(bridge.admit(
+            self.review, epoch="clock", now_s=12.06,
+            independently_quiet=True).state, "ready")
+        self.speaker.fail_stop = True
+        self.assertFalse(bridge.submit(
+            self.intent, epoch="clock", pcm16=b"aa", now_s=True))
+        self.assertEqual(self.speaker.stops, 1)
+        self.assertTrue(bridge.metrics()["faulted"])
+        with self.assertRaises(RuntimeError):
+            bridge.enable(owner_approved=True)
+
+
+
 if __name__ == "__main__":
     unittest.main()
