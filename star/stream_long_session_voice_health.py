@@ -120,6 +120,10 @@ class LongSessionVoiceHealth:
             self._fault = None
             self._last_sample_ms = None
             self._last_now_ms = None
+            # A new native output session must not inherit evidence counts or
+            # an earlier positive health baseline through diagnostics.
+            self._accepted = 0
+            self._rejected = 0
             self._enabled = True
 
     def disable(self) -> None:
