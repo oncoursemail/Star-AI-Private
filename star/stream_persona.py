@@ -42,7 +42,7 @@ def streamer_system_message() -> dict[str, str]:
     return {"role": "system", "content": STREAMER_SYSTEM_PROMPT}
 
 
-def event_message(intent: SpeechIntent) -> dict[str, str]:
+def event_message(intent: SpeechIntent, *, max_words: int | None = None) -> dict[str, str]:
     """An isolated USER-level event record; never promote viewer text to system role.
 
     The host must perform normal moderation and capability checks before use.
@@ -50,6 +50,8 @@ def event_message(intent: SpeechIntent) -> dict[str, str]:
     """
     if not isinstance(intent, SpeechIntent):
         raise TypeError("expected SpeechIntent")
+    if max_words is not None and (type(max_words) is not int or not 4 <= max_words <= 64):
+        raise ValueError("max_words must be 4..64 or None")
     # JSON escape cannot be mistaken for an additional top-level chat message.
     record = {
         "signal": intent.kind,
@@ -63,4 +65,7 @@ def event_message(intent: SpeechIntent) -> dict[str, str]:
                + json.dumps(record, ensure_ascii=True, separators=(",", ":"))
                + "\nChoose whether to respond in one or two spoken sentences. "
                  "If the event lacks evidence, acknowledge uncertainty.")
+    if max_words is not None:
+        content += (f" Keep this response to at most {max_words} spoken words; "
+                    "finish a coherent thought rather than speaking faster.")
     return {"role": "user", "content": content}

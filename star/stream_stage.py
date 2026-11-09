@@ -34,8 +34,10 @@ from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
 from .stream_persona import event_message
+from .stream_speech_pacing import StreamSpeechPacer
 from .stream_turntaking import TurnAdvice
 from .stream_preplay_fence import PreplayAdvice, PreplayWitness, assess_preplay
+from .voice.chunker import speakable
 
 MODES = frozenset({"normal", "cat", "puppy"})
 
@@ -100,10 +102,25 @@ class StagePlan:
     natural_gaze: bool = False
     game_scope: str = ""
     source_sha256: str = ""  # original event fingerprint; not a permission token
+    max_words: int | None = None  # machine-readable pre-TTS limit; not output authority
+    pacing_scope: str = "none"  # intent | workload | cold_start | none; diagnostics only
+    pacing_samples: int = 0  # samples used by the pacing estimator; not a trust token
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
         return {"role": "user", "content": self.context_record}
+
+
+@dataclass(frozen=True)
+class ResponseBudgetAdvice:
+    """Pre-TTS text check. Eligibility is not permission to play or broadcast."""
+
+    eligible: bool
+    reason: str
+    spoken_words: int = 0
+    max_words: int | None = None
+    authorizes_audio: bool = False
+    authorizes_broadcast: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,10 +142,14 @@ class StarStage:
 
     def __init__(self, *,
                  director: StreamDirector | None = None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 speech_pacer: StreamSpeechPacer | None = None) -> None:
         self._director = director if director is not None else StreamDirector()
         if not isinstance(self._director, StreamDirector):
             raise TypeError("director must be a StreamDirector")
+        if speech_pacer is not None and type(speech_pacer) is not StreamSpeechPacer:
+            raise TypeError("speech_pacer must be a host-owned StreamSpeechPacer")
+        self._speech_pacer = speech_pacer
         self._clock = clock
         self._lock = RLock()
         self._enabled = False
@@ -157,6 +178,7 @@ class StarStage:
             "journal_recall_skipped": 0, "off_game_context": 0,
             "preplay_checked": 0, "preplay_blocked": 0,
             "off_game_memory": 0,
+            "pacing_deferred": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -397,6 +419,29 @@ class StarStage:
                 self._director.complete(intent, now=current, spoken=False)
                 self._counts["off_game_context"] += 1
                 return None
+            # Calibrate only from completed audible output on the actual
+            # device in this load regime; unknown host state adds no guess.
+            max_words = None
+            pacing_scope = "none"
+            pacing_samples = 0
+            if self._speech_pacer is not None:
+                pace = self._speech_pacer.advise(
+                    intent, now_s=current,
+                    game_active=telemetry.game_active if telemetry else False,
+                    streaming_load=(
+                        telemetry.live or telemetry.private_stream_rehearsal
+                        if telemetry else False
+                    ),
+                    queued_audio_ms=telemetry.speech_backlog_ms if telemetry else 0,
+                    host_context_verified=telemetry is not None,
+                )
+                if pace.status == "hold":
+                    self._director.complete(intent, now=current, spoken=False)
+                    self._counts["pacing_deferred"] += 1
+                    return None
+                max_words = pace.max_words
+                pacing_scope = pace.calibration_scope
+                pacing_samples = pace.measured_samples
             self._sequence += 1
             expression = _CUES[intent.kind]
             # An unconfirmed game inference can never trigger a victory dance
@@ -404,7 +449,7 @@ class StarStage:
             if intent.kind.startswith("game_") and intent.evidence != "observed":
                 expression = None
             guidance = _DELIVERY[intent.kind]
-            prompt = event_message(intent)["content"] + "\nDelivery: " + guidance
+            prompt = event_message(intent, max_words=max_words)["content"] + "\nDelivery: " + guidance
             # Public facts accompany only an actual viewer question, never an
             # unsolicited idle remark or high-priority gameplay interruption.
             if knowledge is not None and intent.kind == "viewer_question":
@@ -496,7 +541,8 @@ class StarStage:
                 expression=None if expression is None else expression[0],
                 expression_strength=0.0 if expression is None else expression[1],
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
-                source_sha256=intent.source_sha256,
+                source_sha256=intent.source_sha256, max_words=max_words,
+                pacing_scope=pacing_scope, pacing_samples=pacing_samples,
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
@@ -508,6 +554,56 @@ class StarStage:
         return (self._enabled and isinstance(plan, StagePlan)
                 and self._plan is plan
                 and (phase is None or phase == self._phase))
+
+    def review_response(
+        self, plan: StagePlan, text: str, *, now: float | None = None,
+    ) -> ResponseBudgetAdvice:
+        """Hard-check the model's speakable text before TTS is allowed to start.
+
+        The host must call this while the plan is still prepared, before TTS
+        synthesis or queueing. Over-budget text is rejected whole; it is never
+        silently clipped into a potentially misleading fragment. The host may
+        ask the model for a shorter response, then review it again before the
+        original event deadline. A positive result is only a text-budget pass:
+        queue_audio(), preplay evidence, physical STOP/FLUSH, and broadcast
+        controls remain separate.
+        """
+        current = _time(self._clock() if now is None else now)
+        if not isinstance(plan, StagePlan):
+            return ResponseBudgetAdvice(False, "invalid_stage_plan")
+        if type(text) is not str or len(text) > 32_768:
+            return ResponseBudgetAdvice(
+                False, "invalid_or_oversized_response", max_words=plan.max_words,
+            )
+        with self._lock:
+            if not self._matches(plan, "prepared"):
+                return ResponseBudgetAdvice(
+                    False, "stale_or_nonprepared_plan", max_words=plan.max_words,
+                )
+            if (current > plan.deadline_at or self._prepared_at is None
+                    or current < self._prepared_at):
+                self._drop(interrupted=False, now=current)
+                return ResponseBudgetAdvice(
+                    False, "response_deadline_expired", max_words=plan.max_words,
+                )
+            if plan.max_words is not None and (
+                type(plan.max_words) is not int or not 4 <= plan.max_words <= 64
+            ):
+                return ResponseBudgetAdvice(
+                    False, "invalid_plan_word_budget", max_words=None,
+                )
+            spoken = speakable(text)
+            words = len(re.findall(r"\b[\w]+(?:['’][\w]+)*\b", spoken))
+            if words == 0:
+                return ResponseBudgetAdvice(
+                    False, "empty_speakable_response", 0, plan.max_words,
+                )
+            if plan.max_words is not None and words > plan.max_words:
+                return ResponseBudgetAdvice(
+                    False, "response_exceeds_word_budget", words, plan.max_words,
+                )
+            reason = "within_word_budget" if plan.max_words is not None else "legacy_unbounded"
+            return ResponseBudgetAdvice(True, reason, words, plan.max_words)
 
     def queue_audio(self, plan: StagePlan, *,
                     now: float | None = None) -> bool:
@@ -765,4 +861,4 @@ class StarStage:
                     }}
 
 
-__all__ = ["StagePlan", "StarStage", "QuietStageFrame"]
+__all__ = ["ResponseBudgetAdvice", "StagePlan", "StarStage", "QuietStageFrame"]
