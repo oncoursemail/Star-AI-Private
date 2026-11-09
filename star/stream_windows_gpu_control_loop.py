@@ -95,9 +95,9 @@ class WindowsGPUWorkerControlLoop:
     def tick(self, local: StreamHealthSample) -> HostGPUControlTick:
         """Poll real GPU off hot paths; always service owned-worker exits/stops."""
         if not self._lock.acquire(blocking=False):
-            # An overlapping tick cannot authorize work or reuse old evidence.
-            self._healthy = False
-            self._leases.disable()
+            # A concurrent poll invalidates the host's exclusive sampling
+            # contract. Latch the *native* launch path off as well.
+            self._fail_closed()
             return HostGPUControlTick(
                 False,
                 "host_supervisor_poll_overlap",
@@ -126,6 +126,12 @@ class WindowsGPUWorkerControlLoop:
                         elif not result.accepted:
                             reason = result.reason
                             self._fail_closed()
+                        elif self._faulted:
+                            # A second host thread already invalidated this
+                            # observation while the probe was running.
+                            reason = "host_control_faulted_during_probe"
+                            accepted = False
+                            self._healthy = False
                         else:
                             self._last_read_ms = end
                             self._healthy = True
@@ -181,11 +187,27 @@ class WindowsGPUWorkerControlLoop:
             if not self._leases.metrics()["enabled"]:
                 self._fail_closed()
                 return self._deferred("trusted_gpu_reservation_ledger_disabled")
-            return self._supervisor.launch(
-                plan,
-                now_ms=now,
-                owner_approved=True,
-            )
+            try:
+                result = self._supervisor.launch(
+                    plan,
+                    now_ms=now,
+                    owner_approved=True,
+                )
+            except Exception:
+                # Native process creation can be ambiguous; the existing
+                # owned-worker ledger must retain claims until exit is proven.
+                self._fail_closed()
+                return self._deferred("trusted_optional_launch_failed")
+            if self._faulted:
+                self._fail_closed()
+                return OptionalWorkerLaunchResult(
+                    "quarantined",
+                    "trusted_control_revoked_during_launch",
+                    self._leases.metrics()["outstanding_claims"],
+                )
+            if result.outcome in ("fault", "quarantined"):
+                self._fail_closed()
+            return result
 
     def _deferred(self, reason: str) -> OptionalWorkerLaunchResult:
         return OptionalWorkerLaunchResult(

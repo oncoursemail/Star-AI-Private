@@ -273,3 +273,66 @@ def test_wrong_session_and_invalid_policies_rejected(tmp_path):
             leases,
             maximum_probe_ms=5000,
         )
+
+
+def test_overlapping_host_poll_latches_worker_supervisor_off(tmp_path, monkeypatch):
+    loop, plan, leases, _, _, spawned = rig(tmp_path)
+    original = loop._observer.observe
+    collisions = []
+
+    def observe_with_collision(local):
+        collisions.append(loop.tick(local))
+        return original(local)
+
+    monkeypatch.setattr(loop._observer, "observe", observe_with_collision)
+    result = loop.tick(health(1000))
+    assert collisions and collisions[0].reason == "host_supervisor_poll_overlap"
+    assert not result.healthy
+    assert not leases.metrics()["enabled"]
+    assert not loop._supervisor.metrics()["enabled"]
+    assert loop._faulted
+    assert loop.launch(plan, owner_approved=True).outcome == "deferred"
+    assert not spawned
+
+
+def test_optional_launch_adapter_exception_faults_host(tmp_path, monkeypatch):
+    loop, plan, leases, _, _, spawned = rig(tmp_path)
+    assert loop.tick(health(1000)).healthy
+
+    def ambiguous_launch(*args, **kwargs):
+        raise OSError("sensitive native failure")
+
+    monkeypatch.setattr(loop._supervisor, "launch", ambiguous_launch)
+    result = loop.launch(plan, owner_approved=True)
+    assert (result.outcome, result.reason) == (
+        "deferred",
+        "trusted_optional_launch_failed",
+    )
+    assert "sensitive" not in result.reason
+    assert loop._faulted
+    assert not leases.metrics()["enabled"]
+    assert not loop._supervisor.metrics()["enabled"]
+    assert not spawned
+
+
+@pytest.mark.parametrize("outcome", ("fault", "quarantined"))
+def test_uncertain_native_launch_poisoned_host(tmp_path, monkeypatch, outcome):
+    from star.stream_optional_gpu_launch_supervisor import OptionalWorkerLaunchResult
+
+    loop, plan, leases, _, _, _ = rig(tmp_path)
+    assert loop.tick(health(1000)).healthy
+    monkeypatch.setattr(
+        loop._supervisor,
+        "launch",
+        lambda *args, **kwargs: OptionalWorkerLaunchResult(
+            outcome,
+            "worker_enrollment_uncertain",
+            1,
+        ),
+    )
+    result = loop.launch(plan, owner_approved=True)
+    assert result.outcome == outcome
+    assert loop._faulted
+    assert not leases.metrics()["enabled"]
+    assert not loop._supervisor.metrics()["enabled"]
+    assert loop.launch(plan, owner_approved=True).reason == "trusted_gpu_control_not_healthy"
