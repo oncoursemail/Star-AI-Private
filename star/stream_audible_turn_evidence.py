@@ -105,7 +105,10 @@ class CompletedVoiceReview:
         _ms(self.observed_at_ms, "observed_at_ms")
         if type(self.voice_consistency) not in (float, int):
             raise ValueError("voice consistency must be a numeric score")
-        score = float(self.voice_consistency)
+        try:
+            score = float(self.voice_consistency)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError("voice consistency must be finite") from exc
         if not math.isfinite(score) or not 0 <= score <= 1:
             raise ValueError("voice consistency must be within 0..1")
         if any(
@@ -248,6 +251,7 @@ class AudibleTurnEvidenceAssembler:
                 or not request.requested_at_ms <= witness.first_audible_ms <= witness.observed_at_ms <= now
                 or witness.first_audible_ms - request.requested_at_ms > _MAX_WAIT_MS
                 or now - witness.observed_at_ms > _MAX_CAPTURE_AGE_MS
+                or witness.observed_at_ms - witness.first_audible_ms > _MAX_CAPTURE_AGE_MS
             ):
                 self._trip("device_audibility_unverified_or_unmatched")
                 return False
