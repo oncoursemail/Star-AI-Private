@@ -562,6 +562,8 @@ class StarStage:
         controls remain separate.
         """
         current = _time(self._clock() if now is None else now)
+        if not isinstance(plan, StagePlan):
+            return ResponseBudgetAdvice(False, "invalid_stage_plan")
         if type(text) is not str or len(text) > 32_768:
             return ResponseBudgetAdvice(
                 False, "invalid_or_oversized_response", max_words=plan.max_words,
