@@ -45,6 +45,17 @@ def _second(value: object, field: str) -> float:
     return result
 
 
+def _route_id(value: object, field: str) -> str:
+    """Validate the host-owned identity of one exact voice/output route."""
+    if (
+        type(value) is not str
+        or not 1 <= len(value) <= 64
+        or not all(ch.isascii() and (ch.isalnum() or ch in "._-") for ch in value)
+    ):
+        raise ValueError(f"{field} must be a canonical host voice route")
+    return value
+
+
 @dataclass(frozen=True)
 class PacingAdvice:
     status: str  # disabled | no_host_context | bounded | hold
@@ -62,6 +73,9 @@ class StreamSpeechPacer:
     The host MUST report true first/last audible device timestamps (same clock
     as the current StreamDirector), not model token emission or TTS enqueue.
     Counts only utterances independently confirmed audible and completed.
+    Every advice request must also supply the exact current host-owned route ID;
+    a missing or changed TTS model/runtime/output device fails closed. A route
+    change requires disable() followed by a fresh owner-approved enable().
     Statistics store no transcript, audio, viewer identity or prompt.
     """
 
@@ -89,19 +103,20 @@ class StreamSpeechPacer:
         self._samples: dict[tuple[bool, bool, str | None], deque[float]] = {}
         self._max_id = 0
         self._clock = -1.0
-        self._counts = {"accepted": 0, "rejected": 0, "deferred": 0}
+        self._counts = {
+            "accepted": 0,
+            "rejected": 0,
+            "deferred": 0,
+            "route_unverified": 0,
+            "route_mismatch": 0,
+        }
 
     def enable(self, *, owner_approved: bool = False, route_id: str) -> None:
         if owner_approved is not True:
             raise PermissionError("the owner must enable speech pacing")
         # A route identifies the exact voice model, runtime and output device;
         # host-owned, never copied from viewer text or model output.
-        if (
-            type(route_id) is not str
-            or not 1 <= len(route_id) <= 64
-            or not all(ch.isascii() and (ch.isalnum() or ch in "._-") for ch in route_id)
-        ):
-            raise ValueError("canonical host voice route required")
+        route_id = _route_id(route_id, "route_id")
         with self._lock:
             if self._enabled:
                 raise RuntimeError("disable previous voice route before enabling")
@@ -138,8 +153,7 @@ class StreamSpeechPacer:
         Replayed IDs, unreasonable speech rates and old/inverted timestamps
         cannot make STAR erroneously treat a fast model as calibrated.
         """
-        if type(route_id) is not str or len(route_id) > 64:
-            raise ValueError("invalid observed voice route ID")
+        route_id = _route_id(route_id, "observed route_id")
         if type(sample_id) is not int or not 1 <= sample_id <= 2**63 - 1:
             raise ValueError("invalid host audio sample ID")
         if type(words_spoken) is not int or not 3 <= words_spoken <= 180:
@@ -204,10 +218,12 @@ class StreamSpeechPacer:
         game_active: bool,
         streaming_load: bool,
         queued_audio_ms: float = 0,
+        route_id: str | None = None,
         host_context_verified: bool = False,
     ) -> PacingAdvice:
         """Use current event deadline and observed playout to cap spoken length.
 
+        The current route ID must match the route used to collect samples.
         This does not prove that the next model will meet its deadline: the
         host still must check speech/output freshness before any physical PCM.
         """
@@ -218,6 +234,8 @@ class StreamSpeechPacer:
         _second(intent.deadline_at, "intent.deadline_at")
         now = _second(now_s, "now_s")
         queued = _second(queued_audio_ms, "queued_audio_ms")
+        if route_id is not None:
+            route_id = _route_id(route_id, "current route_id")
         if queued > 20_000:
             raise ValueError("audio backlog exceeds bounded host budget")
         if any(
@@ -232,6 +250,16 @@ class StreamSpeechPacer:
         with self._lock:
             if not self._enabled:
                 return PacingAdvice("disabled", "owner_opt_in_missing")
+            # Calibration is valid only for the exact host-observed TTS model,
+            # runtime and physical output device that produced the samples.
+            # A route change must be explicitly disabled/re-enabled so the
+            # old route's history cannot silently pace a new voice or device.
+            if route_id is None:
+                self._counts["route_unverified"] += 1
+                return PacingAdvice("hold", "voice_route_unverified")
+            if route_id != self._route:
+                self._counts["route_mismatch"] += 1
+                return PacingAdvice("hold", "voice_route_mismatch")
             if not host_context_verified:
                 return PacingAdvice("no_host_context", "host_load_observation_missing")
             if now < self._clock:
@@ -288,6 +316,8 @@ class StreamSpeechPacer:
                 "accepted": self._counts["accepted"],
                 "rejected": self._counts["rejected"],
                 "deferred": self._counts["deferred"],
+                "route_unverified": self._counts["route_unverified"],
+                "route_mismatch": self._counts["route_mismatch"],
                 "game_stream_samples": len(
                     self._samples.get((True, True, None), ()),
                 ),

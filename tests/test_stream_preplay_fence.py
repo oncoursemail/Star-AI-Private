@@ -106,6 +106,8 @@ class TestPreplayWitness(unittest.TestCase):
                 witness(observed_at_s=bad)
         with self.assertRaises(ValueError):
             witness(game_scope="user message with spaces")
+        with self.assertRaises(ValueError):
+            witness(voice_route_id="voice route with spaces")
         with self.assertRaises(TypeError):
             witness(turn="quiet")
         with self.assertRaises(ValueError):

@@ -19,6 +19,7 @@ from typing import cast
 from .stream_turntaking import TurnAdvice
 
 _SCOPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
+_ROUTE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _MAX_CLOCK_S = 1e10
 
 
@@ -51,6 +52,7 @@ class PreplayWitness:
     stream_pressure: bool = False
     pcm_output_ready: bool = False
     host_verified: bool = False
+    voice_route_id: str = ""  # exact TTS/runtime/output route, never viewer supplied
 
     def __post_init__(self) -> None:
         _clock(self.observed_at_s)
@@ -64,6 +66,9 @@ class PreplayWitness:
                       "pcm_output_ready", "host_verified"):
             if type(getattr(self, field)) is not bool:
                 raise ValueError(f"{field} must be an explicit boolean")
+        if (type(self.voice_route_id) is not str
+                or (self.voice_route_id and _ROUTE.fullmatch(self.voice_route_id) is None)):
+            raise ValueError("voice_route_id must be a canonical host route or empty")
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,7 @@ def assess_preplay(
     *, kind: str, evidence: str, game_scope: str,
     witness: PreplayWitness, now_s: float,
     max_witness_age_s: float = 0.075,
+    expected_voice_route_id: str = "",
 ) -> PreplayAdvice:
     """Fail quiet when speech opportunity changed during TTS generation.
 
@@ -91,6 +97,10 @@ def assess_preplay(
         raise ValueError("witness freshness bound must be 10..250ms")
     if not isinstance(witness, PreplayWitness):
         raise TypeError("trusted preplay snapshot required")
+    if (type(expected_voice_route_id) is not str
+            or (expected_voice_route_id
+                and _ROUTE.fullmatch(expected_voice_route_id) is None)):
+        raise ValueError("expected_voice_route_id must be a canonical host route or empty")
     if type(kind) is not str or kind not in {
         "owner_interrupt", "game_danger", "game_success", "viewer_question",
         "game_observation", "viewer_comment", "ambient",
@@ -109,6 +119,8 @@ def assess_preplay(
         return PreplayAdvice(False, "snapshot_stale_or_future")
     if not witness.pcm_output_ready:
         return PreplayAdvice(False, "pcm_device_not_ready")
+    if expected_voice_route_id and witness.voice_route_id != expected_voice_route_id:
+        return PreplayAdvice(False, "voice_route_changed_or_unverified")
     if witness.turn.action == "yield_owner":
         return PreplayAdvice(False, "owner_barge_in_yield")
     if witness.turn.action != "speak" or witness.turn.should_interrupt:
