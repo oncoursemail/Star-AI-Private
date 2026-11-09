@@ -273,3 +273,60 @@ def test_wrong_voice_route_cannot_contaminate_samples():
         host_confirmed=True,
     )
     assert p.metrics()["accepted"] == 0
+
+
+def test_stage_exposes_and_enforces_machine_readable_word_budget_before_tts():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    observed(p, rate_seconds=0.9)
+    stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
+    stage.enable(owner_approved=True)
+    assert stage.offer(
+        StreamSignal(
+            "win-budget", "game_success", 100.0, "Checkpoint cleared!",
+            evidence="observed", game_scope="obby.v3",
+        ),
+        now=100.0,
+    )
+    plan = stage.prepare(now=100.0, telemetry=telemetry(), current_game_scope="obby.v3")
+    assert plan is not None and plan.max_words is not None
+    too_long = " ".join(["word"] * (plan.max_words + 1))
+    rejected = stage.review_response(plan, too_long, now=100.0)
+    assert not rejected.eligible
+    assert rejected.reason == "response_exceeds_word_budget"
+    assert rejected.spoken_words == plan.max_words + 1
+    assert rejected.max_words == plan.max_words
+    assert not rejected.authorizes_audio and not rejected.authorizes_broadcast
+
+    accepted = stage.review_response(plan, "We got it!", now=100.0)
+    assert accepted.eligible
+    assert accepted.reason == "within_word_budget"
+    assert accepted.spoken_words == 3
+    assert not accepted.authorizes_audio and not accepted.authorizes_broadcast
+
+
+def test_stage_response_budget_counts_speakable_text_and_rejects_stale_plan():
+    stage = StarStage(clock=lambda: 100.0)
+    stage.enable(owner_approved=True)
+    assert stage.offer(
+        StreamSignal(
+            "viewer-budget", "viewer_question", 100.0, "What happened?",
+            evidence="reported", speaker_id="viewer-one",
+        ),
+        now=100.0,
+        moderated=True,
+    )
+    plan = stage.prepare(now=100.0)
+    assert plan is not None and plan.max_words is None
+    advice = stage.review_response(
+        plan, "Hello **there** — see [the notes](https://example.invalid).", now=100.0,
+    )
+    assert advice.eligible
+    assert advice.reason == "legacy_unbounded"
+    assert advice.spoken_words == 5
+    assert not advice.authorizes_audio and not advice.authorizes_broadcast
+
+    assert stage.queue_audio(plan, now=100.0)
+    stale = stage.review_response(plan, "Too late.", now=100.0)
+    assert not stale.eligible
+    assert stale.reason == "stale_or_nonprepared_plan"
