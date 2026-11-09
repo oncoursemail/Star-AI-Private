@@ -36,6 +36,8 @@ class Socket:
         self.bad_id = False
         self.bad_status = False
         self.reconnecting = False
+        self.output_active = True
+        self.rollback_output_counters = False
         self.fail_transport = False
 
     def send(self, raw):
@@ -56,11 +58,11 @@ class Socket:
             }
         else:
             data = {
-                "outputActive": True,
+                "outputActive": self.output_active,
                 "outputReconnecting": self.reconnecting,
-                "outputDuration": 1000 + n * 500,
+                "outputDuration": 0 if self.rollback_output_counters else 1000 + n * 500,
                 "outputSkippedFrames": 0,
-                "outputTotalFrames": 100 + n * 50,
+                "outputTotalFrames": 0 if self.rollback_output_counters else 100 + n * 50,
             }
         self.inbox.append(
             {
@@ -115,7 +117,7 @@ def load(n):
     )
 
 
-def ready():
+def ready(*, verify_output_at_admission=False):
     clock = Clock()
     socket = Socket(clock)
     identity = [ProcessWitness("obs64.exe", 123, 12345.0)]
@@ -134,12 +136,13 @@ def ready():
         clock=clock,
         token=lambda length: f"obs{next(serial):020d}",
         system_name=lambda: "Windows",
+        verify_output_at_admission=verify_output_at_admission,
     )
     return host, socket, clock, identity
 
 
-def armed():
-    host, socket, clock, identity = ready()
+def armed(*, verify_output_at_admission=False):
+    host, socket, clock, identity = ready(verify_output_at_admission=verify_output_at_admission)
     host.open(owner_approved=True, obs_pid=123, obs_created_unix_s=12345.0, password="private-password")
     return host, socket, clock, identity
 
@@ -374,3 +377,111 @@ def test_recommend_before_initial_accepted_obs_interval_stays_warming():
     assert host.sample().status == "pending"
     assert not host.recommend().allow_optional_commentary
     assert not socket.closed
+
+
+def _warmed_stream_verifier():
+    host, socket, clock, identity = armed(verify_output_at_admission=True)
+    assert host.sample().status == "pending"
+    for _ in range(3):
+        assert host.sample().status == "accepted"
+    return host, socket, clock, identity
+
+
+def test_opt_in_admission_reads_fresh_stream_status_without_resampling_game():
+    host, socket, *_ = _warmed_stream_verifier()
+    before = len(socket.writes)
+    assert host.recommend().profile == "normal"
+    assert all(w["op"] == 6 for w in socket.writes[before:])
+    # Admission queries are read-only and must never refresh full-pair sample age.
+    assert [w["d"]["requestType"] for w in socket.writes[before:]] == ["GetStreamStatus"]
+    assert host.metrics()["samples"] == 4
+
+
+@pytest.mark.parametrize(
+    "fault", ["inactive", "reconnecting", "restart", "event", "wrong_id", "bad_status", "transport"]
+)
+def test_admission_revokes_old_green_on_stream_transition_without_new_pair(fault):
+    host, socket, *_ = _warmed_stream_verifier()
+    if fault == "inactive":
+        socket.output_active = False
+    elif fault == "reconnecting":
+        socket.reconnecting = True
+    elif fault == "restart":
+        socket.rollback_output_counters = True
+    elif fault == "event":
+        socket.emit_event = True
+    elif fault == "wrong_id":
+        socket.bad_id = True
+    elif fault == "bad_status":
+        socket.bad_status = True
+    else:
+        socket.fail_transport = True
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+    assert not host.metrics()["armed"]
+    assert host.metrics()["revoked"] >= 1
+
+
+def test_legacy_admission_remains_query_free_by_default():
+    host, socket, *_ = armed()
+    for _ in range(4):
+        host.sample()
+    before = len(socket.writes)
+    assert host.recommend().profile == "normal"
+    assert len(socket.writes) == before
+    assert not socket.closed
+
+
+def test_output_verification_strict_configuration_type():
+    host, *_ = ready()
+    for option in (None, 0, 1, "true", [], 1.0):
+        with pytest.raises(ValueError):
+            ObsLoopbackLiveHost(
+                load_reader=host._load_reader,
+                verify_output_at_admission=option,
+            )
+
+
+def test_admission_rejects_missing_output_counter_in_authenticated_read():
+    host, socket, *_ = _warmed_stream_verifier()
+    old_send = socket.send
+
+    def missing_counter(raw):
+        old_send(raw)
+        packet = socket.inbox[-1]
+        if packet["op"] == 7 and packet["d"]["requestType"] == "GetStreamStatus":
+            del packet["d"]["responseData"]["outputDuration"]
+
+    socket.send = missing_counter
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+
+
+def test_status_check_cannot_extend_age_of_last_full_paired_observation():
+    host, socket, clock, _ = _warmed_stream_verifier()
+    original_recv = socket.recv
+
+    def delayed_status():
+        value = original_recv()
+        # A slow but otherwise well-formed read cannot refresh obsolete game,
+        # VRAM, TTS or OBS render QoS evidence.
+        clock.ms += 800
+        return value
+
+    socket.recv = delayed_status
+    assert host.recommend().profile == "disabled"
+    assert socket.closed
+
+
+def test_status_check_detects_obs_process_change_during_read():
+    host, socket, _, identity = _warmed_stream_verifier()
+    original_recv = socket.recv
+
+    def stolen_listener():
+        value = original_recv()
+        identity[0] = ProcessWitness("obs64.exe", 123, 99999.0)
+        return value
+
+    socket.recv = stolen_listener
+    assert host.recommend().profile == "disabled"
+    assert socket.closed

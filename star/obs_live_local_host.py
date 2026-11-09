@@ -77,12 +77,15 @@ class ObsLoopbackLiveHost:
         token: Callable[[int], str] = secrets.token_hex,
         system_name: Callable[[], str] = platform.system,
         max_advice_age_ms: int = 750,
+        verify_output_at_admission: bool = False,
     ) -> None:
         # A resource recommendation needs fresher OBS evidence than the
         # governor's generic multi-second sample-age allowance. This is a
         # speech-admission boundary, not a per-render-frame callback.
         if type(max_advice_age_ms) is not int or not 100 <= max_advice_age_ms <= 2000:
             raise ValueError("OBS recommendation age must be 100..2000 ms")
+        if type(verify_output_at_admission) is not bool:
+            raise ValueError("OBS admission output verification must be a boolean")
         if not all(
             callable(fn)
             for fn in (
@@ -107,6 +110,8 @@ class ObsLoopbackLiveHost:
         self._token = token
         self._system_name = system_name
         self._max_advice_age_ms = max_advice_age_ms
+        self._verify_output_at_admission = verify_output_at_admission
+        self._last_stream_state: tuple[int, int, int] | None = None
         self._last_accepted_ms: float | None = None
         self._lock = RLock()
         self._sock: _WebSocket | None = None
@@ -152,6 +157,29 @@ class ObsLoopbackLiveHost:
         self._used_ids.add(value)
         return value
 
+    @staticmethod
+    def _stream_state(data: dict[str, object]) -> tuple[int, int, int]:
+        """Only a live, continuous OBS stream can support optional speech.
+
+        Counters are evaluated from authenticated GetStreamStatus responses,
+        never from captions, model descriptions or stream/chat messages.
+        """
+        if (
+            type(data.get("outputActive")) is not bool
+            or type(data.get("outputReconnecting")) is not bool
+            or not data["outputActive"]
+            or data["outputReconnecting"]
+        ):
+            raise ValueError("OBS output is inactive or reconnecting")
+        counters = (
+            data.get("outputDuration"),
+            data.get("outputTotalFrames"),
+            data.get("outputSkippedFrames"),
+        )
+        if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in counters):
+            raise ValueError("OBS output counters missing or invalid")
+        return counters
+
     def _stop(self) -> None:
         self._pipeline.stop()
         sock = self._sock
@@ -160,6 +188,7 @@ class ObsLoopbackLiveHost:
         self._created = None
         self._port = None
         self._last_accepted_ms = None
+        self._last_stream_state = None
         self._used_ids.clear()
         if sock is not None:
             try:
@@ -297,6 +326,7 @@ class ObsLoopbackLiveHost:
                 )
                 self._counts["samples"] += 1
                 if result.status == "accepted":
+                    self._last_stream_state = self._stream_state(stream)
                     self._last_accepted_ms = now_ms
                     self._counts["accepted"] += 1
                 elif result.status == "pending":
@@ -326,6 +356,24 @@ class ObsLoopbackLiveHost:
                 accepted_at = self._last_accepted_ms
                 if accepted_at is not None and (now_ms < accepted_at or now_ms - accepted_at > self._max_advice_age_ms):
                     raise RuntimeError("last accepted OBS interval expired")
+                if self._verify_output_at_admission and accepted_at is not None:
+                    # OBS can stop/reconnect/restart the output in the
+                    # sub-second interval BETWEEN full paired samples while
+                    # the exact same OBS process/socket remains alive.
+                    # This bounded read-only query is only for low-frequency
+                    # workload/speech decisions; never call on render threads.
+                    status, _ = self._read("GetStreamStatus")
+                    recent = _monotonic_ms(self._clock)
+                    if not self._origin_matches():
+                        raise RuntimeError("OBS identity changed during output check")
+                    if recent < accepted_at or recent - accepted_at > self._max_advice_age_ms:
+                        raise RuntimeError("OBS paired evidence expired during output check")
+                    observed = self._stream_state(status)
+                    previous = self._last_stream_state
+                    if previous is None or any(a < b for a, b in zip(observed, previous)):
+                        raise RuntimeError("OBS stream restarted or counters reversed")
+                    self._last_stream_state = observed
+                    now_ms = recent
                 return self._pipeline.recommend(now_ms=now_ms)
             except Exception:
                 self._counts["revoked"] += 1
