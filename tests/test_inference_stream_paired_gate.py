@@ -35,11 +35,13 @@ def summary(speech: float, *, complete: float = 450,
 
 def pair(index: int, baseline: dict | None = None,
          candidate: dict | None = None) -> StreamSpeedPair:
-    return StreamSpeedPair(
-        f"p{index}", SHA, HOST,
-        baseline if baseline is not None else summary(300, complete=480),
-        candidate if candidate is not None else summary(175, complete=405),
-    )
+    # Distinct simulated wall clocks stand in for independent private trials.
+    # Reusing identical data under six different IDs is not six experiments.
+    baseline = baseline if baseline is not None else summary(300, complete=480)
+    candidate = candidate if candidate is not None else summary(175, complete=405)
+    baseline = dict(baseline, wall_ms=baseline["wall_ms"] + index)
+    candidate = dict(candidate, wall_ms=candidate["wall_ms"] + index)
+    return StreamSpeedPair(f"p{index}", SHA, HOST, baseline, candidate)
 
 
 def evidence(n: int = 6) -> list[StreamSpeedPair]:
@@ -107,6 +109,28 @@ def test_repeated_prompt_mode_cannot_be_used_as_broad_speed_proof():
 
 def test_not_enough_pairs_never_promote():
     assert compare_stream_speed(evidence(5)).verdict == "inconclusive"
+
+
+def test_exact_measurement_replay_under_fresh_ids_never_promotes():
+    original = pair(0)
+    copied = [replace(original, pair_id=f"not-independent-{i}") for i in range(6)]
+    report = compare_stream_speed(copied)
+    assert report.verdict == "inconclusive"
+    assert report.duplicate_summary_pairs == 5
+    assert report.complete_pairs == 6
+
+
+def test_untrusted_note_changes_do_not_launder_replayed_metrics():
+    pairs = []
+    for i in range(6):
+        b, c = summary(300, complete=480), summary(175, complete=405)
+        b["note"] = f"trial-{i}-warmup"
+        c["note"] = f"trial-{i}-candidate"
+        pairs.append(pair(0, baseline=b, candidate=c))
+    unique_ids = [replace(p, pair_id=f"r{i}") for i, p in enumerate(pairs)]
+    report = compare_stream_speed(unique_ids)
+    assert report.verdict == "inconclusive"
+    assert report.duplicate_summary_pairs == 5
 
 
 def test_mismatch_target_host_or_workload_rejected():
@@ -212,10 +236,22 @@ def test_real_benchmark_summary_schema_is_consumable():
         1400, parallel=1, workload="mixed", workload_digest=WORK,
     )
     assert StreamSpeedPair("real-probe", SHA, HOST, baseline, candidate)
-    assert compare_stream_speed([
+    # A cloned live-shaped summary is only one observation, however many
+    # different pair identifiers are wrapped around it.
+    replay = [
         StreamSpeedPair(f"sample{i}", SHA, HOST, baseline, candidate)
         for i in range(6)
-    ]).verdict == "eligible_for_private_pilot"
+    ]
+    assert compare_stream_speed(replay).verdict == "inconclusive"
+    independent = [
+        StreamSpeedPair(
+            f"sample{i}", SHA, HOST,
+            dict(baseline, wall_ms=1800 + i),
+            dict(candidate, wall_ms=1400 + i),
+        )
+        for i in range(6)
+    ]
+    assert compare_stream_speed(independent).verdict == "eligible_for_private_pilot"
 
 
 def test_post_construction_mutations_are_revalidated():

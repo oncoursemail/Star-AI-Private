@@ -28,6 +28,14 @@ _STATUSES = frozenset({
     "failed", "timeout",
 })
 _WORKLOADS = frozenset({"mixed", "canary", "repeat"})
+# Only metrics affecting a speed comparison; notes, flags and arbitrary
+# labels must not let duplicated run summaries masquerade as new evidence.
+_REPLAY_FIELDS = (
+    "requests", "completed", "failed", "parallel_limit", "workload",
+    "workload_sha256", "wall_ms", "first_visible_p95_ms",
+    "first_speakable_p95_ms", "complete_p95_ms", "speakable_ready",
+    "speakable_missing", "canary_mismatches", "statuses",
+)
 
 
 def _sha(value: object) -> bool:
@@ -161,9 +169,27 @@ class StreamSpeedVerdict:
     gain_ci95_ms: tuple[float, float] | None
     note: str = (
         "Summary-based matched private probe only. Host model/hardware hashes "
-        "are operator supplied, not attested. No automatic routing, speedup "
-        "claim, humanlike speech, audible PCM, FPS, game skill, or OBS proof."
+        "are operator supplied, not attested. Reused metric tuples are detected "
+        "but independently performed runs cannot be proven by summaries. "
+        "No automatic routing, speedup claim, humanlike speech, audible PCM, "
+        "FPS, game skill, or OBS proof."
     )
+    duplicate_summary_pairs: int = 0
+
+
+def _summary_pair_fingerprint(pair: StreamSpeedPair) -> str:
+    """Detect byte-for-byte replayed measurement evidence, regardless of IDs.
+
+    Excludes descriptive note and optional warning fields. This is a cheap
+    duplication fence, NOT authentication: fabricated or slightly edited
+    summaries still require trusted host experiment provenance.
+    """
+    measured = [
+        {key: row[key] for key in _REPLAY_FIELDS}
+        for row in (pair.baseline, pair.candidate)
+    ]
+    encoded = json.dumps(measured, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _p95(values: list[float]) -> float:
@@ -199,6 +225,8 @@ def compare_stream_speed(
         raise TypeError("expected validated StreamSpeedPair observations")
     first = pairs[0]
     ids: set[str] = set()
+    fingerprints: set[str] = set()
+    replayed = 0
     for pair in pairs:
         # The frozen pair holds externally provided mappings, so a caller
         # could mutate them after construction. Validate at evaluation time.
@@ -210,6 +238,10 @@ def compare_stream_speed(
         if pair.pair_id in ids:
             raise ValueError("duplicate pair ID: do not cherry-pick runs")
         ids.add(pair.pair_id)
+        signature = _summary_pair_fingerprint(pair)
+        if signature in fingerprints:
+            replayed += 1
+        fingerprints.add(signature)
         if (pair.target_model_sha256 != first.target_model_sha256
                 or pair.host_profile_sha256 != first.host_profile_sha256):
             raise ValueError("mixed target model or host hardware profiles")
@@ -227,7 +259,8 @@ def compare_stream_speed(
     ]
     if not complete:
         return StreamSpeedVerdict("inconclusive", len(pairs), 0,
-                                  None, None, None, None, None, None)
+                                  None, None, None, None, None, None,
+                                  duplicate_summary_pairs=replayed)
     base_speech = [_number(p.baseline["first_speakable_p95_ms"]) for p in complete]
     new_speech = [_number(p.candidate["first_speakable_p95_ms"]) for p in complete]
     base_done = [_number(p.baseline["complete_p95_ms"]) for p in complete]
@@ -248,7 +281,8 @@ def compare_stream_speed(
     if degraded:
         verdict = "regressed"
     elif (len(pairs) < minimum_pairs or len(complete) != len(pairs)
-          or first.baseline["workload"] == "repeat"):
+          or first.baseline["workload"] == "repeat"
+          or replayed > 0):
         verdict = "inconclusive"
     elif (ci[0] > gain_floor
           and _p95(new_speech) < _p95(base_speech)
@@ -261,6 +295,7 @@ def compare_stream_speed(
         round(_p95(base_speech), 2), round(_p95(new_speech), 2),
         round(_p95(base_done), 2), round(_p95(new_done), 2),
         round(sum(gains) / len(gains), 2), ci,
+        duplicate_summary_pairs=replayed,
     )
 
 
