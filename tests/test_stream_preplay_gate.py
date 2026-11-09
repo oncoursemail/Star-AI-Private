@@ -61,6 +61,19 @@ class PreplayGateTests(unittest.TestCase):
         kwargs.update(changes)
         return self.gate.revalidate(intent, now_s=now, **kwargs)
 
+
+    def test_missing_resource_advice_cannot_review_prepared_speech(self):
+        # Even an unexpected partial/miswired host producer must fail closed.
+        from unittest.mock import patch
+        intent = self.plan()
+        with patch.object(self.gate, "_safety", return_value=(None, None)):
+            outcome = self.recheck(intent)
+        self.assertEqual((outcome.status, outcome.reason),
+                         ("hold", "live_load_advice_missing"))
+        self.assertFalse(outcome.authorizes_playback)
+        self.assertFalse(outcome.authorizes_broadcast)
+        self.assertEqual(self.gate.lifecycle_metrics()["awaiting_host_receipt"], 0)
+
     def test_owner_gate_does_not_enable_underlying_components(self):
         naked = StreamPreplayGate(StreamDirector(), TurnTakingGate(),
                                   StreamLoadGovernor())
