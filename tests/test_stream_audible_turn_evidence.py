@@ -67,7 +67,9 @@ def play(joiner, i, *, delay_ms=200.0, **review_changes):
     assert joiner.heard(audible, now_ms=audible.observed_at_ms + 5)
     finished = review(audible, **review_changes)
     assert joiner.reviewed(
-        finished, session_id="nativeSession1", current_scene_epoch="room0",
+        finished,
+        session_id="nativeSession1",
+        current_scene_epoch="room0",
         now_ms=finished.observed_at_ms + 5,
     )
 
@@ -122,7 +124,10 @@ def test_no_review_without_real_device_sound():
     witness = heard(req)
     finished = review(witness)
     assert not joiner.reviewed(
-        finished, session_id="nativeSession1", current_scene_epoch="room0", now_ms=1755,
+        finished,
+        session_id="nativeSession1",
+        current_scene_epoch="room0",
+        now_ms=1755,
     )
     assert joiner.metrics().faulted
     assert health.metrics()["accepted"] == 0
@@ -145,7 +150,8 @@ def test_malformed_or_untrusted_device_evidence_poison_session(replacement):
     assert joiner.begin(req, session_id="nativeSession1", now_ms=1010)
     witness = heard(req, **replacement)
     assert not joiner.heard(
-        witness, now_ms=max(1300, witness.observed_at_ms + 1),
+        witness,
+        now_ms=max(1300, witness.observed_at_ms + 1),
     )
     assert joiner.metrics().faulted
     assert health.metrics()["accepted"] == 0
@@ -169,7 +175,9 @@ def test_untrusted_or_wrong_review_never_becomes_health_evidence(changes):
     joiner.heard(witness, now_ms=1225)
     finished = review(witness, **changes)
     assert not joiner.reviewed(
-        finished, session_id="nativeSession1", current_scene_epoch="room0",
+        finished,
+        session_id="nativeSession1",
+        current_scene_epoch="room0",
         now_ms=max(1800, finished.observed_at_ms + 10),
     )
     assert joiner.metrics().faulted
@@ -184,7 +192,10 @@ def test_scene_revision_change_cancels_evidence():
     joiner.heard(witness, now_ms=1225)
     finished = review(witness)
     assert not joiner.reviewed(
-        finished, session_id="nativeSession1", current_scene_epoch="room1", now_ms=1760,
+        finished,
+        session_id="nativeSession1",
+        current_scene_epoch="room1",
+        now_ms=1760,
     )
     assert joiner.metrics().faulted
     assert health.metrics()["accepted"] == 0
@@ -304,7 +315,10 @@ def test_reviewer_observation_cannot_predate_device_callback():
     joiner.heard(witness, now_ms=1710)
     finished = review(witness, completed_audible_ms=1500, observed_at_ms=1600)
     assert not joiner.reviewed(
-        finished, session_id="nativeSession1", current_scene_epoch="room0", now_ms=1760,
+        finished,
+        session_id="nativeSession1",
+        current_scene_epoch="room0",
+        now_ms=1760,
     )
     assert joiner.metrics().faulted
     assert health.metrics()["accepted"] == 0
