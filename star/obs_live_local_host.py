@@ -18,6 +18,7 @@ import platform
 import secrets
 from threading import RLock
 import time
+from typing import cast
 
 from .obs_live_load_pipeline import LiveLoadResult, ObsLiveLoadPipeline
 from .stream_load_governor import StreamLoadAdvice
@@ -178,7 +179,9 @@ class ObsLoopbackLiveHost:
         )
         if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in counters):
             raise ValueError("OBS output counters missing or invalid")
-        return counters
+        # The exact-int checks above are runtime validation; pyright cannot
+        # narrow a tuple built from dict.get() using an any() generator.
+        return cast(tuple[int, int, int], counters)
 
     def _stop(self) -> None:
         self._pipeline.stop()
@@ -242,12 +245,16 @@ class ObsLoopbackLiveHost:
                     raise RuntimeError("pinned OBS process identity unavailable")
                 sock = self._connect(port, float(timeout_s))
                 hello = _packet(sock.recv(), 0)
-                if type(hello.get("rpcVersion")) is not int or hello["rpcVersion"] < 1:
+                rpc_version = hello.get("rpcVersion")
+                if (not isinstance(rpc_version, int)
+                        or isinstance(rpc_version, bool) or rpc_version < 1):
                     raise ValueError("unsupported OBS RPC version")
                 challenge = hello.get("authentication")
                 if type(challenge) is not dict:
                     raise PermissionError("authenticated OBS websocket is required")
                 salt, challenge_text = challenge.get("salt"), challenge.get("challenge")
+                if not isinstance(salt, str) or not isinstance(challenge_text, str):
+                    raise PermissionError("invalid OBS authentication challenge")
                 _write(
                     sock,
                     1,
