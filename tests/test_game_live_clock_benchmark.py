@@ -56,7 +56,9 @@ def test_fast_but_wrong_agent_does_not_win_benchmark():
     runs = [replace(item, objective_success=False, progress_after=.12)
             if item.variant == "candidate" else item for item in runs]
     report = assess_live_clock(runs)
-    assert report.verdict == "inconclusive"
+    # This candidate loses progress in every scenario, not just a weak win.
+    assert report.verdict == "regressed"
+    assert report.scenario_progress_regressions == 24
     assert report.progress_gain_ci95 is not None
 
 
@@ -319,3 +321,62 @@ def test_many_resets_from_one_stage_do_not_claim_broad_gameplay_readiness():
     assert report.paired_win_sign_pvalue == pytest.approx(2 ** -24)
     assert report.verdict == "inconclusive"
     assert not report.authorized_to_act
+
+
+def test_imbalanced_scenarios_cannot_manufacture_broad_game_mastery():
+    # Different initial-state hashes genuinely represent distinct resets,
+    # but 22 resets from one easy level plus two one-offs do not establish
+    # a generalist player across three independent scenarios.
+    rows = []
+    for row in cohort():
+        index = int(row.pair_id.split("-")[1])
+        scenario = "easy" if index < 22 else f"tail-{index}"
+        rows.append(replace(
+            row, scenario_id=scenario,
+            initial_state_sha256=f"{index:064x}",
+        ))
+    report = assess_live_clock(rows)
+    assert report.matched_pairs == 24
+    assert report.paired_win_sign_pvalue == pytest.approx(2 ** -24)
+    assert report.effective_scenarios == pytest.approx(24**2 / (22**2 + 1 + 1), abs=0.0001)
+    assert report.verdict == "inconclusive"
+    assert report.authorized_to_act is False
+
+
+def test_one_stage_progress_loss_does_not_disappear_in_global_gain():
+    rows = cohort()
+    rows[1] = replace(rows[1], progress_after=.10)
+    report = assess_live_clock(rows)
+    assert report.progress_gain_ci95 is not None
+    assert report.progress_gain_ci95[0] > 0.02
+    assert report.candidate_timely_successes == 24
+    assert report.scenario_progress_regressions == 1
+    assert report.verdict == "regressed"
+
+
+def test_one_stage_input_slowdown_does_not_hide_under_global_p95():
+    rows = cohort()
+    old = rows[1]
+    rows[1] = replace(
+        old, input_ack_ms=old.observed_at_ms + 190,
+        world_advanced_to_input_ack_ms=190,
+    )
+    report = assess_live_clock(rows)
+    assert report.baseline_action_p95_ms == 150
+    assert report.candidate_action_p95_ms == 90
+    assert report.scenario_action_p95_regressions == 1
+    assert report.verdict == "regressed"
+
+
+def test_balanced_and_many_distinct_scenarios_keep_positive_manual_pilot():
+    assert assess_live_clock(cohort()).verdict == "manual_pilot_candidate"
+    rows = []
+    for row in cohort():
+        index = int(row.pair_id.split("-")[1])
+        rows.append(replace(
+            row, scenario_id=f"stage-{index % 3}",
+            initial_state_sha256=f"{index:064x}",
+        ))
+    report = assess_live_clock(rows)
+    assert report.effective_scenarios == 3.0
+    assert report.verdict == "manual_pilot_candidate"
