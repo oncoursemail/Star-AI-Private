@@ -9,8 +9,10 @@ import pytest
 from star.stream_budget import StreamTelemetry
 from star.stream_director import SpeechIntent, StreamSignal
 from star.stream_persona import event_message
+from star.stream_preplay_fence import PreplayWitness
 from star.stream_speech_pacing import StreamSpeechPacer
 from star.stream_stage import StarStage
+from star.stream_turntaking import TurnAdvice
 
 
 def intent(kind: str = "game_success", *, deadline: float = 108.0) -> SpeechIntent:
@@ -63,7 +65,10 @@ def test_off_by_default_and_never_authorizes_output():
     with pytest.raises(PermissionError):
         p.enable(route_id="star-voice")
     p.enable(route_id="star-voice", owner_approved=True)
-    advice = p.advise(intent(), now_s=100, game_active=True, streaming_load=True)
+    advice = p.advise(
+        intent(), now_s=100, game_active=True, streaming_load=True,
+        route_id="star-voice",
+    )
     assert advice.status == "no_host_context"
     assert advice.max_words is None
     assert not advice.authorizes_speech and not advice.authorizes_broadcast
@@ -73,8 +78,14 @@ def test_p90_audible_calibration_is_regime_scoped():
     p = StreamSpeechPacer()
     p.enable(owner_approved=True, route_id="cpu-tts-v1")
     observed(p, rate_seconds=0.9)
-    hot = p.advise(intent(), now_s=100, game_active=True, streaming_load=True, host_context_verified=True)
-    cold = p.advise(intent(), now_s=100, game_active=False, streaming_load=False, host_context_verified=True)
+    hot = p.advise(
+        intent(), now_s=100, game_active=True, streaming_load=True,
+        route_id="cpu-tts-v1", host_context_verified=True,
+    )
+    cold = p.advise(
+        intent(), now_s=100, game_active=False, streaming_load=False,
+        route_id="cpu-tts-v1", host_context_verified=True,
+    )
     assert hot.status == "bounded"
     assert hot.measured_samples == 8
     assert hot.reason == "host_playout_p90"
@@ -88,7 +99,8 @@ def test_deadline_backlog_and_short_event_yield_to_silence():
     p.enable(owner_approved=True, route_id="a")
     assert (
         p.advise(
-            intent(deadline=101), now_s=100, game_active=True, streaming_load=True, host_context_verified=True
+            intent(deadline=101), now_s=100, game_active=True, streaming_load=True,
+            route_id="a", host_context_verified=True,
         ).status
         == "hold"
     )
@@ -99,6 +111,7 @@ def test_deadline_backlog_and_short_event_yield_to_silence():
             queued_audio_ms=5500,
             game_active=True,
             streaming_load=True,
+            route_id="a",
             host_context_verified=True,
         ).status
         == "hold"
@@ -164,7 +177,8 @@ def test_route_reset_erasures_and_new_session_cold_start():
     observed(p)
     assert (
         p.advise(
-            intent(), now_s=100, game_active=True, streaming_load=True, host_context_verified=True
+            intent(), now_s=100, game_active=True, streaming_load=True,
+            route_id="cpu-tts-v1", host_context_verified=True,
         ).measured_samples
         == 8
     )
@@ -174,10 +188,38 @@ def test_route_reset_erasures_and_new_session_cold_start():
     p.enable(owner_approved=True, route_id="v2")
     assert (
         p.advise(
-            intent(), now_s=100, game_active=True, streaming_load=True, host_context_verified=True
+            intent(), now_s=100, game_active=True, streaming_load=True,
+            route_id="v2", host_context_verified=True,
         ).measured_samples
         == 0
     )
+
+
+def test_advice_requires_the_exact_current_voice_route():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    observed(p, rate_seconds=0.7)
+
+    missing = p.advise(
+        intent(), now_s=100, game_active=True, streaming_load=True,
+        host_context_verified=True,
+    )
+    mismatched = p.advise(
+        intent(), now_s=100, game_active=True, streaming_load=True,
+        route_id="different-device", host_context_verified=True,
+    )
+    matched = p.advise(
+        intent(), now_s=100, game_active=True, streaming_load=True,
+        route_id="cpu-tts-v1", host_context_verified=True,
+    )
+
+    assert missing.status == "hold"
+    assert missing.reason == "voice_route_unverified"
+    assert mismatched.status == "hold"
+    assert mismatched.reason == "voice_route_mismatch"
+    assert matched.status == "bounded"
+    assert p.metrics()["route_unverified"] == 1
+    assert p.metrics()["route_mismatch"] == 1
 
 
 def test_persona_word_guidance_is_optional_user_level_data():
@@ -219,13 +261,38 @@ def test_stage_uses_pacer_only_when_opted_in_and_host_telemetry_present():
         game_scope="obby.v3",
     )
     assert stage.offer(signal, now=100.0)
-    plan = stage.prepare(now=100.0, telemetry=telemetry(), current_game_scope="obby.v3")
+    plan = stage.prepare(
+        now=100.0, telemetry=telemetry(), current_game_scope="obby.v3",
+        voice_route_id="cpu-tts-v1",
+    )
     assert plan is not None
     assert "spoken words" in plan.context_record
     assert plan.pacing_scope == "intent"
     assert plan.pacing_samples == 8
     assert plan.expression == "joy"
     assert not plan.context_record.startswith("system")
+
+
+def test_stage_defers_when_the_live_voice_route_changes():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
+    stage.enable(owner_approved=True)
+    assert stage.offer(
+        StreamSignal(
+            "route-change", "game_success", 100.0, "Checkpoint cleared!",
+            evidence="observed", game_scope="obby.v3",
+        ),
+        now=100.0,
+    )
+
+    plan = stage.prepare(
+        now=100.0, telemetry=telemetry(), current_game_scope="obby.v3",
+        voice_route_id="new-output-device",
+    )
+    assert plan is None
+    assert stage.metrics()["pacing_deferred"] == 1
+    assert p.metrics()["route_mismatch"] == 1
 
 
 def test_stage_defers_impossible_danger_commentary_without_speaking():
@@ -237,7 +304,10 @@ def test_stage_defers_impossible_danger_commentary_without_speaking():
         StreamSignal("danger-one", "game_danger", 100.0, "Hazard!", evidence="observed", game_scope="obby.v3"),
         now=100.0,
     )
-    assert stage.prepare(now=100.0, telemetry=telemetry(240), current_game_scope="obby.v3") is None
+    assert stage.prepare(
+        now=100.0, telemetry=telemetry(240), current_game_scope="obby.v3",
+        voice_route_id="voice",
+    ) is None
     assert stage.metrics()["pacing_deferred"] == 1
 
 
@@ -257,12 +327,17 @@ def test_legacy_stage_and_missing_host_load_do_not_inject_pacing_guidance():
     p = StreamSpeechPacer()
     p.enable(owner_approved=True, route_id="voice")
     legacy = make_stage()
-    guarded = make_stage(p)
     old = legacy.prepare(now=100)
-    new = guarded.prepare(now=100)
+    # A configured pacer refuses to fall back to an unbounded response when
+    # the host omits the current route or current load observation.
+    assert make_stage(p).prepare(now=100, telemetry=telemetry()) is None
+    assert make_stage(p).prepare(now=100, voice_route_id="voice") is None
+    new = make_stage(p).prepare(
+        now=100, voice_route_id="voice", telemetry=telemetry(),
+    )
     assert old is not None and new is not None
     assert "spoken words" not in old.context_record
-    assert "spoken words" not in new.context_record
+    assert "spoken words" in new.context_record
 
 
 def test_wrong_voice_route_cannot_contaminate_samples():
@@ -295,21 +370,98 @@ def test_stage_exposes_and_enforces_machine_readable_word_budget_before_tts():
         ),
         now=100.0,
     )
-    plan = stage.prepare(now=100.0, telemetry=telemetry(), current_game_scope="obby.v3")
+    plan = stage.prepare(
+        now=100.0, telemetry=telemetry(), current_game_scope="obby.v3",
+        voice_route_id="cpu-tts-v1",
+    )
     assert plan is not None and plan.max_words is not None
+    assert plan.voice_route_id == "cpu-tts-v1"
     too_long = " ".join(["word"] * (plan.max_words + 1))
-    rejected = stage.review_response(plan, too_long, now=100.0)
+    rejected = stage.review_response(
+        plan, too_long, now=100.0, voice_route_id="cpu-tts-v1",
+    )
     assert not rejected.eligible
     assert rejected.reason == "response_exceeds_word_budget"
     assert rejected.spoken_words == plan.max_words + 1
     assert rejected.max_words == plan.max_words
     assert not rejected.authorizes_audio and not rejected.authorizes_broadcast
 
-    accepted = stage.review_response(plan, "We got it!", now=100.0)
+    accepted = stage.review_response(
+        plan, "We got it!", now=100.0, voice_route_id="cpu-tts-v1",
+    )
     assert accepted.eligible
     assert accepted.reason == "within_word_budget"
     assert accepted.spoken_words == 3
     assert not accepted.authorizes_audio and not accepted.authorizes_broadcast
+
+
+def test_route_bound_plan_rechecks_route_before_tts_and_pcm():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
+    stage.enable(owner_approved=True, require_preplay_witness=True)
+    assert stage.offer(
+        StreamSignal(
+            "route-bound-turn", "game_success", 100.0, "Checkpoint cleared!",
+            evidence="observed", game_scope="obby.v3",
+        ),
+        now=100.0,
+    )
+    plan = stage.prepare(
+        now=100.0, telemetry=telemetry(), current_game_scope="obby.v3",
+        voice_route_id="cpu-tts-v1",
+    )
+    assert plan is not None and plan.voice_route_id == "cpu-tts-v1"
+    missing = stage.review_response(plan, "Nice!", now=100.0)
+    assert not missing.eligible and missing.reason == "voice_route_unverified"
+    reviewed = stage.review_response(
+        plan, "Nice!", now=100.0, voice_route_id="cpu-tts-v1",
+    )
+    assert reviewed.eligible
+    assert stage.queue_audio(plan, now=100.01)
+
+    witness = PreplayWitness(
+        observed_at_s=100.02,
+        turn=TurnAdvice("speak", False, "trusted_silence"),
+        game_scope="obby.v3",
+        pcm_output_ready=True,
+        host_verified=True,
+        voice_route_id="new-output-device",
+    )
+    preplay = stage.preplay_clearance(plan, witness=witness, now=100.02)
+    assert not preplay.eligible
+    assert preplay.reason == "voice_route_changed_or_unverified"
+    assert stage.metrics()["phase"] == "idle"
+
+    matching_stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
+    matching_stage.enable(owner_approved=True, require_preplay_witness=True)
+    assert matching_stage.offer(
+        StreamSignal(
+            "route-bound-match", "game_success", 100.0, "Checkpoint cleared!",
+            evidence="observed", game_scope="obby.v3",
+        ),
+        now=100.0,
+    )
+    matching_plan = matching_stage.prepare(
+        now=100.0, telemetry=telemetry(), current_game_scope="obby.v3",
+        voice_route_id="cpu-tts-v1",
+    )
+    assert matching_plan is not None
+    assert matching_stage.review_response(
+        matching_plan, "Nice!", now=100.0, voice_route_id="cpu-tts-v1",
+    ).eligible
+    assert matching_stage.queue_audio(matching_plan, now=100.01)
+    matching_witness = PreplayWitness(
+        observed_at_s=100.02,
+        turn=TurnAdvice("speak", False, "trusted_silence"),
+        game_scope="obby.v3",
+        pcm_output_ready=True,
+        host_verified=True,
+        voice_route_id="cpu-tts-v1",
+    )
+    assert matching_stage.preplay_clearance(
+        matching_plan, witness=matching_witness, now=100.02,
+    ).eligible
 
 
 def test_stage_response_budget_counts_speakable_text_and_rejects_stale_plan():
@@ -357,6 +509,7 @@ def test_intent_specific_calibration_prevents_event_style_bleed():
         now_s=100.0,
         game_active=True,
         streaming_load=True,
+        route_id="cpu-tts-v1",
         host_context_verified=True,
     )
     question = p.advise(
@@ -364,6 +517,7 @@ def test_intent_specific_calibration_prevents_event_style_bleed():
         now_s=100.0,
         game_active=True,
         streaming_load=True,
+        route_id="cpu-tts-v1",
         host_context_verified=True,
     )
 
@@ -388,6 +542,7 @@ def test_sparse_intent_calibration_falls_back_to_same_workload_pool():
         now_s=100.0,
         game_active=True,
         streaming_load=True,
+        route_id="cpu-tts-v1",
         host_context_verified=True,
     )
 
