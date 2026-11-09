@@ -14,6 +14,7 @@ from collections import deque
 from dataclasses import dataclass
 import math
 from threading import RLock
+from typing import cast
 
 from .stream_director import SpeechIntent
 
@@ -36,7 +37,7 @@ def _second(value: object, field: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{field} must be a host clock in seconds")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"invalid {field}") from exc
     if not math.isfinite(result) or not 0 <= result <= 1e12:
