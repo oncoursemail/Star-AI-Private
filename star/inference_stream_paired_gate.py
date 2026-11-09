@@ -219,7 +219,10 @@ def _paired_sign_test(gains: list[float]) -> tuple[int, int, float]:
     non_tied = sum(gain != 0 for gain in gains)
     if not non_tied:
         return positives, non_tied, 1.0
-    p_value = sum(math.comb(non_tied, k) for k in range(positives, non_tied + 1)) / (2 ** non_tied)
+    extreme_outcomes = sum(
+        math.comb(non_tied, k) for k in range(positives, non_tied + 1)
+    )
+    p_value = extreme_outcomes / (2 ** non_tied)
     return positives, non_tied, p_value
 
 
