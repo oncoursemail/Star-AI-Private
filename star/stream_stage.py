@@ -103,6 +103,8 @@ class StagePlan:
     game_scope: str = ""
     source_sha256: str = ""  # original event fingerprint; not a permission token
     max_words: int | None = None  # machine-readable pre-TTS limit; not output authority
+    pacing_scope: str = "none"  # intent | workload | cold_start | none; diagnostics only
+    pacing_samples: int = 0  # samples used by the pacing estimator; not a trust token
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
@@ -420,6 +422,8 @@ class StarStage:
             # Calibrate only from completed audible output on the actual
             # device in this load regime; unknown host state adds no guess.
             max_words = None
+            pacing_scope = "none"
+            pacing_samples = 0
             if self._speech_pacer is not None:
                 pace = self._speech_pacer.advise(
                     intent, now_s=current,
@@ -436,6 +440,8 @@ class StarStage:
                     self._counts["pacing_deferred"] += 1
                     return None
                 max_words = pace.max_words
+                pacing_scope = pace.calibration_scope
+                pacing_samples = pace.measured_samples
             self._sequence += 1
             expression = _CUES[intent.kind]
             # An unconfirmed game inference can never trigger a victory dance
@@ -536,6 +542,7 @@ class StarStage:
                 expression_strength=0.0 if expression is None else expression[1],
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
                 source_sha256=intent.source_sha256, max_words=max_words,
+                pacing_scope=pacing_scope, pacing_samples=pacing_samples,
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"

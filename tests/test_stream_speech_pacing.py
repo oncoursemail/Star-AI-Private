@@ -26,9 +26,12 @@ def intent(kind: str = "game_success", *, deadline: float = 108.0) -> SpeechInte
     )
 
 
-def observed(pacer: StreamSpeechPacer, *, game=True, stream=True, rate_seconds=0.6, first_id=1, count=8):
+def observed(
+    pacer: StreamSpeechPacer, *, game=True, stream=True, rate_seconds=0.6,
+    first_id=1, count=8, start_time=60.0, intent_kind=None,
+):
     for i in range(count):
-        now = 60.0 + i
+        now = start_time + i
         assert pacer.observe_audible(
             route_id="cpu-tts-v1",
             sample_id=first_id + i,
@@ -38,6 +41,7 @@ def observed(pacer: StreamSpeechPacer, *, game=True, stream=True, rate_seconds=0
             now_s=now,
             game_active=game,
             streaming_load=stream,
+            intent_kind=intent_kind,
             host_confirmed=True,
         )
 
@@ -74,6 +78,7 @@ def test_p90_audible_calibration_is_regime_scoped():
     assert hot.status == "bounded"
     assert hot.measured_samples == 8
     assert hot.reason == "host_playout_p90"
+    assert hot.calibration_scope == "workload"
     assert hot.max_words < cold.max_words
     assert cold.reason == "conservative_cold_start"
 
@@ -202,7 +207,7 @@ def telemetry(backlog: float = 0) -> StreamTelemetry:
 def test_stage_uses_pacer_only_when_opted_in_and_host_telemetry_present():
     p = StreamSpeechPacer()
     p.enable(owner_approved=True, route_id="cpu-tts-v1")
-    observed(p, rate_seconds=0.9)
+    observed(p, rate_seconds=0.9, intent_kind="game_success")
     stage = StarStage(clock=lambda: 100.0, speech_pacer=p)
     stage.enable(owner_approved=True)
     signal = StreamSignal(
@@ -217,6 +222,8 @@ def test_stage_uses_pacer_only_when_opted_in_and_host_telemetry_present():
     plan = stage.prepare(now=100.0, telemetry=telemetry(), current_game_scope="obby.v3")
     assert plan is not None
     assert "spoken words" in plan.context_record
+    assert plan.pacing_scope == "intent"
+    assert plan.pacing_samples == 8
     assert plan.expression == "joy"
     assert not plan.context_record.startswith("system")
 
@@ -332,3 +339,78 @@ def test_stage_response_budget_counts_speakable_text_and_rejects_stale_plan():
     stale = stage.review_response(plan, "Too late.", now=100.0)
     assert not stale.eligible
     assert stale.reason == "stale_or_nonprepared_plan"
+
+def test_intent_specific_calibration_prevents_event_style_bleed():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    observed(
+        p, rate_seconds=0.3, first_id=1, start_time=60.0,
+        intent_kind="game_danger",
+    )
+    observed(
+        p, rate_seconds=0.9, first_id=9, start_time=70.0,
+        intent_kind="viewer_question",
+    )
+
+    danger = p.advise(
+        intent("game_danger", deadline=108.0),
+        now_s=100.0,
+        game_active=True,
+        streaming_load=True,
+        host_context_verified=True,
+    )
+    question = p.advise(
+        intent("viewer_question", deadline=108.0),
+        now_s=100.0,
+        game_active=True,
+        streaming_load=True,
+        host_context_verified=True,
+    )
+
+    assert danger.calibration_scope == "intent"
+    assert question.calibration_scope == "intent"
+    assert danger.measured_samples == question.measured_samples == 8
+    assert danger.max_words == 8
+    assert question.max_words == 7
+
+
+def test_sparse_intent_calibration_falls_back_to_same_workload_pool():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="cpu-tts-v1")
+    observed(p, rate_seconds=0.7, first_id=1, start_time=60.0)
+    observed(
+        p, rate_seconds=0.3, first_id=9, count=3, start_time=70.0,
+        intent_kind="game_danger",
+    )
+
+    advice = p.advise(
+        intent("game_danger", deadline=108.0),
+        now_s=100.0,
+        game_active=True,
+        streaming_load=True,
+        host_context_verified=True,
+    )
+
+    assert advice.status == "bounded"
+    assert advice.calibration_scope == "workload"
+    assert advice.measured_samples == 11
+    assert advice.reason == "host_playout_p90"
+
+
+def test_unknown_host_intent_kind_cannot_train_a_pacing_bucket():
+    p = StreamSpeechPacer()
+    p.enable(owner_approved=True, route_id="voice")
+    with pytest.raises(ValueError, match="intent_kind"):
+        p.observe_audible(
+            route_id="voice",
+            sample_id=1,
+            words_spoken=5,
+            first_audible_s=10.0,
+            finished_audible_s=13.0,
+            now_s=13.0,
+            game_active=True,
+            streaming_load=True,
+            intent_kind="viewer_supplied_kind",
+            host_confirmed=True,
+        )
+    assert p.metrics()["accepted"] == 0

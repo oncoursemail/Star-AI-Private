@@ -53,6 +53,7 @@ class PacingAdvice:
     measured_samples: int = 0
     authorizes_speech: bool = False
     authorizes_broadcast: bool = False
+    calibration_scope: str = "none"  # intent | workload | cold_start | none
 
 
 class StreamSpeechPacer:
@@ -83,7 +84,9 @@ class StreamSpeechPacer:
         self._lock = RLock()
         self._enabled = False
         self._route = ""
-        self._samples: dict[tuple[bool, bool], deque[float]] = {}
+        # Key: (game_active, streaming_load, intent_kind). None is the
+        # pooled workload fallback; named buckets are event-specific.
+        self._samples: dict[tuple[bool, bool, str | None], deque[float]] = {}
         self._max_id = 0
         self._clock = -1.0
         self._counts = {"accepted": 0, "rejected": 0, "deferred": 0}
@@ -127,6 +130,7 @@ class StreamSpeechPacer:
         now_s: float,
         game_active: bool,
         streaming_load: bool,
+        intent_kind: str | None = None,
         host_confirmed: bool = False,
     ) -> bool:
         """Receive one *completed* independently witnessed voice sample.
@@ -140,6 +144,10 @@ class StreamSpeechPacer:
             raise ValueError("invalid host audio sample ID")
         if type(words_spoken) is not int or not 3 <= words_spoken <= 180:
             raise ValueError("actual spoken-word count must be 3..180")
+        if intent_kind is not None and (
+            type(intent_kind) is not str or intent_kind not in _LIMITS
+        ):
+            raise ValueError("intent_kind must match a known host stage kind")
         if any(
             type(flag) is not bool
             for flag in (
@@ -172,10 +180,19 @@ class StreamSpeechPacer:
                 return False
             self._clock = now
             self._max_id = sample_id
+            # Every accepted sample contributes to a same-regime pooled
+            # fallback. When the host binds the exact StagePlan.kind, it also
+            # trains only that event's bucket; no text or viewer identity is
+            # retained. Both histories are independently bounded.
             self._samples.setdefault(
-                (game_active, streaming_load),
+                (game_active, streaming_load, None),
                 deque(maxlen=self._history),
             ).append(seconds_per_word)
+            if intent_kind is not None:
+                self._samples.setdefault(
+                    (game_active, streaming_load, intent_kind),
+                    deque(maxlen=self._history),
+                ).append(seconds_per_word)
             self._counts["accepted"] += 1
             return True
 
@@ -219,8 +236,28 @@ class StreamSpeechPacer:
                 return PacingAdvice("no_host_context", "host_load_observation_missing")
             if now < self._clock:
                 return PacingAdvice("hold", "host_clock_reversed")
-            observations = self._samples.get((game_active, streaming_load), ())
-            enough = len(observations) >= self._minimum
+            intent_samples = self._samples.get(
+                (game_active, streaming_load, intent.kind), (),
+            )
+            workload_samples = self._samples.get(
+                (game_active, streaming_load, None), (),
+            )
+            if len(intent_samples) >= self._minimum:
+                observations = intent_samples
+                calibration_scope = "intent"
+            elif len(workload_samples) >= self._minimum:
+                observations = workload_samples
+                calibration_scope = "workload"
+            else:
+                # Partial samples are diagnostic only; do not call them a
+                # calibrated p90 until the configured minimum is reached.
+                observations = (
+                    intent_samples
+                    if len(intent_samples) > len(workload_samples)
+                    else workload_samples
+                )
+                calibration_scope = "cold_start"
+            enough = calibration_scope != "cold_start"
             if enough:
                 ordered = sorted(observations)
                 per_word = ordered[math.ceil(0.90 * len(ordered)) - 1]
@@ -234,12 +271,14 @@ class StreamSpeechPacer:
                     "hold",
                     "speech_cannot_fit_event_deadline",
                     measured_samples=len(observations),
+                    calibration_scope=calibration_scope,
                 )
             return PacingAdvice(
                 "bounded",
                 "host_playout_p90" if enough else "conservative_cold_start",
                 max_words=cap,
                 measured_samples=len(observations),
+                calibration_scope=calibration_scope,
             )
 
     def metrics(self) -> dict[str, int | bool]:
@@ -249,7 +288,13 @@ class StreamSpeechPacer:
                 "accepted": self._counts["accepted"],
                 "rejected": self._counts["rejected"],
                 "deferred": self._counts["deferred"],
-                "game_stream_samples": len(self._samples.get((True, True), ())),
+                "game_stream_samples": len(
+                    self._samples.get((True, True, None), ()),
+                ),
+                "game_stream_calibrated_intents": sum(
+                    len(self._samples.get((True, True, kind), ())) >= self._minimum
+                    for kind in _LIMITS
+                ),
             }
 
 
