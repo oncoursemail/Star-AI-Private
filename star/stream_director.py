@@ -439,10 +439,13 @@ class StreamDirector:
 
     def propose(self, *, now: float, voice_speaking: bool = False,
                 viewer_speaking: bool = False, gameplay_critical: bool = False,
-                load_advice: StreamLoadAdvice | None = None) -> SpeechIntent | None:
+                load_advice: StreamLoadAdvice | None = None,
+                optional_commentary_allowed: bool = True) -> SpeechIntent | None:
         """Return one non-binding candidate, leaving the queue untouched."""
         with self._lock:
             now = _clock(now)
+            if type(optional_commentary_allowed) is not bool:
+                raise ValueError("optional_commentary_allowed must be a bool")
             if load_advice is not None and not isinstance(load_advice, StreamLoadAdvice):
                 raise TypeError("load_advice must be an explicit StreamLoadAdvice")
             if not self.enabled:
@@ -464,6 +467,8 @@ class StreamDirector:
             )
             eligible = []
             for event in self._events:
+                if not optional_commentary_allowed and event.kind in _PROACTIVE:
+                    continue
                 if (self.proactive_limit_per_minute
                         and event.kind in _PROACTIVE
                         and self._event_serials[event.signal_id] not in pending_optional

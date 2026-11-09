@@ -15,6 +15,7 @@ from typing import cast
 
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_load_governor import StreamLoadGovernor
+from .stream_long_session_voice_health import LongSessionVoiceHealth
 from .stream_turntaking import TurnTakingGate, VoiceFrame
 
 
@@ -52,6 +53,7 @@ class NaturalTurnBridge:
         self, *, director: StreamDirector | None = None,
         turn_gate: TurnTakingGate | None = None,
         load_governor: StreamLoadGovernor | None = None,
+        voice_health: LongSessionVoiceHealth | None = None,
         single_flight_tts: bool = False,
         preparation_lease_ms: int = 8000,
         require_preplay_recheck: bool = False,
@@ -62,6 +64,8 @@ class NaturalTurnBridge:
             raise TypeError("expected TurnTakingGate")
         if load_governor is not None and type(load_governor) is not StreamLoadGovernor:
             raise TypeError("expected trusted StreamLoadGovernor")
+        if voice_health is not None and type(voice_health) is not LongSessionVoiceHealth:
+            raise TypeError("expected trusted LongSessionVoiceHealth")
         if type(single_flight_tts) is not bool:
             raise ValueError("single_flight_tts must be an explicit bool")
         if (type(preparation_lease_ms) is not int
@@ -83,6 +87,9 @@ class NaturalTurnBridge:
         # Opt-in: bind the real producer, never accept model-supplied advice.
         # Its host-monotonic seconds must share this bridge's millisecond clock.
         self._load_governor = load_governor
+        # Separately host-approved optional long-session monitoring; not model
+        # self-graded and not an audio/broadcast authority.
+        self._voice_health = voice_health
         self._enabled = False
         self._last_now_ms: float | None = None
         self._last_playout_active = False
@@ -254,6 +261,17 @@ class NaturalTurnBridge:
                 except ValueError:
                     self._clear_pending()
                     return NaturalTurnDecision("hold", "resource_clock_invalid")
+            voice_optional_allowed = (
+                self._voice_health is None
+                or self._voice_health.advise(now_ms=now).allow_optional_commentary
+            )
+            if (not voice_optional_allowed and self._pending_intent is not None
+                    and self._pending_intent.kind in {
+                        "ambient", "viewer_comment", "game_observation", "game_success"
+                    }):
+                # Revoke optional TTS already queued before the health guard
+                # became stale or detected a long-session regression.
+                self._clear_pending()
             if self._single_flight and self._pending_intent is not None:
                 pending = self._pending_intent
                 pressured = (
@@ -283,6 +301,7 @@ class NaturalTurnBridge:
                 now=now / 1000, voice_speaking=False,
                 viewer_speaking=False, gameplay_critical=False,
                 load_advice=load_advice,
+                optional_commentary_allowed=voice_optional_allowed,
             )
             if intent is None:
                 self._clear_pending()
@@ -347,6 +366,13 @@ class NaturalTurnBridge:
             )
             if turn.action != "speak":
                 return deny("audio_turn_" + turn.reason, revoke=True)
+            if (self._voice_health is not None
+                    and intent.kind in {
+                        "ambient", "viewer_comment", "game_observation", "game_success"
+                    } and not self._voice_health.advise(
+                        now_ms=now,
+                    ).allow_optional_commentary):
+                return deny("long_session_voice_health_hold", revoke=True)
             if self._load_governor is not None:
                 try:
                     load = self._load_governor.recommend(now_s=now / 1000)
