@@ -1,6 +1,5 @@
 """Offline tests: no GPU, OS processes, game, OBS, accounts, or network."""
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from threading import Barrier
 import unittest
 
@@ -54,7 +53,7 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         gov.enable(owner_approved=True)
         gate = OptionalGpuLeaseGate(gov)
         gate.enable(owner_approved=True)
-        self.assertEqual(request(gate).reason, "resource_telemetry_stale")
+        self.assertEqual(request(gate, now_s=10).reason, "resource_telemetry_stale")
         gov.ingest(sample("one", 10), now_s=10, host_verified=True)
         self.assertEqual(request(gate, now_s=10).reason, "resource_warming")
         gov.ingest(sample("two", 11), now_s=11, host_verified=True)
@@ -63,19 +62,19 @@ class OptionalGpuLeaseTests(unittest.TestCase):
 
     def test_reservations_cannot_double_spend_observed_vram_headroom(self) -> None:
         _, gate = ready()
-        first = request(gate, vram_mb=1800)
-        second = request(gate, vram_mb=1800)
+        first = request(gate, vram_mb=1300)
+        second = request(gate, vram_mb=1300)
         self.assertEqual((first.action, second.action), ("admit", "admit"))
-        self.assertEqual(request(gate, vram_mb=300).reason, "vram_reserve_exhausted")
+        self.assertEqual(request(gate, vram_mb=500).reason, "vram_reserve_exhausted")
         self.assertEqual(gate.metrics()["outstanding"], 2)
         self.assertFalse(gate.acknowledge_stopped(
             first.lease.lease_id, host_verified=True, physical_worker_stopped=False,
         ))
-        self.assertEqual(request(gate, vram_mb=300).reason, "vram_reserve_exhausted")
+        self.assertEqual(request(gate, vram_mb=500).reason, "vram_reserve_exhausted")
         self.assertTrue(gate.acknowledge_stopped(
             first.lease.lease_id, host_verified=True, physical_worker_stopped=True,
         ))
-        self.assertEqual(request(gate, vram_mb=300).action, "admit")
+        self.assertEqual(request(gate, vram_mb=500).action, "admit")
 
     def test_near_full_vram_never_enables_second_model(self) -> None:
         gov = StreamLoadGovernor()
@@ -172,8 +171,8 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         ))
 
     def test_concurrent_requests_cannot_race_for_same_gpu_budget(self) -> None:
-        _, gate = ready()
-        gate = OptionalGpuLeaseGate(gate._governor, max_workers=2)
+        gov, _ = ready()
+        gate = OptionalGpuLeaseGate(gov, max_workers=2)
         gate.enable(owner_approved=True)
         barrier = Barrier(8)
 
