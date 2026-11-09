@@ -310,5 +310,3 @@ Sources: [WASAPI overview](https://learn.microsoft.com/en-us/windows/win32/corea
 ## Evidence boundary
 
 This is an engineering research and acceptance plan. The associated code change in this update fixes inference benchmark aggregation and its static typing. It does not install a model, train weights, connect native Windows audio, control a game, operate OBS, or start a broadcast. No neural speedup, gameplay mastery, human-equivalence, or production readiness is claimed.
-
-[executed on device: starai (04f6aa98-0095-4f4d-8546-724e7fb588fa)]
