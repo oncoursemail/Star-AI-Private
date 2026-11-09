@@ -216,6 +216,60 @@ class OptionalGpuLeaseTests(unittest.TestCase):
         self.assertEqual(gate.metrics()["outstanding"], 0)
 
 
+    def test_invalid_verified_review_time_revokes_all_and_latches_stop(self) -> None:
+        for invalid in (float("nan"), float("inf"), -1, True, "bad", None):
+            with self.subTest(invalid=invalid):
+                _, gate = ready()
+                one = request(gate).lease
+                two = request(gate, vram_mb=256).lease
+                self.assertEqual(
+                    gate.review(one.lease_id, now_s=invalid, host_verified=True).reason,
+                    "host_clock_invalid",
+                )
+                self.assertEqual(gate.metrics()["stop_pending"], 2)
+                self.assertEqual(gate.review(
+                    two.lease_id, now_s=12, host_verified=True,
+                ).action, "stop")
+                self.assertEqual(request(gate).reason, "pending_physical_stop")
+                # Even a healthy host sample cannot silently release memory.
+                self.assertTrue(gate.acknowledge_stopped(
+                    one.lease_id, host_verified=True, physical_worker_stopped=True,
+                ))
+                self.assertEqual(request(gate).reason, "pending_physical_stop")
+                self.assertTrue(gate.acknowledge_stopped(
+                    two.lease_id, host_verified=True, physical_worker_stopped=True,
+                ))
+
+    def test_invalid_verified_request_time_quarantines_existing_workers(self) -> None:
+        _, gate = ready()
+        original = request(gate).lease
+        rejected = gate.request(
+            work_kind="vision", vram_mb=256, duration_s=1,
+            now_s=float("nan"), host_verified=True,
+        )
+        self.assertEqual((rejected.action, rejected.reason),
+                         ("reject", "host_clock_invalid"))
+        self.assertEqual(gate.review(
+            original.lease_id, now_s=12, host_verified=True,
+        ).reason, "host_clock_invalid")
+        self.assertEqual(gate.metrics()["outstanding"], 1)
+
+    def test_telemetry_adapter_crash_cannot_leave_live_leases_approved(self) -> None:
+        gov, gate = ready()
+        original = request(gate).lease
+        with patch.object(gov, "recommend", side_effect=RuntimeError("private error")):
+            decision = gate.review(original.lease_id, now_s=12,
+                                   host_verified=True)
+            self.assertEqual((decision.action, decision.reason),
+                             ("stop", "resource_observer_failed"))
+            self.assertEqual(request(gate).reason, "pending_physical_stop")
+        self.assertNotIn("private error", decision.reason)
+        self.assertEqual(gate.metrics()["stop_pending"], 1)
+        self.assertFalse(gate.acknowledge_stopped(
+            original.lease_id, host_verified=True, physical_worker_stopped=False,
+        ))
+        self.assertEqual(gate.metrics()["outstanding"], 1)
+
     def test_new_host_requires_sweep_even_with_healthy_telemetry(self) -> None:
         gov, previous = ready()
         old = request(previous).lease
