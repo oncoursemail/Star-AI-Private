@@ -69,3 +69,29 @@ Pocket TTS (Kyutai, October 2026 small English variants) is a candidate CPU-only
 
 ### Boundaries
 This update improves the **correctness of an advisory playout handoff** in an offline-tested Python control path. It does not alter a neural model's capabilities or actual speech model throughput. Any live streamer claim requires Windows/OBS/game/physical-device tests and explicit operator approval.
+
+## Source audit addendum — November 9, 2026: full-duplex VTubing, long-horizon gaming, visual game development
+
+### Actual CI blocker and fix
+GitHub Actions for draft PR #1082 completed the full offline Python and React jobs but failed the Python type-baseline job on six previously unreported errors, in OBS transport, private PCM diagnostic parsing, and the speech preplay gate. This follow-up narrows validated OBS response types, rejects malformed RPC values early, checks optional activity amplitudes, and fails closed when required resource advice is unexpectedly absent. We did not raise the baseline or disable type checking. CI needs to be rerun; this is a correctness change, not a neural inference speed measurement.
+
+### Realtime-Venus (September 12, 2026): natural full-duplex interaction requires two loops
+Source: https://arxiv.org/abs/2609.13814 . This work models ongoing speech/video interaction while delegating longer tasks to an asynchronous background loop. STAR should keep a **tiny foreground lane** for owner interruption, scene changes, grounding, short reactions and current avatar speech; move research, long tactical analysis and episodic summarization into a bounded background queue. Background results need immutable game-scene/session epochs, provenance and expiration so she cannot confidently describe an old screen. Evaluate true first-audible p95, turn-taking correctness, stale-scene claims, game frame times, and OBS dropped frames. The authors' benchmark scores are not STAR measurements.
+
+### Four Gemini 4 agents complete Minecraft (October 15, 2026): measurable multi-agent learning
+Source: https://arxiv.org/abs/2610.22319 . In one reported trial, four agents used Mineflayer and shared notes while writing 2,783 programs to win after 27h14m and 605 deaths. This illustrates long-horizon code/tool recovery, *not* automatic model-weight updates or a proven efficiency advantage over solo agents. For STAR: distinguish planner, real-time controller, recovery debugger and independent evaluator. Maintain a bounded goal tree and signed episode receipts; record every failed command, death, reset, token/compute cost, tool recovery, cross-session reuse and held-out-seed success. Compare to a one-agent baseline with the same compute and wall-clock budgets. Never allow unauthorized competitive gameplay automation or viewer-directed tool commands.
+
+### GameDevBench (February 11, 2026 preprint; subsequent 2026 revisions)
+Sources: https://arxiv.org/abs/2602.11103 and https://github.com/waynchi/gamedevbench . Game development exposes weaknesses invisible to code-only tests: visual rendering, sprites, lighting, VFX and gameplay interactions. Published benchmark revisions differ in task counts and leaderboards, so pin an exact revision before quoting a score. Add a **visual feedback repair loop** after static Luau/tests: capture a witnessed frame, describe grounded mismatches, generate one isolated candidate change, re-run executable checks and compare task-level success with the unchanged baseline. Include frame/time cost, FPS, accessibility and regression tests; do not claim better game quality because a model's critique sounds plausible.
+
+### Roblox Studio Open Cloud and headless Luau execution (documentation checked November 9, 2026)
+Sources: https://create.roblox.com/docs/studio/mcp-open-cloud and https://create.roblox.com/docs/cloud/reference/features/luau-execution . The Studio MCP permissions are game-specific, and live data store writes can change real player data. The published Luau execution service supports headless test runs, with documented task and concurrency caps. STAR should create dedicated *throwaway test places*, run sandboxed scripts with pinned versions and captured logs, and block publication and live data edits unless separately authorized. Add scene-inspection-first and cross-place tests to the existing OpenGameEval practice environment rather than treating generated code as a finished game.
+
+### Acceptance-driven priority order (proposals, not shipped features)
+1. Restore all Python type checks without suppressions; preserve working offline suites and review any changed authorization code.
+2. Run an authenticated **nonbroadcast Windows rehearsal** with game FPS/p99, OBS loss, owner VAD, scene changes, PCM/rig STOP+FLUSH and first-audible output receipts. Test under VRAM pressure.
+3. Split foreground reactions from cancellable background reasoning, and evaluate grounded reactions, natural silence and interruption timing with blinded viewer preference trials.
+4. Run held-out game practice and game-building benchmarks comparing solo/multi-agent and no-visual/visual-feedback conditions with identical runtime and hardware budgets.
+5. Benchmark native local model routing, speculation, caching, quantization and CPU TTS under concurrent game+OBS load, measuring end-to-end delays, accuracy, 1% low FPS and realistic workload cost.
+
+No new model weights, autonomous gameplay mastery, actual neural speedup, hardware playback, or human feelings are claimed by this addendum.
