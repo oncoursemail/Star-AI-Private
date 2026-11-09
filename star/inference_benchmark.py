@@ -184,10 +184,17 @@ def summarize_probes(
     succeeded = [sample for sample in samples if sample.ok]
     durations = sorted(sample.elapsed_ms for sample in succeeded)
     # Partial usage metadata undercounts output and misleads comparisons.
-    tokens = [sample.output_tokens for sample in succeeded] if succeeded and all(
-        sample.output_tokens is not None for sample in succeeded
-    ) else []
-    p95 = durations[max(0, (len(durations) * 95 + 99) // 100 - 1)] if durations else None
+    # Build an explicitly non-optional list so static analysis and runtime
+    # reporting agree about whether token totals are complete.
+    token_values = [
+        sample.output_tokens for sample in succeeded
+        if sample.output_tokens is not None
+    ]
+    tokens_complete = bool(succeeded) and len(token_values) == len(succeeded)
+    request_p95 = (
+        durations[max(0, (len(durations) * 95 + 99) // 100 - 1)]
+        if durations else None
+    )
     case_ids = {sample.case_id for sample in samples if sample.case_id}
     category_durations: dict[str, list[int]] = {}
     for sample in succeeded:
@@ -198,11 +205,11 @@ def summarize_probes(
     category_latency_ms: dict[str, dict[str, int | float]] = {}
     for category, values in sorted(category_durations.items()):
         ordered = sorted(values)
-        p95 = ordered[max(0, (len(ordered) * 95 + 99) // 100 - 1)]
+        category_p95 = ordered[max(0, (len(ordered) * 95 + 99) // 100 - 1)]
         category_latency_ms[category] = {
             "count": len(ordered),
             "p50_ms": round(median(ordered), 1),
-            "p95_ms": p95,
+            "p95_ms": category_p95,
         }
     canary_mismatch_case_ids = sorted(
         sample.case_id for sample in samples
@@ -215,10 +222,13 @@ def summarize_probes(
         "parallel_limit": parallel,
         "wall_ms": wall_ms,
         "median_request_ms": round(median(durations), 1) if durations else None,
-        "p95_request_ms": p95,
+        "p95_request_ms": request_p95,
         "requests_per_second": round(len(succeeded) * 1000 / wall_ms, 3),
-        "output_tokens": sum(tokens) if tokens else None,
-        "output_tokens_per_second": round(sum(tokens) * 1000 / wall_ms, 2) if tokens else None,
+        "output_tokens": sum(token_values) if tokens_complete else None,
+        "output_tokens_per_second": (
+            round(sum(token_values) * 1000 / wall_ms, 2)
+            if tokens_complete else None
+        ),
         "workload": workload,
         "workload_version": _VERSION if workload != "unlabeled" else None,
         "workload_sha256": workload_digest,
@@ -380,7 +390,9 @@ def _category_p95(summary: dict, category: str) -> float | None:
     if not isinstance(row, dict):
         return None
     value = row.get("p95_ms")
-    return float(value) if type(value) in (int, float) else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
 
 
 async def audit_cache_order(

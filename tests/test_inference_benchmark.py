@@ -222,3 +222,16 @@ def test_cache_order_audit_rejects_invalid_request_count_and_parallel_case_order
             parallel=2, workload="canary",
             client=SimpleNamespace(chat=SimpleNamespace(completions=None)),
         ))
+
+def test_summarize_probes_keeps_global_p95_separate_from_category_p95():
+    data = summarize_probes([
+        Probe(900, 10, True, "slow", True, "alpha"),
+        Probe(100, 10, True, "fast", True, "zeta"),
+    ], wall_ms=1200, parallel=1, workload="canary", workload_digest="1" * 64)
+
+    # The final category in lexical order is deliberately much faster than
+    # the global cohort. Category aggregation must not overwrite request p95.
+    assert data["category_latency_ms"]["alpha"]["p95_ms"] == 900
+    assert data["category_latency_ms"]["zeta"]["p95_ms"] == 100
+    assert data["p95_request_ms"] == 900
+    assert data["output_tokens"] == 20
