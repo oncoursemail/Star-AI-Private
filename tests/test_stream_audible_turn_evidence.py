@@ -302,7 +302,7 @@ def test_reviewer_observation_cannot_predate_device_callback():
     joiner.begin(r, session_id="nativeSession1", now_ms=1010)
     witness = heard(r, observed_at_ms=1700)
     joiner.heard(witness, now_ms=1710)
-    finished = review(witness, observed_at_ms=1600)
+    finished = review(witness, completed_audible_ms=1500, observed_at_ms=1600)
     assert not joiner.reviewed(
         finished, session_id="nativeSession1", current_scene_epoch="room0", now_ms=1760,
     )
