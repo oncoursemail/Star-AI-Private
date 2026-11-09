@@ -46,6 +46,7 @@ class StreamPreplayPCMBridge:
         self, gate: StreamPreplayGate, sink: LocalEpochPCMSink, *,
         max_turn_pcm_ms: int = 30_000,
         max_turn_wall_ms: int = 45_000,
+        require_submit_clock: bool = False,
     ) -> None:
         if type(gate) is not StreamPreplayGate or type(sink) is not LocalEpochPCMSink:
             raise TypeError("existing trusted preplay gate and PCM sink required")
@@ -53,6 +54,10 @@ class StreamPreplayPCMBridge:
             raise ValueError("per-turn PCM budget must be 1..60 seconds")
         if type(max_turn_wall_ms) is not int or not 1_000 <= max_turn_wall_ms <= 120_000:
             raise ValueError("wall-clock turn budget must be 1..120 seconds")
+        if type(require_submit_clock) is not bool:
+            raise ValueError("require_submit_clock must be an explicit boolean")
+        self._require_submit_clock = require_submit_clock
+        self._submit_clock_stops = 0
         self._max_turn_wall_ms = max_turn_wall_ms
         self._max_turn_pcm_ms = max_turn_pcm_ms
         # PCM is 16-bit mono; an integer byte budget avoids float rounding
@@ -116,11 +121,20 @@ class StreamPreplayPCMBridge:
             self._last_watchdog_s = float(now_s)
             return PCMBridgeAdvice("ready", "reviewed_intent_and_unique_native_epoch")
 
-    def submit(self, intent: SpeechIntent, *, epoch: str, pcm16: bytes) -> bool:
+    def submit(
+        self, intent: SpeechIntent, *, epoch: str, pcm16: bytes,
+        now_s: float | None = None,
+    ) -> bool:
         """Forward bounded PCM into the host-owned, pre-started sink only.
 
-        A successful submission is QUEUED audio, not proof it played or was
-        heard. The sink still checks PCM format, buffer and native epoch.
+        With require_submit_clock=True, the trusted *host* must provide its
+        current monotonic clock for EACH chunk. The watchdog is checked before
+        submitting to the native sink, so a stalled cooperative host cannot
+        extend a speech turn merely by neglecting separate watchdog polls.
+        Missing, reversed and invalid clocks request STOP+FLUSH and quarantine.
+        The host must still independently handle interruptions and native
+        quiet; model-generated timestamps are not trusted observations.
+        Successful submission is QUEUED audio, not proof of audible output.
         """
         with self._lock:
             if (not self._enabled or self._stopping or self._faulted
@@ -129,6 +143,21 @@ class StreamPreplayPCMBridge:
                     or type(pcm16) is not bytes):
                 self._rejected += 1
                 return False
+            if self._require_submit_clock:
+                try:
+                    # Missing clocks are a configuration/worker failure, not
+                    # permission to bypass the physical speech deadline.
+                    if now_s is None:
+                        raise ValueError("missing trusted PCM submit clock")
+                    advice = self.watchdog(now_s=now_s)
+                except (ValueError, OverflowError):
+                    self._rejected += 1
+                    self._submit_clock_stops += 1
+                    self.disable()
+                    return False
+                if advice.state != "ready":
+                    self._rejected += 1
+                    return False
             if self._turn_pcm_bytes + len(pcm16) > self._max_pcm_bytes:
                 # Stop the physical queue, not just the generator. Otherwise
                 # unbounded streaming TTS can talk over a new game moment for
@@ -333,6 +362,8 @@ class StreamPreplayPCMBridge:
                 "pcm_rejected": self._rejected,
                 "utterance_budget_stops": self._budget_stops,
                 "turn_wallclock_watchdog_stops": self._watchdog_stops,
+                "submit_clock_fault_stops": self._submit_clock_stops,
+                "require_submit_clock": self._require_submit_clock,
                 "max_turn_wall_ms": self._max_turn_wall_ms,
                 "max_turn_pcm_ms": self._max_turn_pcm_ms,
                 "turn_pcm_ms_submitted": (
