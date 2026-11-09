@@ -52,6 +52,8 @@ class NaturalTurnBridge:
         self, *, director: StreamDirector | None = None,
         turn_gate: TurnTakingGate | None = None,
         load_governor: StreamLoadGovernor | None = None,
+        single_flight_tts: bool = False,
+        preparation_lease_ms: int = 8000,
     ) -> None:
         if director is not None and type(director) is not StreamDirector:
             raise TypeError("expected StreamDirector")
@@ -59,6 +61,13 @@ class NaturalTurnBridge:
             raise TypeError("expected TurnTakingGate")
         if load_governor is not None and type(load_governor) is not StreamLoadGovernor:
             raise TypeError("expected trusted StreamLoadGovernor")
+        if type(single_flight_tts) is not bool:
+            raise ValueError("single_flight_tts must be an explicit bool")
+        if (type(preparation_lease_ms) is not int
+                or not 250 <= preparation_lease_ms <= 15000):
+            raise ValueError("preparation_lease_ms must be 250..15000")
+        self._single_flight = single_flight_tts
+        self._preparation_lease_ms = preparation_lease_ms
         self._lock = RLock()
         self._director = director if director is not None else StreamDirector()
         self._turn = turn_gate if turn_gate is not None else TurnTakingGate()
@@ -69,9 +78,15 @@ class NaturalTurnBridge:
         self._last_now_ms: float | None = None
         self._last_playout_active = False
         self._pending_intent: SpeechIntent | None = None
+        self._pending_since_ms: float | None = None
+        self._single_flight_coalesced = 0
         self._stop_token: int | None = None
         self._next_stop_token = 0
         self._counts = dict(prepared=0, stops_requested=0, stops_confirmed=0)
+
+    def _clear_pending(self) -> None:
+        self._pending_intent = None
+        self._pending_since_ms = None
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -88,7 +103,7 @@ class NaturalTurnBridge:
                 self._director.disable()
                 raise
             self._enabled = True
-            self._pending_intent = None
+            self._clear_pending()
             self._last_playout_active = False
             self._last_now_ms = None
 
@@ -97,7 +112,7 @@ class NaturalTurnBridge:
             self._next_stop_token += 1
             self._stop_token = self._next_stop_token
             self._counts["stops_requested"] += 1
-        self._pending_intent = None
+        self._clear_pending()
 
     def disable(self, *, host_playout_active: bool) -> int | None:
         """Invalidate proposals; tell host if physical audio/rig stop is needed."""
@@ -108,7 +123,7 @@ class NaturalTurnBridge:
                 self._director.disable()
                 self._turn.disable()
             self._enabled = False
-            self._pending_intent = None
+            self._clear_pending()
             if host_playout_active or self._last_playout_active:
                 self._request_stop()
             return self._stop_token
@@ -142,7 +157,7 @@ class NaturalTurnBridge:
                 if self._turn.advise(
                     now_ms=frame.at_ms, star_speaking=False,
                 ).hold:
-                    self._pending_intent = None
+                    self._clear_pending()
             return admitted
 
     def offer(self, signal: StreamSignal, *, now_ms: float) -> bool:
@@ -155,8 +170,19 @@ class NaturalTurnBridge:
                 return False
             self._last_now_ms = now
             accepted = self._director.offer(signal, now=now / 1000)
-            if accepted and signal.kind in {"owner_interrupt", "game_danger"}:
-                self._pending_intent = None
+            if accepted and (
+                signal.kind in {"owner_interrupt", "game_danger"}
+                or (
+                    self._single_flight and signal.kind == "viewer_question"
+                    and self._pending_intent is not None
+                    and self._pending_intent.kind in {
+                        "ambient", "viewer_comment", "game_observation", "game_success"
+                    }
+                )
+            ):
+                # Invalidate an unstarted TTS draft; never physical audio.
+                # A real viewer question outranks optional chatter.
+                self._clear_pending()
             return accepted
 
     def advise(
@@ -191,7 +217,7 @@ class NaturalTurnBridge:
                     stop_token=self._stop_token,
                 )
             if not output_healthy or gameplay_critical:
-                self._pending_intent = None
+                self._clear_pending()
                 reason = ("output_unhealthy" if not output_healthy
                           else "critical_gameplay")
                 if host_playout_active:
@@ -202,7 +228,7 @@ class NaturalTurnBridge:
                 return NaturalTurnDecision("hold", reason)
             if turn.hold or host_playout_active:
                 if turn.hold and not host_playout_active:
-                    self._pending_intent = None
+                    self._clear_pending()
                 return NaturalTurnDecision(
                     "hold", "audio_turn_" + turn.reason if turn.hold
                     else "star_already_speaking",
@@ -216,17 +242,43 @@ class NaturalTurnBridge:
                 try:
                     load_advice = self._load_governor.recommend(now_s=now / 1000)
                 except ValueError:
-                    self._pending_intent = None
+                    self._clear_pending()
                     return NaturalTurnDecision("hold", "resource_clock_invalid")
+            if self._single_flight and self._pending_intent is not None:
+                pending = self._pending_intent
+                pressured = (
+                    load_advice is not None and (
+                        (load_advice.profile == "constrained"
+                         and pending.kind in {
+                             "ambient", "viewer_comment", "game_observation"
+                         })
+                        or (load_advice.profile not in {"normal", "constrained"}
+                            and pending.kind not in {"owner_interrupt", "game_danger"})
+                    )
+                )
+                if (
+                    pressured or now / 1000 > pending.deadline_at
+                    or self._pending_since_ms is None
+                    or now - self._pending_since_ms >= self._preparation_lease_ms
+                ):
+                    # Timeouts never authorize playback. Superseded callbacks
+                    # cannot acknowledge the newly issued speech ticket.
+                    self._clear_pending()
+                else:
+                    self._single_flight_coalesced += 1
+                    return NaturalTurnDecision(
+                        "hold", "tts_preparation_in_flight",
+                    )
             intent = self._director.propose(
                 now=now / 1000, voice_speaking=False,
                 viewer_speaking=False, gameplay_critical=False,
                 load_advice=load_advice,
             )
             if intent is None:
-                self._pending_intent = None
+                self._clear_pending()
                 return NaturalTurnDecision("hold", "no_safe_event_due")
             self._pending_intent = intent
+            self._pending_since_ms = now
             self._counts["prepared"] += 1
             return NaturalTurnDecision(
                 "prepare", "host_may_review_speech_intent", intent=intent,
@@ -247,7 +299,7 @@ class NaturalTurnBridge:
             if (not self._enabled or self._stop_token is not None
                     or self._pending_intent is not intent):
                 return False
-            self._pending_intent = None
+            self._clear_pending()
             return self._director.complete(
                 intent, now=now / 1000, spoken=host_confirmed_spoken,
             )
@@ -255,10 +307,13 @@ class NaturalTurnBridge:
     def metrics(self) -> dict[str, int | bool]:
         """Counts only; never return text, speaker identity or voice data."""
         with self._lock:
-            return {
+            metrics: dict[str, int | bool] = {
                 **self._counts, "enabled": self._enabled,
                 "stop_outstanding": self._stop_token is not None,
             }
+            if self._single_flight:
+                metrics["single_flight_coalesced"] = self._single_flight_coalesced
+            return metrics
 
 
 __all__ = ["NaturalTurnBridge", "NaturalTurnDecision"]
