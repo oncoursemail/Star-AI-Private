@@ -58,6 +58,18 @@ def _p95(samples: list[float]) -> float | None:
     return round(sorted(samples)[math.ceil(len(samples) * .95) - 1], 3)
 
 
+def _paired_win_sign_pvalue(new_wins: int, new_losses: int) -> float | None:
+    """Exact one-sided discordant-pair test for independently reset outcomes.
+
+    This is a descriptive screen only: reused holdouts, adaptive stopping,
+    correlated scenarios or untrusted host claims invalidate inference.
+    """
+    discordant = new_wins + new_losses
+    if not discordant:
+        return None
+    return sum(math.comb(discordant, k) for k in range(new_wins, discordant + 1)) / (1 << discordant)
+
+
 def _ci95(deltas: list[float]) -> tuple[float, float] | None:
     if not deltas:
         return None
@@ -216,6 +228,7 @@ class LiveClockReport:
     progress_gain_mean: float | None
     progress_gain_ci95: tuple[float, float] | None
     authorized_to_act: bool = False
+    paired_win_sign_pvalue: float | None = None
     note: str = (
         "Offline matched game-state outcomes; host attestations are not "
         "authenticated by this analyzer. No automatic deployment, gaming or streaming."
@@ -263,8 +276,16 @@ def assess_live_clock(
 
     full = [p for p in pairs.values() if len(p) == 2]
     incomplete = len(pairs) - len(full)
+    # Unique pair IDs alone do not establish independent samples. Repeating
+    # the same scenario AND starting-state fingerprint under fresh episode IDs
+    # would inflate both sample size and the confidence interval.
+    seen_starts: set[tuple[str, str]] = set()
     for pair in full:
         b, c = pair["baseline"], pair["candidate"]
+        start = (b.scenario_id, b.initial_state_sha256)
+        if start in seen_starts:
+            raise ValueError("reused paired starting state: holdout evidence is not independent")
+        seen_starts.add(start)
         if (b.scenario_id != c.scenario_id
                 or b.initial_state_sha256 != c.initial_state_sha256
                 or abs(b.progress_before - c.progress_before) > .001
@@ -289,6 +310,12 @@ def assess_live_clock(
     missed = sum(not x.timely_input for x in candidate)
     newly_failed = sum(b.timely_success and not c.timely_success
                        for b, c in zip(baseline, candidate))
+    new_wins = sum(not b.timely_success and c.timely_success
+                   for b, c in zip(baseline, candidate))
+    paired_win_p = _paired_win_sign_pvalue(new_wins, newly_failed)
+    # Distinct state hashes from only one stage are not generalization evidence.
+    # This is a conservative minimum, NOT proof of cross-game skill transfer.
+    distinct_scenarios = len({b.scenario_id for b in baseline})
     qos_regressions = sum(
         c.game_p99_frame_ms - b.game_p99_frame_ms > max_frame_p99_regression_ms
         or c.obs_dropped_pct - b.obs_dropped_pct > max_obs_dropped_regression_pct
@@ -307,7 +334,9 @@ def assess_live_clock(
     # trade a gameplay failure for marginally faster first-token latency.
     eligible = (
         not regressed and not incomplete and not unverified and not non_live
-        and len(full) >= minimum_pairs and ci is not None and ci[0] > 0.02
+        and len(full) >= minimum_pairs and distinct_scenarios >= 3
+        and paired_win_p is not None and paired_win_p < 0.05
+        and ci is not None and ci[0] > 0.02
         and cand_success > base_success
         and cand_p95 is not None and base_p95 is not None
         and cand_p95 <= base_p95 + 25.0
@@ -316,7 +345,7 @@ def assess_live_clock(
     return LiveClockReport(
         verdict, len(full), incomplete, unverified, non_live, base_success, cand_success,
         missed, newly_failed, qos_regressions, base_p95, cand_p95,
-        round(mean_gain, 4), ci,
+        round(mean_gain, 4), ci, paired_win_sign_pvalue=paired_win_p,
     )
 
 
