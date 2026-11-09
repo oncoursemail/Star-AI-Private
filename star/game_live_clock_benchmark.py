@@ -229,6 +229,11 @@ class LiveClockReport:
     progress_gain_ci95: tuple[float, float] | None
     authorized_to_act: bool = False
     paired_win_sign_pvalue: float | None = None
+    # Diversity is an effective number of scenarios (inverse Simpson index).
+    # Report counts only: no individual scenario/game identifiers are exposed.
+    effective_scenarios: float = 0.0
+    scenario_progress_regressions: int = 0
+    scenario_action_p95_regressions: int = 0
     note: str = (
         "Offline matched game-state outcomes; host attestations are not "
         "authenticated by this analyzer. No automatic deployment, gaming or streaming."
@@ -315,7 +320,35 @@ def assess_live_clock(
     paired_win_p = _paired_win_sign_pvalue(new_wins, newly_failed)
     # Distinct state hashes from only one stage are not generalization evidence.
     # This is a conservative minimum, NOT proof of cross-game skill transfer.
-    distinct_scenarios = len({b.scenario_id for b in baseline})
+    # Twenty different resets in one easy level are not twenty independent
+    # mechanics. Simpson's effective number of scenarios catches an
+    # imbalanced 22/1/1 split without punishing 24 genuinely distinct maps.
+    # This is only a diversity screen, not proof that seeds are independent.
+    by_scenario: dict[str, list[tuple[LiveClockTrial, LiveClockTrial]]] = {}
+    for b, c in zip(baseline, candidate):
+        by_scenario.setdefault(b.scenario_id, []).append((b, c))
+    distinct_scenarios = len(by_scenario)
+    effective_scenarios = (
+        len(baseline) ** 2 / sum(len(rows) ** 2 for rows in by_scenario.values())
+    )
+    # A fast aggregate p95 can conceal a severe slowdown on one particular
+    # level. Every named scenario must retain its own progress and reaction
+    # performance: do not trade away difficult mechanics for easy wins.
+    scenario_progress_regressions = sum(
+        sum((c.progress_after - c.progress_before)
+            - (b.progress_after - b.progress_before)
+            for b, c in rows) / len(rows) < -0.01
+        for rows in by_scenario.values()
+    )
+    scenario_action_p95_regressions = 0
+    for rows in by_scenario.values():
+        b_times = [b.response_ms for b, _ in rows if b.response_ms is not None]
+        c_times = [c.response_ms for _, c in rows if c.response_ms is not None]
+        if b_times and c_times:
+            b_tail, c_tail = _p95(b_times), _p95(c_times)
+            assert b_tail is not None and c_tail is not None
+            if c_tail > b_tail * 1.10 and c_tail > b_tail + 20.0:
+                scenario_action_p95_regressions += 1
     qos_regressions = sum(
         c.game_p99_frame_ms - b.game_p99_frame_ms > max_frame_p99_regression_ms
         or c.obs_dropped_pct - b.obs_dropped_pct > max_obs_dropped_regression_pct
@@ -328,13 +361,19 @@ def assess_live_clock(
     ci = _ci95(progress_deltas)
     base_p95 = _p95([t.response_ms for t in baseline if t.response_ms is not None])
     cand_p95 = _p95([t.response_ms for t in candidate if t.response_ms is not None])
-    regressed = (newly_failed > 0 or qos_regressions > 0
-                 or cand_success < base_success or missed > sum(not b.timely_input for b in baseline))
+    regressed = (
+        newly_failed > 0 or qos_regressions > 0
+        or scenario_progress_regressions > 0
+        or scenario_action_p95_regressions > 0
+        or cand_success < base_success
+        or missed > sum(not b.timely_input for b in baseline)
+    )
     # Every observed comparison matters. Do not wash out excluded pairs or
     # trade a gameplay failure for marginally faster first-token latency.
     eligible = (
         not regressed and not incomplete and not unverified and not non_live
         and len(full) >= minimum_pairs and distinct_scenarios >= 3
+        and effective_scenarios >= 2.5
         and paired_win_p is not None and paired_win_p < 0.05
         and ci is not None and ci[0] > 0.02
         and cand_success > base_success
@@ -346,6 +385,9 @@ def assess_live_clock(
         verdict, len(full), incomplete, unverified, non_live, base_success, cand_success,
         missed, newly_failed, qos_regressions, base_p95, cand_p95,
         round(mean_gain, 4), ci, paired_win_sign_pvalue=paired_win_p,
+        effective_scenarios=round(effective_scenarios, 4),
+        scenario_progress_regressions=scenario_progress_regressions,
+        scenario_action_p95_regressions=scenario_action_p95_regressions,
     )
 
 
