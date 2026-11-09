@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import secrets
 from threading import RLock
 from typing import cast
 
@@ -79,6 +80,10 @@ class OptionalGpuLeaseGate:
         self._max_lease_s = lease_limit
         self._lock = RLock()
         self._enabled = False
+        # Lease IDs must not collide with receipts from a prior Python host
+        # process: delayed stop callbacks are otherwise able to free new work.
+        # This random namespace is NOT an authentication token.
+        self._instance_id = secrets.token_hex(16)
         self._epoch = 0
         self._serial = 0
         self._last_now: float | None = None
@@ -87,13 +92,27 @@ class OptionalGpuLeaseGate:
         self._counts = {"admitted": 0, "rejected": 0,
                         "revoked": 0, "stopped": 0}
 
-    def enable(self, *, owner_approved: bool = False) -> None:
+    def enable(
+        self, *, owner_approved: bool = False, host_verified: bool = False,
+        optional_workers_quiescent: bool = False,
+    ) -> None:
+        """Require native startup/rearm worker sweep before new reservations.
+
+        A Python restart loses the in-memory ledger, not its former GPU
+        workers. The independently authenticated native host must confirm
+        there are no surviving *optional* workers from any previous instance.
+        A caller-supplied bool is an assertion, not process verification.
+        """
         if owner_approved is not True:
             raise PermissionError("owner approval required")
+        if type(host_verified) is not bool or type(optional_workers_quiescent) is not bool:
+            raise ValueError("native host sweep flags must be bool")
         with self._lock:
             if self._outstanding:
                 raise RuntimeError("physical workers must stop before rearming")
             if not self._enabled:
+                if not host_verified or not optional_workers_quiescent:
+                    raise PermissionError("verified native optional-worker sweep required")
                 self._epoch += 1
                 self._last_now = None
             self._enabled = True
@@ -175,7 +194,8 @@ class OptionalGpuLeaseGate:
                 return reject("vram_reserve_exhausted")
             self._serial += 1
             receipt = OptionalGpuLease(
-                f"star-gpu-{self._epoch}-{self._serial}", work_kind, vram_mb,
+                f"star-gpu-{self._instance_id}-{self._epoch}-{self._serial}",
+                work_kind, vram_mb,
                 now, now + duration,
             )
             self._outstanding[receipt.lease_id] = receipt
