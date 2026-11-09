@@ -485,3 +485,31 @@ def test_status_check_detects_obs_process_change_during_read():
     socket.recv = stolen_listener
     assert host.recommend().profile == "disabled"
     assert socket.closed
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("outputTotalFrames", True), ("outputDuration", None),
+    ("outputSkippedFrames", -1), ("outputDuration", "1000"),
+    ("outputTotalFrames", 2.5),
+])
+def test_stream_output_counters_reject_bad_values(field, bad):
+    counters = dict(
+        outputActive=True, outputReconnecting=False,
+        outputDuration=1000, outputTotalFrames=50, outputSkippedFrames=0,
+    )
+    counters[field] = bad
+    with pytest.raises(ValueError, match="counters"):
+        ObsLoopbackLiveHost._stream_state(counters)
+
+
+@pytest.mark.parametrize("bad", [True, None, "1", 0, -1, 1.5])
+def test_open_rejects_invalid_rpc_protocol_without_arming(bad):
+    host, sock, *_ = ready()
+    sock.inbox[0]["d"]["rpcVersion"] = bad
+    with pytest.raises(RuntimeError, match="local OBS observation unavailable"):
+        host.open(
+            owner_approved=True, obs_pid=123,
+            obs_created_unix_s=12345.0, password="private-password",
+        )
+    assert sock.closed
+    assert host.metrics()["armed"] is False

@@ -251,6 +251,10 @@ class StreamPreplayGate:
             blocked, load = self._safety(now, star_speaking)
             if blocked is not None:
                 return blocked
+            if load is None:
+                # Do not let a changed or incomplete producer return a reviewed
+                # speech plan without independent live resource measurements.
+                return PreplayDecision("hold", "live_load_advice_missing")
             if gameplay_critical and intent.kind not in {"game_danger", "owner_interrupt"}:
                 return PreplayDecision("hold", "critical_gameplay_focus")
             if load.profile == "constrained" and intent.kind in _OPTIONAL_WHEN_CONSTRAINED:

@@ -520,6 +520,32 @@ class StreamDirector:
             self._issued_intents[intent.event_serial] = intent
             return intent
 
+    def has_live_intent(self, intent: SpeechIntent, *, now: float) -> bool:
+        """Read-only check that a queued draft still belongs to a live event.
+
+        This is a provenance/freshness check, NOT audio or broadcast approval.
+        It deliberately does not renew the event TTL or replace its issued plan.
+        """
+        now = _clock(now)
+        with self._lock:
+            if type(intent) is not SpeechIntent or not self.enabled:
+                return False
+            if (intent.session_epoch != self._session_epoch
+                    or intent.event_serial != self._event_serials.get(intent.signal_id)
+                    or self._issued_intents.get(intent.event_serial) is not intent
+                    or now > intent.deadline_at
+                    or (intent.kind.startswith("game_")
+                        and self._active_game_scope is not None
+                        and intent.game_scope != self._active_game_scope)):
+                return False
+            return any(
+                event.signal_id == intent.signal_id
+                and event.kind == intent.kind
+                and event.timestamp <= now
+                and signal_origin_sha256(event) == intent.source_sha256
+                for event in self._events
+            )
+
     def complete(self, intent: SpeechIntent, *, now: float, spoken: bool) -> bool:
         """Consume only an event still in this session. Do not commit a stale plan."""
         with self._lock:

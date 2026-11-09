@@ -54,6 +54,7 @@ class NaturalTurnBridge:
         load_governor: StreamLoadGovernor | None = None,
         single_flight_tts: bool = False,
         preparation_lease_ms: int = 8000,
+        require_preplay_recheck: bool = False,
     ) -> None:
         if director is not None and type(director) is not StreamDirector:
             raise TypeError("expected StreamDirector")
@@ -66,6 +67,14 @@ class NaturalTurnBridge:
         if (type(preparation_lease_ms) is not int
                 or not 250 <= preparation_lease_ms <= 15000):
             raise ValueError("preparation_lease_ms must be 250..15000")
+        if type(require_preplay_recheck) is not bool:
+            raise ValueError("require_preplay_recheck must be an explicit bool")
+        if require_preplay_recheck and not single_flight_tts:
+            raise ValueError("preplay recheck requires single-flight preparation")
+        self._require_preplay = require_preplay_recheck
+        self._reviewed_intent: SpeechIntent | None = None
+        self._preplay_reviewed = 0
+        self._preplay_denied = 0
         self._single_flight = single_flight_tts
         self._preparation_lease_ms = preparation_lease_ms
         self._lock = RLock()
@@ -87,6 +96,7 @@ class NaturalTurnBridge:
     def _clear_pending(self) -> None:
         self._pending_intent = None
         self._pending_since_ms = None
+        self._reviewed_intent = None
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -284,6 +294,78 @@ class NaturalTurnBridge:
                 "prepare", "host_may_review_speech_intent", intent=intent,
             )
 
+    def revalidate_prepared(
+        self, intent: SpeechIntent, *, now_ms: float,
+        host_playout_active: bool, gameplay_critical: bool,
+        output_healthy: bool, pcm_output_ready: bool,
+        host_verified: bool = False,
+    ) -> NaturalTurnDecision:
+        """One-shot, host-only review immediately before the FIRST PCM write.
+
+        The synthesizer can complete after an owner/guest starts speaking, the
+        game changes, OBS loses headroom, or an old work item times out. This
+        checks the original object identity, live director source, current VAD
+        and resource state. A positive result only tells an independently
+        authorized native audio host that its pending plan is still eligible.
+        It does NOT authorize playback, verify a real device, or start OBS.
+        """
+        now = _time(now_ms)
+        if type(intent) is not SpeechIntent:
+            raise TypeError("exact SpeechIntent required")
+        if any(type(v) is not bool for v in (
+            host_playout_active, gameplay_critical, output_healthy,
+            pcm_output_ready, host_verified,
+        )):
+            raise ValueError("trusted host preplay evidence requires booleans")
+        with self._lock:
+            def deny(reason: str, *, revoke: bool = False) -> NaturalTurnDecision:
+                self._preplay_denied += 1
+                if revoke:
+                    self._clear_pending()
+                return NaturalTurnDecision("hold", reason)
+            if not self._require_preplay:
+                return deny("preplay_recheck_disabled")
+            if self._last_now_ms is not None and now < self._last_now_ms:
+                return deny("host_clock_reversed")
+            self._last_now_ms = now
+            if not self._enabled or self._stop_token is not None:
+                return deny("speech_session_inactive", revoke=True)
+            if self._pending_intent is not intent:
+                return deny("stale_or_superseded_tts_ticket")
+            if self._reviewed_intent is intent:
+                return deny("preplay_ticket_already_reviewed")
+            if (self._pending_since_ms is None
+                    or now - self._pending_since_ms >= self._preparation_lease_ms
+                    or not self._director.has_live_intent(intent, now=now / 1000)):
+                return deny("preplay_ticket_expired_or_scene_changed", revoke=True)
+            if not host_verified or not pcm_output_ready:
+                return deny("physical_host_evidence_missing", revoke=True)
+            if host_playout_active or not output_healthy or gameplay_critical:
+                return deny("unsafe_native_output_or_gameplay", revoke=True)
+            turn = self._turn.advise(
+                now_ms=now, star_speaking=host_playout_active,
+            )
+            if turn.action != "speak":
+                return deny("audio_turn_" + turn.reason, revoke=True)
+            if self._load_governor is not None:
+                try:
+                    load = self._load_governor.recommend(now_s=now / 1000)
+                except ValueError:
+                    return deny("resource_clock_invalid", revoke=True)
+                if (load.profile == "constrained"
+                        and intent.kind in {
+                            "ambient", "viewer_comment", "game_observation"
+                        } or (load.profile not in {"normal", "constrained"}
+                              and intent.kind not in {
+                                  "owner_interrupt", "game_danger"
+                              })):
+                    return deny("resource_pressure_at_preplay", revoke=True)
+            self._reviewed_intent = intent
+            self._preplay_reviewed += 1
+            return NaturalTurnDecision(
+                "reviewed", "fresh_preplay_candidate", intent=intent,
+            )
+
     def complete(
         self, intent: SpeechIntent, *, now_ms: float,
         host_confirmed_spoken: bool,
@@ -299,6 +381,9 @@ class NaturalTurnBridge:
             if (not self._enabled or self._stop_token is not None
                     or self._pending_intent is not intent):
                 return False
+            if (host_confirmed_spoken and self._require_preplay
+                    and self._reviewed_intent is not intent):
+                return False
             self._clear_pending()
             return self._director.complete(
                 intent, now=now / 1000, spoken=host_confirmed_spoken,
@@ -313,6 +398,9 @@ class NaturalTurnBridge:
             }
             if self._single_flight:
                 metrics["single_flight_coalesced"] = self._single_flight_coalesced
+            if self._require_preplay:
+                metrics["preplay_reviewed"] = self._preplay_reviewed
+                metrics["preplay_denied"] = self._preplay_denied
             return metrics
 
 
