@@ -379,3 +379,120 @@ def test_governor_must_be_exact_trusted_type_and_legacy_is_unchanged():
     ready(host)
     host.offer(signal(), now_ms=400)
     assert decide(host).action == "prepare"
+
+
+def test_opt_in_single_flight_coalesces_polling_without_tts_restarts():
+    host = NaturalTurnBridge(single_flight_tts=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    first = decide(host).intent
+    assert first is not None
+    # Repeated 20-ms loop iterations must not start another TTS worker.
+    for now in (410, 420, 430, 440, 450):
+        decision = decide(host, now)
+        assert (decision.action, decision.reason) == (
+            "hold", "tts_preparation_in_flight",
+        )
+        assert decision.intent is None
+    assert host.metrics()["single_flight_coalesced"] == 5
+    assert host.metrics()["prepared"] == 1
+    assert host.complete(first, now_ms=460, host_confirmed_spoken=True)
+    assert decide(host, 470).action == "hold"
+
+
+def test_opt_in_single_flight_lease_reissues_only_with_fresh_silence():
+    host = NaturalTurnBridge(single_flight_tts=True, preparation_lease_ms=300)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    old = decide(host).intent
+    assert old is not None
+    assert decide(host, 650).action == "hold"  # expired quiet proof
+    ready(host, at=900)
+    current = decide(host, 900).intent
+    assert current is not None and current is not old
+    assert not host.complete(old, now_ms=910, host_confirmed_spoken=True)
+    assert host.complete(current, now_ms=920, host_confirmed_spoken=True)
+    assert host.metrics()["prepared"] == 2
+
+
+def test_opt_in_single_flight_real_viewer_question_preempts_ambient_draft():
+    host = NaturalTurnBridge(single_flight_tts=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    ambient = StreamSignal(
+        "ambient1", "ambient", 0.4, "A quiet moment to think.",
+    )
+    assert host.offer(ambient, now_ms=400)
+    old = decide(host).intent
+    assert old is not None and old.kind == "ambient"
+    question = signal(410)
+    assert host.offer(question, now_ms=410)
+    next_decision = decide(host, 410)
+    assert next_decision.action == "prepare"
+    assert next_decision.intent is not None
+    assert next_decision.intent.kind == "viewer_question"
+    assert not host.complete(old, now_ms=420, host_confirmed_spoken=True)
+
+
+def test_opt_in_single_flight_game_danger_overrides_pending_question():
+    host = NaturalTurnBridge(single_flight_tts=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    old = decide(host).intent
+    assert old is not None
+    assert host.offer(signal(410, signal_id="danger1", kind="game_danger"),
+                      now_ms=410)
+    urgent = decide(host, 410)
+    assert urgent.action == "prepare"
+    assert urgent.intent is not None and urgent.intent.kind == "game_danger"
+    assert not host.complete(old, now_ms=420, host_confirmed_spoken=True)
+
+
+def test_opt_in_single_flight_resource_pressure_revokes_old_draft():
+    governor = load_governor()
+    host = NaturalTurnBridge(
+        load_governor=governor, single_flight_tts=True,
+    )
+    host.enable(owner_approved=True)
+    ready(host)
+    assert host.offer(signal(), now_ms=400)
+    old = decide(host).intent
+    assert old is not None
+    assert decide(host, 401).reason == "tts_preparation_in_flight"
+    assert governor.ingest(
+        load_sample("critical_speech_budget", 0.405, render_missed_pct=4.0),
+        now_s=0.406, host_verified=True,
+    )
+    held = decide(host, 410)
+    assert held.reason == "no_safe_event_due"
+    assert not host.complete(old, now_ms=415, host_confirmed_spoken=True)
+
+
+def test_opt_in_single_flight_disable_and_quiet_revoke_draft():
+    host = NaturalTurnBridge(single_flight_tts=True)
+    host.enable(owner_approved=True)
+    ready(host)
+    host.offer(signal(), now_ms=400)
+    old = decide(host).intent
+    assert old is not None
+    host.observe_voice(voice(450, guest=1))
+    assert not host.complete(old, now_ms=450, host_confirmed_spoken=True)
+    assert host.disable(host_playout_active=False) is None
+    host.enable(owner_approved=True)
+    assert decide(host, 450).action == "hold"
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"single_flight_tts": 1},
+    {"single_flight_tts": None},
+    {"preparation_lease_ms": True},
+    {"preparation_lease_ms": 249},
+    {"preparation_lease_ms": 15001},
+    {"preparation_lease_ms": 8.5},
+])
+def test_single_flight_configuration_rejects_untrusted_types(kwargs):
+    with pytest.raises(ValueError):
+        NaturalTurnBridge(**kwargs)
