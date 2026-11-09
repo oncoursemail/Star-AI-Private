@@ -34,4 +34,3 @@ The new StreamSpeechPacer takes independently observed first-audible and finishe
 ## Security/privacy
 
 The new pacer stores only bounded seconds-per-word observations and counters (no audio, chat, text, player IDs or prompts). Sessions clear the statistics; route changes require disable/enable. Independent host attestations are still assertions and only as strong as the actual native adapter. Speech instructions stay USER-priority data; viewer messages never become tool commands.
-
