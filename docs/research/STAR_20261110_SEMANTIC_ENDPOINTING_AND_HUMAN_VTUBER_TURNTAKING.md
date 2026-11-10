@@ -27,6 +27,8 @@ LiveKit's current audio Turn Detector has two variants: v1 is served through Liv
 With the audio detector, LiveKit's default endpointing window is 300 ms minimum and 2.5 seconds maximum. If a prediction does not arrive within about one second, the session commits the turn rather than waiting indefinitely. The detector supports 14 languages. The local v1-mini weights use about 140–250 MB per loaded copy, depending on process/runtime.
 
 This is a strong experiment for Star: CPU-only semantic turn detection can leave the GPU available for the main language model, game rendering and avatar work. It is not a guaranteed speedup; measure CPU load, memory, endpointing latency and game/OBS stability on the target machines.
+LiveKit's audio detector uses English thresholds when no STT language is configured. For multilingual streams, the host should provide a reliable language signal where available and evaluate each language separately; do not assume the English threshold is calibrated for all 14 supported languages. STAR's existing 350 ms quiet gate already exceeds LiveKit's 250 ms minimum VAD-silence requirement.
+
 
 Important distinction: LiveKit's older text turn detector uses STT transcripts and is deprecated for new agents. Its 396 MB / ~50–160 ms per-turn benchmark belongs to that text model, not the current audio v1-mini. Do not conflate the two.
 
