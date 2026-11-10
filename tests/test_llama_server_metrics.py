@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from urllib.error import HTTPError
 
 import pytest
@@ -188,7 +189,7 @@ class FakeResponse:
 class FakeOpener:
     def __init__(self, response: FakeResponse | Exception):
         self.response = response
-        self.request: object | None = None
+        self.request: Any = None
         self.timeout: float | None = None
 
     def open(self, request: object, timeout: float) -> FakeResponse:
