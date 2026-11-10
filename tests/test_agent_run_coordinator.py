@@ -402,3 +402,34 @@ def test_claim_samples_lease_clock_after_waiting_for_sqlite_writer(tmp_path):
             blocker.rollback()
             thread.join(timeout=3)
         blocker.close()
+
+
+def test_finish_run_reaps_expired_final_attempt_before_deciding_completion(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    coordinator = make_coordinator(tmp_path, clock=clock, max_attempts=1)
+    coordinator.register_run("run-21", plan)
+    coordinator.claim_next("run-21", "worker-a")
+    clock.advance(2)
+
+    assert coordinator.finish_run("run-21", plan) == "finished_with_failures"
+    assert coordinator.status("run-21")["counts"]["failed"] == 1
+
+
+def test_finish_run_persists_reap_when_expired_attempt_can_retry(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    coordinator = make_coordinator(tmp_path, clock=clock, max_attempts=2)
+    coordinator.register_run("run-22", plan)
+    first = coordinator.claim_next("run-22", "worker-a")
+    clock.advance(2)
+
+    with pytest.raises(RunNotReadyError):
+        coordinator.finish_run("run-22", plan)
+    status = coordinator.status("run-22")
+    assert status["counts"]["pending"] == 1
+    assert status["counts"]["leased"] == 0
+
+    second = coordinator.claim_next("run-22", "worker-b")
+    assert second.attempt == 2
+    assert second.fencing_token > first.fencing_token
