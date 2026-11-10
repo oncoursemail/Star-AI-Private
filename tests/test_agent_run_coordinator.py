@@ -339,3 +339,16 @@ def test_corrupted_dependency_result_digest_fails_closed(tmp_path):
 
     with pytest.raises(CoordinatorError, match="integrity"):
         coordinator.claim_next("run-18", "worker-b")
+
+
+def test_registered_plan_is_snapshotted_and_later_caller_mutation_is_rejected(tmp_path):
+    plan = make_plan(Task("a", "research", "Original goal"))
+    coordinator = make_coordinator(tmp_path)
+    coordinator.register_run("run-19", plan)
+
+    plan.tasks["a"] = Task("a", "research", "Mutated goal")
+    lease = coordinator.claim_next("run-19", "worker-a")
+    assert lease.task.goal == "Original goal"
+    with pytest.raises(PlanMismatchError):
+        coordinator.finish_run("run-19", plan)
+    assert coordinator.complete(lease, answer="original plan result") == "completed"
