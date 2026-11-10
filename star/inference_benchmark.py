@@ -29,6 +29,7 @@ class Probe:
     ok: bool
     case_id: str = ""
     canary_ok: bool | None = None
+    case_category: str = ""
 
     def __post_init__(self) -> None:
         # Reject corrupted host measurements before they can inflate speed or
@@ -47,6 +48,11 @@ class Probe:
             raise ValueError("probe case_id must be an opaque canonical identifier")
         if self.canary_ok is not None and type(self.canary_ok) is not bool:
             raise ValueError("canary_ok must be boolean or absent")
+        if (type(self.case_category) is not str or
+            (self.case_category and re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,31}", self.case_category
+            ) is None)):
+            raise ValueError("case_category must be a bounded canonical identifier")
         if (self.canary_ok is True and not self.ok) or (self.canary_ok is False and self.ok):
             raise ValueError("canary correctness contradicts probe success")
 
@@ -178,11 +184,37 @@ def summarize_probes(
     succeeded = [sample for sample in samples if sample.ok]
     durations = sorted(sample.elapsed_ms for sample in succeeded)
     # Partial usage metadata undercounts output and misleads comparisons.
-    tokens = [sample.output_tokens for sample in succeeded] if succeeded and all(
-        sample.output_tokens is not None for sample in succeeded
-    ) else []
-    p95 = durations[max(0, (len(durations) * 95 + 99) // 100 - 1)] if durations else None
+    # Build an explicitly non-optional list so static analysis and runtime
+    # reporting agree about whether token totals are complete.
+    token_values = [
+        sample.output_tokens for sample in succeeded
+        if sample.output_tokens is not None
+    ]
+    tokens_complete = bool(succeeded) and len(token_values) == len(succeeded)
+    request_p95 = (
+        durations[max(0, (len(durations) * 95 + 99) // 100 - 1)]
+        if durations else None
+    )
     case_ids = {sample.case_id for sample in samples if sample.case_id}
+    category_durations: dict[str, list[int]] = {}
+    for sample in succeeded:
+        if sample.case_category:
+            category_durations.setdefault(sample.case_category, []).append(
+                sample.elapsed_ms
+            )
+    category_latency_ms: dict[str, dict[str, int | float]] = {}
+    for category, values in sorted(category_durations.items()):
+        ordered = sorted(values)
+        category_p95 = ordered[max(0, (len(ordered) * 95 + 99) // 100 - 1)]
+        category_latency_ms[category] = {
+            "count": len(ordered),
+            "p50_ms": round(median(ordered), 1),
+            "p95_ms": category_p95,
+        }
+    canary_mismatch_case_ids = sorted(
+        sample.case_id for sample in samples
+        if sample.canary_ok is False and sample.case_id
+    )
     return {
         "requests": len(samples),
         "successful": len(succeeded),
@@ -190,16 +222,21 @@ def summarize_probes(
         "parallel_limit": parallel,
         "wall_ms": wall_ms,
         "median_request_ms": round(median(durations), 1) if durations else None,
-        "p95_request_ms": p95,
+        "p95_request_ms": request_p95,
         "requests_per_second": round(len(succeeded) * 1000 / wall_ms, 3),
-        "output_tokens": sum(tokens) if tokens else None,
-        "output_tokens_per_second": round(sum(tokens) * 1000 / wall_ms, 2) if tokens else None,
+        "output_tokens": sum(token_values) if tokens_complete else None,
+        "output_tokens_per_second": (
+            round(sum(token_values) * 1000 / wall_ms, 2)
+            if tokens_complete else None
+        ),
         "workload": workload,
         "workload_version": _VERSION if workload != "unlabeled" else None,
         "workload_sha256": workload_digest,
         "distinct_cases": len(case_ids) if case_ids else None,
         "repeated_prompt_warning": workload == "repeat" and len(samples) > 1,
         "canary_mismatches": sum(sample.canary_ok is False for sample in samples),
+        "canary_mismatch_case_ids": canary_mismatch_case_ids,
+        "category_latency_ms": category_latency_ms,
         "note": (
             "Actual completed responses to the owner's model; synthetic "
             "non-private inputs. Repeat mode is cache-sensitive, not general "
@@ -220,13 +257,14 @@ async def benchmark_local_model(
     workload: str = "mixed",
     client=None,
     server: bool = False,
+    case_order: str = "default",
 ) -> dict:
     """Measure varied response latencies and throughput on approved hardware.
 
     'mixed' is the default to avoid falsely treating a warm repeated-prompt
     cache as broad performance improvement. 'repeat' is explicit and
-    diagnostic. 'canary' alternates long/short synthetic inputs and checks
-    exact unique response tokens, requiring a sequential one-slot run.
+    diagnostic. 'canary' checks exact unique response tokens in one slot.
+    For canaries, case_order may be 'default', 'long_first', or 'short_first'.
     Comparing configurations requires identical workload_sha256,
     same concurrency, backend/environment and preferably randomized A/B order.
     This benchmark does not promote the faster route or verify correctness.
@@ -238,8 +276,25 @@ async def benchmark_local_model(
     if type(parallel) is not int or not 1 <= parallel <= 4:
         raise ValueError("Benchmark requires 1..4 slots")
     cases = _select_cases(requests, workload)
-    if workload == "canary" and parallel != 1:
-        raise ValueError("canary slot-state probing must be sequential")
+    if type(case_order) is not str:
+        raise ValueError("case_order must be a string")
+    if workload == "canary":
+        if case_order not in {"default", "long_first", "short_first"}:
+            raise ValueError("canary case_order must be default, long_first or short_first")
+        if case_order == "long_first":
+            cases = tuple(c for c in cases if c.category == "canary-long") + tuple(
+                c for c in cases if c.category == "canary-short"
+            )
+        elif case_order == "short_first":
+            cases = tuple(c for c in cases if c.category == "canary-short") + tuple(
+                c for c in cases if c.category == "canary-long"
+            )
+        if len(cases) != requests:
+            raise ValueError("canary order requires the requested number of cases")
+        if parallel != 1:
+            raise ValueError("canary slot-state probing must be sequential")
+    elif case_order != "default":
+        raise ValueError("case_order is only available for canary workloads")
     if server:
         # Same private-IP validation and keyring key as normal STAR Server chat.
         config = Settings(provider="star_server", server_endpoint=endpoint, model=model)
@@ -280,10 +335,13 @@ async def benchmark_local_model(
                 token_ok = output == case.expected_token if case.expected_token else None
                 return Probe(
                     int((monotonic() - began) * 1000), count,
-                    token_ok is not False, case.case_id, token_ok,
+                    token_ok is not False, case.case_id, token_ok, case.category,
                 )
             except Exception:
-                return Probe(int((monotonic() - began) * 1000), None, False, case.case_id)
+                return Probe(
+                    int((monotonic() - began) * 1000), None, False,
+                    case.case_id, None, case.category,
+                )
 
     started = monotonic()
     try:
@@ -298,4 +356,130 @@ async def benchmark_local_model(
             await client.close()
 
 
-__all__ = ["Probe", "summarize_probes", "benchmark_local_model"]
+@dataclass(frozen=True)
+class CacheOrderAudit:
+    """Same-process, one-slot canary comparison across opposite prompt orders."""
+
+    verdict: str
+    requests_per_order: int
+    long_first_mismatches: tuple[str, ...]
+    short_first_mismatches: tuple[str, ...]
+    order_sensitive_case_ids: tuple[str, ...]
+    long_first_short_p95_ms: float | None
+    short_first_short_p95_ms: float | None
+    long_first_long_p95_ms: float | None
+    short_first_long_p95_ms: float | None
+    short_p95_delta_ms: float | None
+    long_p95_delta_ms: float | None
+    note: str = (
+        "Synthetic exact-token diagnostic only. Both orders share one client "
+        "and are sent sequentially to the same configured endpoint, but this "
+        "cannot attest server process identity, slot count, llama.cpp commit, "
+        "cache internals, or physical host conditions. The second pass inherits "
+        "state from the first, so this is a carry-over stress test, not an "
+        "independent randomized A/B. A clean result is not proof of cache "
+        "isolation or a general speedup."
+    )
+
+
+def _category_p95(summary: dict, category: str) -> float | None:
+    category_rows = summary.get("category_latency_ms")
+    if not isinstance(category_rows, dict):
+        return None
+    row = category_rows.get(category)
+    if not isinstance(row, dict):
+        return None
+    value = row.get("p95_ms")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+async def audit_cache_order(
+    endpoint: str,
+    model: str,
+    *,
+    requests: int = 12,
+    client=None,
+    server: bool = False,
+) -> CacheOrderAudit:
+    """Probe long→short and short→long prompt order on one sequential client.
+
+    Run against a private single-slot llama-server (normally --np 1).
+    The audit deliberately keeps the same client/server endpoint across both
+    orders so a persistent slot cache can influence the second pass. It does
+    not restart or reconfigure the server.
+    """
+    if type(requests) is not int or not 2 <= requests <= 12:
+        raise ValueError("cache order audit requires 2..12 canary cases per order")
+    if type(server) is not bool:
+        raise ValueError("server must be boolean")
+    own = client is None
+    if own:
+        if server:
+            config = Settings(provider="star_server", server_endpoint=endpoint, model=model)
+        else:
+            config = Settings(endpoint=endpoint, model=model)
+        config.validate()
+        from .providers import open_client
+        client = open_client(config, request_timeout=None if server else 90.0)
+    try:
+        long_first = await benchmark_local_model(
+            endpoint, model, requests=requests, parallel=1,
+            workload="canary", client=client, server=server,
+            case_order="long_first",
+        )
+        short_first = await benchmark_local_model(
+            endpoint, model, requests=requests, parallel=1,
+            workload="canary", client=client, server=server,
+            case_order="short_first",
+        )
+    finally:
+        if own:
+            await client.close()
+
+    long_bad = tuple(long_first["canary_mismatch_case_ids"])
+    short_bad = tuple(short_first["canary_mismatch_case_ids"])
+    order_sensitive = tuple(sorted(set(long_bad) ^ set(short_bad)))
+    transport_failed = (
+        long_first["failed"] > long_first["canary_mismatches"]
+        or short_first["failed"] > short_first["canary_mismatches"]
+    )
+    if transport_failed:
+        verdict = "inconclusive"
+    elif order_sensitive:
+        verdict = "order_sensitive"
+    elif long_bad or short_bad:
+        verdict = "canary_failed"
+    else:
+        verdict = "passed"
+
+    long_short = _category_p95(long_first, "canary-short")
+    short_short = _category_p95(short_first, "canary-short")
+    long_long = _category_p95(long_first, "canary-long")
+    short_long = _category_p95(short_first, "canary-long")
+    return CacheOrderAudit(
+        verdict=verdict,
+        requests_per_order=requests,
+        long_first_mismatches=long_bad,
+        short_first_mismatches=short_bad,
+        order_sensitive_case_ids=order_sensitive,
+        long_first_short_p95_ms=long_short,
+        short_first_short_p95_ms=short_short,
+        long_first_long_p95_ms=long_long,
+        short_first_long_p95_ms=short_long,
+        short_p95_delta_ms=(
+            round(short_short - long_short, 2)
+            if long_short is not None and short_short is not None else None
+        ),
+        long_p95_delta_ms=(
+            round(short_long - long_long, 2)
+            if long_long is not None and short_long is not None else None
+        ),
+    )
+
+
+__all__ = [
+    "Probe", "summarize_probes", "benchmark_local_model",
+    "CacheOrderAudit", "audit_cache_order",
+]

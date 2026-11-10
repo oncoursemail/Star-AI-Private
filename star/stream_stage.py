@@ -30,6 +30,9 @@ from .stream_continuity import ContinuityPacket
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_knowledge import KnowledgePacket
 from .stream_idle_attention import QuietAttention
+from .stream_listener_backchannel import (
+    ListenerIntentSignal, StreamListenerBackchannel,
+)
 from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
@@ -171,6 +174,7 @@ class StarStage:
         self._prepare_to_host_playback_ms: deque[float] = deque(maxlen=64)
         self._queue_to_host_playback_ms: deque[float] = deque(maxlen=64)
         self._quiet = QuietAttention()
+        self._listener_backchannel = StreamListenerBackchannel()
         self._quiet_serial = 0
         self._quiet_frame: QuietStageFrame | None = None
         self._counts = {
@@ -196,6 +200,7 @@ class StarStage:
                 raise RuntimeError("finish or interrupt the current turn first")
             self._director.enable(owner_approved=True)
             self._quiet.reset()
+            self._listener_backchannel.reset()
             self._quiet_frame = None
             self._mode, self._reduced_motion = mode, reduced_motion
             self._natural_gaze = natural_gaze
@@ -221,6 +226,7 @@ class StarStage:
             self._mode, self._reduced_motion = mode, reduced_motion
             self._natural_gaze = natural_gaze
             self._quiet.reset()
+            self._listener_backchannel.clear()
             self._quiet_frame = None
 
     def disable(self) -> MotionFrame:
@@ -247,6 +253,7 @@ class StarStage:
                 self._prepared_at = self._queued_at = self._audible_at = None
                 self._playout_clearance = None
             self._director.disable()
+            self._listener_backchannel.disable()
             self._enabled = False
             self._require_preplay_witness = False
             self._playout_clearance = None
@@ -283,6 +290,7 @@ class StarStage:
             self._drop(interrupted=self._plan is not None, now=current)
             self._quiet_frame = None
             self._quiet.reset()
+            self._listener_backchannel.clear()
             self._director.bind_game_scope(game_scope, owner_approved=True)
             return neutral_frame()
 
@@ -303,10 +311,55 @@ class StarStage:
                 return False
             return self._director.offer(event, now=current)
 
+    def enable_listener_backchannels(self, *, owner_approved: bool = False) -> str:
+        """Opt in and return the session ID required on every host event.
+
+        The ID is a replay fence, not an authentication credential. The trusted
+        host must still attest that its incremental semantic event is genuine.
+        """
+        with self._lock:
+            if not self._enabled or self._plan is not None:
+                raise RuntimeError("enable listener cues only between active stage turns")
+            return self._listener_backchannel.enable(owner_approved=owner_approved)
+
+    @property
+    def listener_backchannel_session_id(self) -> str:
+        """Return the current replay-fence ID for the trusted local host.
+
+        Re-read it after every stage enable/restart; old queued events are invalid.
+        """
+        with self._lock:
+            return self._listener_backchannel.session_id
+
+    def disable_listener_backchannels(self) -> None:
+        """Immediately revoke pending listener cues; no audio action is taken."""
+        with self._lock:
+            self._listener_backchannel.disable()
+            self._quiet_frame = None
+
+    def observe_listener_intent(
+        self, signal: ListenerIntentSignal, *, now: float | None = None,
+    ) -> bool:
+        """Accept one host-verified, content-free incremental listener intent."""
+        current = _time(self._clock() if now is None else now)
+        if not isinstance(signal, ListenerIntentSignal):
+            raise TypeError("expected a ListenerIntentSignal")
+        with self._lock:
+            if not self._enabled or self._plan is not None:
+                return False
+            accepted = self._listener_backchannel.observe(signal, now_s=current)
+            if accepted:
+                self._quiet_frame = None
+            return accepted
+
     def idle_motion(
         self, *, now: float | None = None,
         viewer_speaking: bool = False, game_active: bool = False,
-        gameplay_critical: bool = False,
+        gameplay_critical: bool = False, owner_speaking: bool = False,
+        stream_pressure: bool = False, listener_context_verified: bool = False,
+        listener_context_session_id: str = "",
+        listener_addressing: str = "unknown",
+        listener_resolved_by_other: bool = False,
     ) -> QuietStageFrame | None:
         """Suggest nonverbal attention only when no utterance owns the rig.
 
@@ -323,6 +376,18 @@ class StarStage:
                     now=current, viewer_speaking=viewer_speaking,
                     game_active=game_active, gameplay_critical=gameplay_critical,
                     mode=self._mode, reduced_motion=self._reduced_motion,
+                )
+                motion = self._listener_backchannel.overlay(
+                    motion, now_s=current,
+                    host_context_verified=listener_context_verified,
+                    viewer_speaking=viewer_speaking,
+                    owner_speaking=owner_speaking,
+                    gameplay_critical=gameplay_critical,
+                    stream_pressure=stream_pressure,
+                    reduced_motion=self._reduced_motion,
+                    listener_context_session_id=listener_context_session_id,
+                    listener_addressing=listener_addressing,
+                    listener_resolved_by_other=listener_resolved_by_other,
                 )
             except ValueError:
                 # A clock reversal or invalid host flag cannot leave a stale
@@ -447,6 +512,10 @@ class StarStage:
                     self._counts["pacing_deferred"] += 1
                     return None
                 max_words = pace.max_words
+                if max_words is not None and not voice_route_id:
+                    self._director.complete(intent, now=current, spoken=False)
+                    self._counts["pacing_deferred"] += 1
+                    return None
                 pacing_scope = pace.calibration_scope
                 pacing_samples = pace.measured_samples
             self._sequence += 1
@@ -550,9 +619,10 @@ class StarStage:
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
                 source_sha256=intent.source_sha256, max_words=max_words,
                 pacing_scope=pacing_scope, pacing_samples=pacing_samples,
-                voice_route_id=voice_route_id if max_words is not None else "",
+                voice_route_id=(voice_route_id or "") if max_words is not None else "",
             )
             self._quiet_frame = None
+            self._listener_backchannel.clear()
             self._plan, self._intent, self._phase = plan, intent, "prepared"
             self._prepared_at, self._queued_at, self._audible_at = current, None, None
             self._counts["prepared"] += 1
@@ -798,6 +868,8 @@ class StarStage:
         if interrupted:
             self._counts["interrupted"] += 1
         self._intent, self._plan, self._phase = None, None, "idle"
+        self._listener_backchannel.clear()
+        self._quiet_frame = None
         self._prepared_at = self._queued_at = self._audible_at = None
         self._playout_clearance = None
 
@@ -840,6 +912,7 @@ class StarStage:
             self._drop(interrupted=True, now=current)
             self._quiet_frame = None
             self._quiet.reset()
+            self._listener_backchannel.clear()
             return neutral_frame()
 
     def interrupt_if_current(
@@ -866,6 +939,7 @@ class StarStage:
                     "phase": self._phase, "mode": self._mode,
                     "natural_gaze": self._natural_gaze,
                     "require_preplay_witness": self._require_preplay_witness,
+                    "listener_backchannel": self._listener_backchannel.metrics(),
                     "director": self._director.metrics(),
                     "host_playback_latency": {
                         "samples": len(self._prepare_to_host_playback_ms),
