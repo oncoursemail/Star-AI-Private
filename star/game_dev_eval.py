@@ -34,6 +34,7 @@ _ARMS = frozenset({"baseline", "candidate"})
 _OUTCOMES = frozenset({"passed", "failed", "timeout", "infrastructure_error"})
 _FEEDBACK = frozenset({"none", "screenshot", "video"})
 _DOMAIN = b"star.gamedevbench.case.v1\x00"
+_MANIFEST_DOMAIN = b"star.gamedevbench.manifest.v1\x00"
 _MAX_TASKS = 333
 _MAX_ELAPSED_MS = 3_600_000
 _CATEGORY_REGRESSION_TOLERANCE = 0.01
@@ -104,6 +105,7 @@ class GameDevCampaign:
     feedback_mode: str
     tasks: tuple[GameDevTask, ...]
     host_verified_official_manifest_sha256: str | None = None
+    host_verified_official_manifest_signature: str | None = None
 
     def __post_init__(self) -> None:
         _text(self.campaign_id, "campaign_id", _ID)
@@ -117,9 +119,14 @@ class GameDevCampaign:
             raise ValueError("engine_version must be bounded text")
         if type(self.feedback_mode) is not str or self.feedback_mode not in _FEEDBACK:
             raise ValueError("feedback_mode must be none, screenshot or video")
+        if (self.host_verified_official_manifest_sha256 is None) != (
+                self.host_verified_official_manifest_signature is None):
+            raise ValueError("official manifest digest and signature must be supplied together")
         if self.host_verified_official_manifest_sha256 is not None:
             _text(self.host_verified_official_manifest_sha256,
                   "host_verified_official_manifest_sha256", _SHA256)
+            _text(self.host_verified_official_manifest_signature,
+                  "host_verified_official_manifest_signature", _SHA256)
         if type(self.tasks) is not tuple or not 4 <= len(self.tasks) <= _MAX_TASKS:
             raise ValueError("campaign must contain 4..333 task specifications")
         if any(type(task) is not GameDevTask for task in self.tasks):
@@ -150,11 +157,6 @@ class GameDevCampaign:
         return hashlib.sha256(_canonical(manifest)).hexdigest()
 
     @property
-    def official_roster_verified(self) -> bool:
-        return (self.full_suite_shape
-                and self.host_verified_official_manifest_sha256 == self.task_manifest_sha256)
-
-    @property
     def campaign_sha256(self) -> str:
         payload = {
             "campaign_id": self.campaign_id,
@@ -167,6 +169,7 @@ class GameDevCampaign:
             "task_roster_sha256": self.task_roster_sha256,
             "task_manifest_sha256": self.task_manifest_sha256,
             "host_verified_official_manifest_sha256": self.host_verified_official_manifest_sha256,
+            "host_verified_official_manifest_signature": self.host_verified_official_manifest_signature,
         }
         return hashlib.sha256(_canonical(payload)).hexdigest()
 
@@ -226,6 +229,13 @@ class GameDevReceipt:
         return _DOMAIN + _canonical(asdict(self))
 
 
+def sign_official_manifest_digest(manifest_sha256: str, key: bytes) -> str:
+    """Host attestation helper; call only after independently verifying upstream tasks."""
+    _text(manifest_sha256, "manifest_sha256", _SHA256)
+    payload = _MANIFEST_DOMAIN + manifest_sha256.encode("ascii")
+    return hmac.new(_key(key), payload, hashlib.sha256).hexdigest()
+
+
 def sign_receipt(receipt: GameDevReceipt, key: bytes) -> str:
     """Trusted-runner helper. Never make this key available to an agent/model."""
     if type(receipt) is not GameDevReceipt:
@@ -247,6 +257,14 @@ class GameDevEvaluator:
         self._lock = RLock()
         self._contamination: set[str] = set()
         self._environment_sha256: str | None = None
+        digest = campaign.host_verified_official_manifest_sha256
+        signature = campaign.host_verified_official_manifest_signature
+        self._official_roster_verified = bool(
+            campaign.full_suite_shape
+            and digest == campaign.task_manifest_sha256
+            and signature is not None
+            and hmac.compare_digest(signature, sign_official_manifest_digest(digest, self._key))
+        )
 
     def add(self, receipt: GameDevReceipt, signature: str) -> None:
         if type(receipt) is not GameDevReceipt:
@@ -349,7 +367,7 @@ class GameDevEvaluator:
                 status = "incomplete"
             elif regressions:
                 status = "keep_baseline_category_regression"
-            elif (campaign.official_roster_verified and wins > losses
+            elif (self._official_roster_verified and wins > losses
                   and p_value is not None and p_value < 0.05
                   and sum(v["tasks"] for v in categories.values()) == _MAX_TASKS):
                 status = "manual_review_recommended"
@@ -363,7 +381,7 @@ class GameDevEvaluator:
                 "task_roster_sha256": campaign.task_roster_sha256,
                 "task_manifest_sha256": campaign.task_manifest_sha256,
                 "full_333_task_godot_4_4_1_shape": full_shape,
-                "official_roster_verified": campaign.official_roster_verified,
+                "official_roster_verified": self._official_roster_verified,
                 "status": status,
                 "tasks": total_tasks,
                 "completed_pairs": completed_pairs,
@@ -396,5 +414,5 @@ class GameDevEvaluator:
 
 __all__ = [
     "GameDevTask", "GameDevCampaign", "GameDevReceipt", "GameDevEvaluator",
-    "sign_receipt",
+    "sign_receipt", "sign_official_manifest_digest",
 ]
