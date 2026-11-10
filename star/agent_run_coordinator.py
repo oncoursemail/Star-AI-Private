@@ -1,14 +1,15 @@
-"""Durable, single-host lease coordination for STAR's read-only agent DAGs.
+"""Durable, single-host lease coordination and fenced virtual artifacts for STAR.
 
 This module coordinates trusted application-defined workers across processes.
 It does not execute tools or workers. Every claim receives a monotonically
-increasing run-scoped fencing token; expired/replaced workers cannot commit
-results to this coordinator's ledger.
+increasing run-scoped fencing token. Mutating tasks may write only to the
+transactional SQLite artifact workspace through commit_artifact(); direct
+filesystem, Git, Roblox, HTTP, and device side effects remain out of scope.
 
-Important boundary: the fencing token protects this SQLite result ledger only.
-It does NOT make arbitrary filesystem, Git, Roblox, HTTP, or device side effects
-safe. Mutating workers must use a separate resource-side fencing/CAS gateway.
-This v1 rejects Task contracts that declare writes.
+The SQLite database is the protected resource and validates the current lease,
+fence, declared write scope, and content compare-and-swap in one transaction.
+Workers must never receive the database path or direct SQL access. The workspace
+is local-host only and is not a multi-machine consensus or filesystem gateway.
 """
 from __future__ import annotations
 
