@@ -9,6 +9,8 @@ source-tree deployment, multi-host CAS service, or permission grant to workers.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import os
@@ -24,6 +26,7 @@ from .artifact_promotion_journal import (
     PromotionJournalError,
     PromotionRecovery,
 )
+from .staging_root_lock import StagingRootLock, StagingRootLockError
 
 _MARKER = ".star-artifact-staging"
 _MARKER_CONTENT = b"star-artifact-staging-v1\n"
@@ -75,8 +78,12 @@ def _resource_path(value: str) -> str:
 
 
 def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
     junction_check = getattr(path, "is_junction", None)
-    return path.is_symlink() or (callable(junction_check) and junction_check())
+    if not callable(junction_check):
+        return False
+    return bool(junction_check())
 
 
 def _check_no_symlink_components(path: Path) -> None:
@@ -138,6 +145,7 @@ class ArtifactStagingMaterializer:
         if os.name == "posix" and stat.S_IMODE(self.root.stat().st_mode) & 0o077:
             raise MaterializationError("Staging root must be private (mode 0700)")
         self._lock = threading.RLock()
+        self._process_lock = StagingRootLock(self.root / ".star-materializer.lock")
         self._journal = ArtifactPromotionJournal(
             self.root / ".star-promotion-journal.sqlite3"
         )
@@ -235,7 +243,26 @@ class ArtifactStagingMaterializer:
             raise MaterializationError("Journal path escaped the staging root") from exc
         return candidate
 
+    @contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """Serialize staging recovery and promotion across trusted host processes."""
+        with self._lock:
+            _check_no_symlink_components(self.root)
+            if not self.root.is_dir():
+                raise MaterializationError("Staging root disappeared before lock acquisition")
+            try:
+                with self._process_lock:
+                    yield
+            except StagingRootLockError as exc:
+                raise MaterializationError(
+                    "Staging root is busy in another host process or could not be locked"
+                ) from exc
+
     def recover_pending(self) -> tuple[PromotionRecovery, ...]:
+        with self._exclusive():
+            return self._recover_pending_locked()
+
+    def _recover_pending_locked(self) -> tuple[PromotionRecovery, ...]:
         """Reconcile durable intents after a process crash.
 
         A prepared intent is replayed only when the destination still has the
@@ -366,8 +393,8 @@ class ArtifactStagingMaterializer:
         if digest != record.sha256:
             raise MaterializationError("Artifact digest does not match its content")
 
-        with self._lock:
-            recovery = self.recover_pending()
+        with self._exclusive():
+            recovery = self._recover_pending_locked()
             if any(item.status == "retry_pending" for item in recovery):
                 raise MaterializationError(
                     "An earlier promotion still needs recovery; no new write was started"

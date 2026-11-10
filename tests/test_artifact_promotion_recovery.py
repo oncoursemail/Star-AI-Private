@@ -9,6 +9,7 @@ from star.agent_artifact_materializer import (
     ArtifactStagingMaterializer,
     MaterializationError,
 )
+from star.agent_run_coordinator import AgentRunCoordinator
 from star.artifact_promotion_journal import PromotionJournalError
 from star.orchestration import Task, TaskPlan
 
