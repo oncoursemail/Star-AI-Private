@@ -10,6 +10,7 @@ from star.inference_workload_benchmark import (
     WORKLOADS,
     benchmark_local_streaming,
     summarize_streaming_probes,
+    _close_stream,
 )
 
 
@@ -138,3 +139,23 @@ def test_summary_rejects_empty_or_invalid_clock_evidence():
     assert report["overall"]["successful"] == 1
     assert report["overall"]["output_tokens"] == 2
     assert report["overall"]["first_content_p50_ms"] == 2.0
+
+
+def test_sync_stream_close_is_supported():
+    class SyncStream:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    stream = SyncStream()
+    asyncio.run(_close_stream(stream))
+    assert stream.closed is True
+
+
+def test_stream_close_failure_does_not_mask_measurement_cleanup():
+    class BrokenStream:
+        def close(self):
+            raise RuntimeError("close failed")
+
+    asyncio.run(_close_stream(BrokenStream()))
