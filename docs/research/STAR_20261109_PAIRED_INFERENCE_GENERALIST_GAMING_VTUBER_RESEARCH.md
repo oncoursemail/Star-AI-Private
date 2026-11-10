@@ -324,3 +324,10 @@ On the STAR Linux development workspace:
 - The CLI help path was exercised successfully.
 
 No live model, RTX 4060, Windows audio, OBS, VTube Studio, or gameplay benchmark was run in this change. GitHub Actions must still run the repository's full offline regression and desktop workflows after publication.
+
+
+## 11. Connected development host audit
+
+The connected Linux development machine was inspected during this run. It reports an AMD EPYC 7451 processor (24 physical cores / 48 logical CPUs) and approximately 125 GiB RAM. NVIDIA tooling is absent, no llama.cpp/vLLM/SGLang/Ollama model process was found, and no local model listener was present on the common development ports checked.
+
+This machine is therefore a CPU-only development/CI host, not the separate Windows RTX 4060 gaming machine. The paired benchmark was validated with offline fake streams only. Do not interpret the local test timings as model speed measurements. The actual RTX 4060 host must run the paired benchmark and full game/OBS/TTS workload matrix before any hardware speed claim or model-route recommendation.
