@@ -158,8 +158,10 @@ class AgentRunCoordinator:
     ) -> None:
         if not isinstance(database, Path) or not database.is_absolute():
             raise ValueError("Database path must be an absolute pathlib.Path")
-        if database.is_symlink() or (database.exists() and not database.is_file()):
-            raise PermissionError("Coordinator database must be an ordinary file")
+        if (database.is_symlink() or database.parent.is_symlink()
+                or (database.exists() and not database.is_file())):
+            raise PermissionError("Coordinator database and parent must not be symlinks")
+        database = database.resolve(strict=False)
         if not database.parent.is_dir():
             raise FileNotFoundError("Create the private coordinator directory first")
         if os.name == "posix" and stat.S_IMODE(database.parent.stat().st_mode) & 0o077:
