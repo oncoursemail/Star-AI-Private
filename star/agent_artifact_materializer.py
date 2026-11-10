@@ -367,7 +367,11 @@ class ArtifactStagingMaterializer:
             raise MaterializationError("Artifact digest does not match its content")
 
         with self._lock:
-            self.recover_pending()
+            recovery = self.recover_pending()
+            if any(item.status == "retry_pending" for item in recovery):
+                raise MaterializationError(
+                    "An earlier promotion still needs recovery; no new write was started"
+                )
             parent = self._ensure_parent(run_id, resource)
             target_name = resource.split("/")[-1]
             self._reject_casefold_collision(parent, target_name)
