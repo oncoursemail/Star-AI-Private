@@ -739,6 +739,82 @@ class AgentRunCoordinator:
             lease.fencing_token, now, "committed",
         )
 
+    def read_completed_artifact(self, run_id: str, resource: str) -> ArtifactRecord | None:
+        """Read an artifact for host-side export after the entire run succeeds.
+
+        Unlike read_artifact(), this is not a worker API: it accepts no lease and
+        is intended only for the trusted host that owns the coordinator. Workers
+        must never receive the coordinator database path or direct SQL access.
+
+        Export is allowed only after finish_run() marks the complete task plan
+        successful. The writer task, its completion fence, declared write scope,
+        latest commit receipt, artifact version, and content digest are checked
+        in one read transaction.
+        """
+        self._validate_identifier(run_id, "run_id")
+        resource = _artifact_path(resource)
+        with closing(self._connect()) as db:
+            try:
+                db.execute("BEGIN")
+                run = db.execute(
+                    "SELECT state FROM runs WHERE run_id=?", (run_id,)
+                ).fetchone()
+                if run is None:
+                    raise CoordinatorError("Unknown run")
+                if run["state"] != "completed":
+                    raise ArtifactConflictError(
+                        "Artifacts can be exported only after a fully successful run"
+                    )
+                row = db.execute(
+                    "SELECT content,sha256,version,updated_task_id,fencing_token,updated_ns "
+                    "FROM artifacts WHERE run_id=? AND resource=?",
+                    (run_id, resource),
+                ).fetchone()
+                if row is None:
+                    db.commit()
+                    return None
+                writer = db.execute(
+                    "SELECT state,completed_fence_token,contract_json "
+                    "FROM tasks WHERE run_id=? AND task_id=?",
+                    (run_id, row["updated_task_id"]),
+                ).fetchone()
+                if (writer is None or writer["state"] != "completed"
+                        or writer["completed_fence_token"] != row["fencing_token"]):
+                    raise ArtifactConflictError(
+                        "Artifact writer completion does not match its fencing token"
+                    )
+                try:
+                    contract = json.loads(writer["contract_json"])
+                    write_scopes = tuple(contract["writes"])
+                except (TypeError, ValueError, KeyError) as exc:
+                    raise CoordinatorError("Stored writer contract is invalid") from exc
+                if not _within_scope(resource, write_scopes):
+                    raise CoordinatorError("Artifact is outside the completed writer's scope")
+                receipt = db.execute(
+                    "SELECT task_id,resource,fencing_token,new_sha256,version "
+                    "FROM artifact_commits WHERE run_id=? AND resource=? AND version=?",
+                    (run_id, resource, row["version"]),
+                ).fetchone()
+                if (receipt is None or receipt["task_id"] != row["updated_task_id"]
+                        or receipt["resource"] != resource
+                        or receipt["fencing_token"] != row["fencing_token"]
+                        or receipt["new_sha256"] != row["sha256"]
+                        or receipt["version"] != row["version"]):
+                    raise CoordinatorError("Artifact commit receipt does not match stored content")
+                payload = bytes(row["content"])
+                digest = hashlib.sha256(payload).hexdigest()
+                if digest != row["sha256"]:
+                    raise CoordinatorError("Stored artifact failed integrity validation")
+                result = ArtifactRecord(
+                    run_id, resource, payload, digest, row["version"],
+                    row["updated_task_id"], row["fencing_token"], row["updated_ns"],
+                )
+                db.commit()
+                return result
+            except BaseException:
+                db.rollback()
+                raise
+
     def read_artifact(self, lease: AgentLease, resource: str) -> ArtifactRecord | None:
         """Read a workspace artifact only within the active task's declared scopes."""
         if not isinstance(lease, AgentLease):
