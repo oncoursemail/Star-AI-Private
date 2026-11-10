@@ -40,6 +40,13 @@ class PromotionIntent:
     created_ns: int
 
 
+@dataclass(frozen=True)
+class PromotionRecovery:
+    operation_id: str
+    status: str
+    error_code: str = ""
+
+
 class ArtifactPromotionJournal:
     """Small SQLite WAL journal for one trusted staging-root writer.
 
@@ -100,14 +107,22 @@ class ArtifactPromotionJournal:
                         "CREATE INDEX IF NOT EXISTS promotions_pending "
                         "ON promotions(state, created_ns, operation_id)"
                     )
+                    required_columns = {
+                        "operation_id", "run_id", "resource", "artifact_version",
+                        "expected_sha256", "new_sha256", "target_relpath",
+                        "temp_relpath", "state", "error_code", "created_ns", "updated_ns",
+                    }
+                    actual_columns = {
+                        row[1] for row in db.execute("PRAGMA table_info(promotions)")
+                    }
+                    if not required_columns.issubset(actual_columns):
+                        raise PromotionJournalError("Promotion journal schema is incomplete")
                     db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                     db.commit()
                 except BaseException:
                     db.rollback()
                     raise
         except (sqlite3.Error, OSError) as exc:
-            if isinstance(exc, PromotionJournalError):
-                raise
             raise PromotionJournalError("Could not initialize the durable promotion journal") from exc
         if os.name == "posix":
             try:
