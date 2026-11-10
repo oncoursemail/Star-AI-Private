@@ -91,7 +91,7 @@ class StreamEventTimelineTests(unittest.TestCase):
     def test_host_clock_regression_faults_and_clears_session(self):
         self.timeline.ingest(self.event(), now_ms=1100.0)
         result = self.timeline.ingest(self.event(source="game1"), now_ms=1099.0)
-        self.assertEqual(result.reason, "host_clock_reversed")
+        self.assertEqual(result.reason, "host_clock_untrusted")
         snap = self.timeline.snapshot(now_ms=1100.0)
         self.assertTrue(snap.faulted)
         self.assertEqual(snap.events, ())
@@ -195,6 +195,18 @@ class StreamEventTimelineTests(unittest.TestCase):
         fresh = self.timeline.ingest(self.event(seq=2, captured=3000.0), now_ms=3000.0)
         self.assertEqual(stale.reason, "stale_event")
         self.assertTrue(fresh.accepted)
+
+    def test_invalid_host_clock_fails_closed(self):
+        self.timeline.ingest(self.event(), now_ms=1000.0)
+        result = self.timeline.ingest(self.event(source="game1"), now_ms=float("nan"))
+        self.assertEqual(result.reason, "host_clock_untrusted")
+        snap = self.timeline.snapshot(now_ms=1000.0)
+        self.assertTrue(snap.faulted)
+        self.assertEqual(snap.events, ())
+
+    def test_oversized_confidence_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.event(confidence=10**10000)
 
     def test_event_keys_are_opaque_and_do_not_expose_source_or_evidence(self):
         result = self.timeline.ingest(self.event(source="possibly-sensitive-source"), now_ms=1000.0)
