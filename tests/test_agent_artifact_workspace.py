@@ -8,6 +8,7 @@ from star.agent_run_coordinator import (
     AgentRunCoordinator,
     ArtifactConflictError,
     CoordinatorError,
+    StaleLeaseError,
 )
 from star.orchestration import Task, TaskPlan
 
@@ -115,7 +116,7 @@ def test_expired_worker_cannot_commit_after_a_new_fenced_lease_is_issued(tmp_pat
     current = coordinator.claim_next("workspace-4", "worker-new")
 
     assert current.fencing_token > stale.fencing_token
-    with pytest.raises(Exception):
+    with pytest.raises(StaleLeaseError):
         coordinator.commit_artifact(
             stale, resource="src/main.lua", content="stale",
             commit_id="stale-commit",
