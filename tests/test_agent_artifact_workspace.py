@@ -4,6 +4,7 @@ import sqlite3
 
 import pytest
 
+from star import agent_run_coordinator as coordinator_module
 from star.agent_run_coordinator import (
     AgentRunCoordinator,
     ArtifactConflictError,
@@ -147,6 +148,11 @@ def test_artifact_from_failed_task_is_not_published_to_an_independent_reader(tmp
     assert reader.task.id == "reader"
     with pytest.raises(ArtifactConflictError, match="not visible"):
         coordinator.read_artifact(reader, "src/main.lua")
+    with pytest.raises(ArtifactConflictError, match="not published"):
+        coordinator.commit_artifact(
+            reader, resource="src/main.lua", content="overwrite",
+            commit_id="blocked-overwrite",
+        )
 
 
 def test_uncompleted_writer_artifact_becomes_visible_after_task_completion(tmp_path):
@@ -261,3 +267,25 @@ def test_schema_v2_database_migrates_to_artifact_schema_v3(tmp_path):
     assert version == 3
     assert {"artifacts", "artifact_commits"} <= tables
     assert migrated.register_run("workspace-10", plan) is False
+
+
+def test_per_run_artifact_count_and_byte_quotas_are_enforced(tmp_path, monkeypatch):
+    monkeypatch.setattr(coordinator_module, "_MAX_RUN_ARTIFACTS", 1)
+    monkeypatch.setattr(coordinator_module, "_MAX_RUN_ARTIFACT_BYTES", 5)
+    plan = TaskPlan([Task("edit", "ui", "Write assets", writes=("assets",))])
+    coordinator = make_coordinator(tmp_path)
+    coordinator.register_run("workspace-11", plan)
+    lease = coordinator.claim_next("workspace-11", "worker-a")
+
+    first = coordinator.commit_artifact(
+        lease, resource="assets/a.bin", content=b"12345", commit_id="quota-first",
+    )
+    with pytest.raises(CoordinatorError, match="artifact-count"):
+        coordinator.commit_artifact(
+            lease, resource="assets/b.bin", content=b"x", commit_id="quota-second",
+        )
+    with pytest.raises(CoordinatorError, match="artifact-storage"):
+        coordinator.commit_artifact(
+            lease, resource="assets/a.bin", content=b"123456",
+            commit_id="quota-too-many-bytes", expected_sha256=first.sha256,
+        )
