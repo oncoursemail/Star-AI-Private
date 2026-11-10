@@ -104,7 +104,8 @@ def test_transient_admission_failure_keeps_item_and_tries_lower_priority_candida
     assert result.status == "admitted"
     assert result.job.job_id == "vision"
     assert dispatcher.status(now_ms=1000)["queued"] == 1
-    assert dispatcher.dispatch(now_ms=1000).job.job_id == "speech"
+    assert dispatcher.dispatch(now_ms=1000).reason == "retry_backoff"
+    assert dispatcher.dispatch(now_ms=1050).job.job_id == "speech"
 
 
 def test_transient_denial_is_retryable_without_reusing_or_replaying_job_id():
@@ -114,7 +115,7 @@ def test_transient_denial_is_retryable_without_reusing_or_replaying_job_id():
     first = dispatcher.dispatch(now_ms=1000)
     assert first.status == "deferred"
     assert dispatcher.status(now_ms=1000)["queued"] == 1
-    second = dispatcher.dispatch(now_ms=1000)
+    second = dispatcher.dispatch(now_ms=1050)
     assert second.status == "admitted"
     assert governor.calls == ["s", "s"]
 
@@ -281,3 +282,33 @@ def test_newer_coalesced_item_survives_if_inflight_admission_raises():
     assert dispatcher.status(now_ms=1100)["queued"] == 1
     assert dispatcher.dispatch(now_ms=1100).job.job_id == "new"
     assert calls == ["old", "new"]
+
+
+def test_backoff_prevents_head_of_line_starvation_beyond_attempt_budget():
+    policy = DispatchPolicy(max_queue=16, max_seen_ids=64, max_admission_attempts=4)
+    governor = FakeGovernor(["temporary_pressure"] * 5 + [None])
+    dispatcher, _ = make_dispatcher(governor, policy=policy)
+    for index in range(5):
+        dispatcher.submit(make_job(f"speech-{index}", "speech"), now_ms=1000)
+    dispatcher.submit(make_job("vision", "vision"), now_ms=1000)
+
+    first = dispatcher.dispatch(now_ms=1000)
+    assert first.status == "deferred"
+    assert first.attempted == 4
+    assert dispatcher.status(now_ms=1000)["backoff_queued"] == 4
+
+    # The four denied speech jobs are in a short retry backoff. The fifth
+    # speech job is tried once, deferred, then the vision job can use the slot.
+    second = dispatcher.dispatch(now_ms=1000)
+    assert second.status == "admitted"
+    assert second.job.job_id == "vision"
+
+
+def test_transient_backoff_expires_and_job_is_retried():
+    governor = FakeGovernor(["temporary_pressure", None])
+    dispatcher, _ = make_dispatcher(governor)
+    dispatcher.submit(make_job("s", "speech"), now_ms=1000)
+    assert dispatcher.dispatch(now_ms=1000).status == "deferred"
+    assert dispatcher.dispatch(now_ms=1049).reason == "retry_backoff"
+    assert dispatcher.status(now_ms=1049)["backoff_queued"] == 1
+    assert dispatcher.dispatch(now_ms=1050).status == "admitted"
