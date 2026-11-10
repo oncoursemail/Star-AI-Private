@@ -20,7 +20,7 @@ Use when driving Roblox Studio through MCP or plugins to install scripts from fi
 
 ## Studio MCP permissions
 
-For a published game, the Studio MCP server exposes the `open_cloud_invoke` tool. Permissions are per game and per person; only the owner can change them, and the external client never receives credentials. These permissions do not change the separate in-Studio Assistant capability set. [S7]
+For an eligible game place, the Studio MCP server exposes the `open_cloud_invoke` tool. Permissions are per game and per person; only the owner can change them, and the external client never receives credentials. These permissions do not change the separate in-Studio Assistant capability set. [S7]
 
 - Start with Safe or a narrow Custom selection. Do not use Full access for routine code, scene inspection or playtesting.
 - Request only the scopes needed for the current task. Read-only inspection may need `universe:read`, `universe.place:read`, `universe.analytics:read` or `universe.place.instance:read`; remote script edits may need `universe.place.instance:write`.
