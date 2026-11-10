@@ -330,6 +330,14 @@ def evaluate_rehearsal(
             reasons.append(f"binding_mismatch:{lane}")
             statuses[lane] = "invalid"
             continue
+        if receipt.status == "fail":
+            statuses[lane] = "fail"
+            reasons.append(f"lane_failed:{lane}")
+            continue
+        if receipt.status == "inconclusive":
+            statuses[lane] = "inconclusive"
+            reasons.append(f"lane_inconclusive:{lane}")
+            continue
         if (receipt.window_start_ms < session.started_ms
                 or receipt.window_end_ms > session.ended_ms
                 or receipt.window_start_ms > session.started_ms + manifest.edge_coverage_tolerance_ms
@@ -341,11 +349,7 @@ def evaluate_rehearsal(
             reasons.append(f"insufficient_samples:{lane}")
             statuses[lane] = "inconclusive"
             continue
-        statuses[lane] = receipt.status
-        if receipt.status == "fail":
-            reasons.append(f"lane_failed:{lane}")
-        elif receipt.status == "inconclusive":
-            reasons.append(f"lane_inconclusive:{lane}")
+        statuses[lane] = "pass"
 
     missing = [lane for lane in manifest.required_lanes if lane not in seen]
     if missing:
