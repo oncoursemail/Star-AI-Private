@@ -81,7 +81,7 @@ These are engineering starting values, not calibrated performance claims. Measur
 
 The timeline stores no audio bytes, video frames, transcripts, chat text, viewer names, account IDs, prompts, model outputs or credentials.
 
-The model-facing JSON contains only opaque event references, modality, event kind, age, confidence, uncertainty and alignment metadata. It omits raw source IDs, session tokens and evidence digests.
+The returned event summaries and model-facing JSON contain only opaque event references, modality, event kind, age, confidence, uncertainty and alignment metadata. They omit raw source IDs, session tokens and evidence digests.
 
 Hosts must use ephemeral sensor IDs, never viewer identities, as source IDs. A SHA-256 digest associates an event with evidence retained elsewhere; it does not authenticate the host, prove the evidence is genuine or prove the classification is correct.
 
