@@ -17,6 +17,15 @@ def test_studio_mcp_permission_guidance_remains_opt_in():
     assert len(pack.body) <= skill_packs.MAX_BODY_CHARS
 
 
+def test_explicit_opt_in_routes_a_studio_mcp_permission_prompt():
+    pack = _pack()
+    selected = skill_packs.select(
+        "Roblox Studio MCP Open Cloud permissions",
+        enabled=frozenset({pack.name}),
+    )
+    assert [item.name for item in selected] == [pack.name]
+
+
 def test_studio_mcp_permissions_are_per_game_and_owner_controlled():
     body = _pack().body.lower()
     for required in (
