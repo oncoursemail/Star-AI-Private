@@ -252,3 +252,32 @@ def test_admitted_result_requires_real_lease():
     assert result.status == "deferred"
     assert result.reason == "admission_adapter_error"
     assert dispatcher.status(now_ms=1000)["queued"] == 1
+
+
+def test_newer_coalesced_item_survives_if_inflight_admission_raises():
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def admit(job):
+        calls.append(job.job_id)
+        if job.job_id == "old":
+            entered.set()
+            assert release.wait(2)
+            raise RuntimeError("temporary adapter failure")
+        return BrainAdmission(True, "ok", BrainLease(1, 3, "gpu", "vision", 6000))
+
+    dispatcher = StreamWorkDispatcher(admit=admit, clock_ms=lambda: 1000)
+    dispatcher.submit(make_job("old", "vision", created=1000), now_ms=1000, coalesce_key="scene")
+    output = []
+    thread = threading.Thread(target=lambda: output.append(dispatcher.dispatch(now_ms=1000)))
+    thread.start()
+    assert entered.wait(2)
+    assert dispatcher.submit(make_job("new", "vision", created=1100), now_ms=1100,
+                              coalesce_key="scene").accepted
+    release.set()
+    thread.join(2)
+    assert output[0].status == "deferred"
+    assert dispatcher.status(now_ms=1100)["queued"] == 1
+    assert dispatcher.dispatch(now_ms=1100).job.job_id == "new"
+    assert calls == ["old", "new"]
