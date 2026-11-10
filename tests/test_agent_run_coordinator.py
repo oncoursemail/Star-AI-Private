@@ -1,7 +1,9 @@
 """Regression tests for durable, lease-fenced agent run coordination."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -352,3 +354,39 @@ def test_registered_plan_is_snapshotted_and_later_caller_mutation_is_rejected(tm
     with pytest.raises(PlanMismatchError):
         coordinator.finish_run("run-19", plan)
     assert coordinator.complete(lease, answer="original plan result") == "completed"
+
+
+def test_claim_samples_lease_clock_after_waiting_for_sqlite_writer(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    path = private_database(tmp_path)
+    coordinator = AgentRunCoordinator(
+        path, clock_ns=clock, lease_seconds=1, busy_timeout_ms=3000
+    )
+    coordinator.register_run("run-20", plan)
+
+    blocker = sqlite3.connect(path, timeout=3, isolation_level=None)
+    blocker.execute("BEGIN IMMEDIATE")
+    started = threading.Event()
+    result = []
+
+    def claim():
+        started.set()
+        result.append(coordinator.claim_next("run-20", "worker-a"))
+
+    thread = threading.Thread(target=claim)
+    try:
+        thread.start()
+        assert started.wait(timeout=1)
+        time.sleep(0.1)
+        clock.advance(2)
+        blocker.commit()
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+        assert result[0] is not None
+        assert result[0].lease_expires_ns > clock()
+    finally:
+        if thread.is_alive():
+            blocker.rollback()
+            thread.join(timeout=3)
+        blocker.close()
