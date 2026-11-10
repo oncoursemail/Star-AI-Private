@@ -390,3 +390,15 @@ def test_claim_samples_lease_clock_after_waiting_for_sqlite_writer(tmp_path):
             blocker.rollback()
             thread.join(timeout=3)
         blocker.close()
+
+
+def test_finish_run_reaps_expired_final_attempt_before_deciding_completion(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    coordinator = make_coordinator(tmp_path, clock=clock, max_attempts=1)
+    coordinator.register_run("run-21", plan)
+    coordinator.claim_next("run-21", "worker-a")
+    clock.advance(2)
+
+    assert coordinator.finish_run("run-21", plan) == "finished_with_failures"
+    assert coordinator.status("run-21")["counts"]["failed"] == 1
