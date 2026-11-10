@@ -7,7 +7,8 @@ preregistered manifest.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+import secrets
 import hashlib
 import hmac
 import json
@@ -23,6 +24,7 @@ _LANES = frozenset({
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REVISION = re.compile(r"^[0-9a-f]{7,64}$")
+_NONCE = re.compile(r"^[0-9a-f]{64}$")
 
 # Aggregate-only schemas. Raw prompts, transcripts, screenshots, audio,
 # viewer IDs, chat text and file contents are intentionally not accepted.
@@ -123,6 +125,7 @@ class RehearsalManifest:
     campaign_id: str
     environment_sha256: str
     source_revision: str
+    campaign_nonce: str = field(default_factory=lambda: secrets.token_hex(32))
     required_lanes: tuple[str, ...] = tuple(sorted(_LANES))
     min_duration_ms: int = 30 * 60 * 1000
     max_duration_ms: int = 90 * 60 * 1000
@@ -133,6 +136,8 @@ class RehearsalManifest:
         _check_id(self.campaign_id, "campaign_id")
         _check_digest(self.environment_sha256, "environment_sha256")
         _check_revision(self.source_revision)
+        if type(self.campaign_nonce) is not str or _NONCE.fullmatch(self.campaign_nonce) is None:
+            raise ValueError("campaign_nonce must be 32 bytes of lowercase hex")
         if type(self.required_lanes) is not tuple or not self.required_lanes:
             raise ValueError("required_lanes must be a nonempty tuple")
         if any(type(lane) is not str or lane not in _LANES for lane in self.required_lanes):
@@ -150,6 +155,26 @@ class RehearsalManifest:
         if self.min_duration_ms > self.max_duration_ms:
             raise ValueError("minimum duration cannot exceed maximum duration")
 
+    def payload(self) -> dict[str, object]:
+        """Return the complete preregistered policy, including its one-use nonce."""
+        return {
+            "schema_version": 1,
+            "campaign_id": self.campaign_id,
+            "campaign_nonce": self.campaign_nonce,
+            "environment_sha256": self.environment_sha256,
+            "source_revision": self.source_revision,
+            "required_lanes": list(self.required_lanes),
+            "min_duration_ms": self.min_duration_ms,
+            "max_duration_ms": self.max_duration_ms,
+            "min_samples_per_lane": self.min_samples_per_lane,
+            "edge_coverage_tolerance_ms": self.edge_coverage_tolerance_ms,
+        }
+
+    @property
+    def sha256(self) -> str:
+        """Digest that receipts must bind to, preventing policy substitution."""
+        return hashlib.sha256(_canonical(self.payload())).hexdigest()
+
 
 @dataclass(frozen=True)
 class SessionReceipt:
@@ -157,6 +182,7 @@ class SessionReceipt:
     session_id: str
     environment_sha256: str
     source_revision: str
+    manifest_sha256: str
     started_ms: int
     ended_ms: int
     signature: str = ""
@@ -166,6 +192,7 @@ class SessionReceipt:
         _check_id(self.session_id, "session_id")
         _check_digest(self.environment_sha256, "environment_sha256")
         _check_revision(self.source_revision)
+        _check_digest(self.manifest_sha256, "manifest_sha256")
         if type(self.started_ms) is not int or type(self.ended_ms) is not int:
             raise ValueError("session clocks must be integer monotonic milliseconds")
         if not 0 <= self.started_ms < self.ended_ms <= 10**13:
@@ -179,6 +206,7 @@ class SessionReceipt:
             "session_id": self.session_id,
             "environment_sha256": self.environment_sha256,
             "source_revision": self.source_revision,
+            "manifest_sha256": self.manifest_sha256,
             "started_ms": self.started_ms,
             "ended_ms": self.ended_ms,
         }
@@ -190,6 +218,7 @@ class LaneReceipt:
     session_id: str
     environment_sha256: str
     source_revision: str
+    manifest_sha256: str
     lane: str
     status: str
     sample_count: int
@@ -204,6 +233,7 @@ class LaneReceipt:
         _check_id(self.session_id, "session_id")
         _check_digest(self.environment_sha256, "environment_sha256")
         _check_revision(self.source_revision)
+        _check_digest(self.manifest_sha256, "manifest_sha256")
         if type(self.lane) is not str or self.lane not in _LANES:
             raise ValueError("unknown evidence lane")
         if type(self.status) is not str or self.status not in {"pass", "fail", "inconclusive"}:
@@ -243,6 +273,7 @@ class LaneReceipt:
             "session_id": self.session_id,
             "environment_sha256": self.environment_sha256,
             "source_revision": self.source_revision,
+            "manifest_sha256": self.manifest_sha256,
             "lane": self.lane,
             "status": self.status,
             "sample_count": self.sample_count,
@@ -301,6 +332,8 @@ def evaluate_rehearsal(
             or session.environment_sha256 != manifest.environment_sha256
             or session.source_revision != manifest.source_revision):
         reasons.append("session_manifest_binding_mismatch")
+    if session.manifest_sha256 != manifest.sha256:
+        reasons.append("session_manifest_digest_mismatch")
     if not manifest.min_duration_ms <= duration <= manifest.max_duration_ms:
         reasons.append("session_duration_outside_preregistered_range")
 
@@ -326,7 +359,8 @@ def evaluate_rehearsal(
         if (receipt.campaign_id != session.campaign_id
                 or receipt.session_id != session.session_id
                 or receipt.environment_sha256 != session.environment_sha256
-                or receipt.source_revision != session.source_revision):
+                or receipt.source_revision != session.source_revision
+                or receipt.manifest_sha256 != session.manifest_sha256):
             reasons.append(f"binding_mismatch:{lane}")
             statuses[lane] = "invalid"
             continue
@@ -357,6 +391,7 @@ def evaluate_rehearsal(
 
     blocked_prefixes = (
         "session_receipt_signature_invalid", "session_manifest_binding_mismatch",
+        "session_manifest_digest_mismatch",
         "invalid_signature:", "binding_mismatch:", "duplicate_lane:",
         "unexpected_lane:", "lane_failed:",
     )
