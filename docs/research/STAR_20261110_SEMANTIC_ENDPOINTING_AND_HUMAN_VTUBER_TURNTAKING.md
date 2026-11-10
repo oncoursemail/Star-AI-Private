@@ -43,7 +43,7 @@ Keep a fast live perception/turn-taking loop separate from slower research, game
 New module: star/stream_semantic_turn.py
 
 The module defines:
-- SemanticTurnPrediction: a bounded, content-free receipt containing a host turn ID, sequence, audio-end timestamp, decision timestamp, completion flag, detector name, language, optional confidence and optional detector latency.
+- SemanticTurnPrediction: a bounded, content-free receipt containing a host turn ID, sequence, audio-end timestamp, decision timestamp, completion flag, detector name, language, optional confidence and optional detector latency. If the host supplies its own audio-end timestamp, it must match the prediction within 25 ms on the same monotonic clock.
 - SemanticTurnGate: wraps the existing TurnTakingGate and returns the existing TurnAdvice type.
 
 The adapter has no dependency on LiveKit and does not receive PCM, transcripts, speaker names or chat text. A Windows host can later translate a LiveKit or other semantic endpointing result into the receipt.
