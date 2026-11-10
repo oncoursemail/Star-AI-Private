@@ -302,6 +302,10 @@ class StreamBrainGovernor:
             )
             if queued and floor_authorized:
                 self._counts["floor_admitted"] += 1
+            elif floor_authorized:
+                # Do not expose a response authorization for an event the
+                # existing stage rejected at its own admission boundary.
+                self._last_floor_decision = None
             return queued
 
     def take_floor_decision(self, signal_id: str) -> FloorDecision | None:
