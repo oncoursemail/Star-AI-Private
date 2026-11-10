@@ -87,13 +87,13 @@ New module: star/agent_run_coordinator.py
 - Atomic BEGIN IMMEDIATE task claims across processes on one local machine.
 - Run-scoped, monotonically increasing fencing token on every new lease grant.
 - Unique lease ID and validated worker ID.
-- Bounded lease duration and attempt count.
+- Bounded lease duration and attempt count, both pinned in the immutable run policy.
 - Lease renewal without changing the fencing token.
 - Expired-lease reclamation with a higher token on the next claim.
 - Completion accepted only when run, task, worker, lease ID, token and expiry still match.
 - Idempotent retry of the exact same completion; changed/stale completion is rejected.
 - Retryable failure, terminal failure, dependency blocking and run finalization.
-- Only direct dependency results are included in a worker's lease, reducing unnecessary context exposure.
+- Only direct dependency results are included in a worker's lease, reducing unnecessary context exposure. Treat those results as untrusted data, never as tool instructions.
 - Status output contains aggregate state only, not task answers.
 - Private database directory required on POSIX (mode 0700); database file is restricted to 0600. Windows host must provision an equivalent private ACL.
 - No automatic worker launch, tool invocation, model routing, game input, TTS, OBS or external mutation.
