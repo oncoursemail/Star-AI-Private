@@ -119,6 +119,7 @@ class SemanticTurnGate:
             "replays": 0,
             "continue_predictions": 0,
             "low_confidence": 0,
+            "timeout_fallbacks": 0,
         }
 
     def _hold(self, reason: str, counter: str | None = None) -> TurnAdvice:
@@ -128,6 +129,18 @@ class SemanticTurnGate:
                 self._counts[counter] += 1
         return TurnAdvice("hold", False, reason)
 
+    def _fallback_or_hold(
+        self, *, now_ms: float, audio_end_ms: float | None,
+        reason: str, counter: str | None = None,
+    ) -> TurnAdvice:
+        if (audio_end_ms is not None and now_ms >= audio_end_ms
+                and now_ms - audio_end_ms >= self._max_endpointing_ms):
+            with self._lock:
+                self._counts["timeout_fallbacks"] += 1
+                self._counts["semantic_completions"] += 1
+            return TurnAdvice("speak", False, "semantic_timeout_fallback")
+        return self._hold(reason, counter)
+
     def advise(
         self,
         *,
@@ -135,6 +148,7 @@ class SemanticTurnGate:
         star_speaking: bool,
         expected_turn_id: str,
         prediction: SemanticTurnPrediction | None,
+        expected_audio_end_ms: float | None = None,
     ) -> TurnAdvice:
         """Combine VAD/owner arbitration with one fresh semantic prediction."""
         base = self._vad_gate.advise(now_ms=now_ms, star_speaking=star_speaking)
@@ -149,41 +163,68 @@ class SemanticTurnGate:
         now = _finite(now_ms, "now_ms")
         if type(expected_turn_id) is not str or _TURN_ID.fullmatch(expected_turn_id) is None:
             raise ValueError("expected_turn_id must be a 20-character lowercase hex identifier")
+        if expected_audio_end_ms is not None:
+            audio_end = _finite(expected_audio_end_ms, "expected_audio_end_ms")
+        elif (isinstance(prediction, SemanticTurnPrediction)
+              and prediction.turn_id == expected_turn_id):
+            audio_end = prediction.audio_end_ms
+        else:
+            audio_end = None
+        if prediction is not None and not isinstance(prediction, SemanticTurnPrediction):
+            raise TypeError("prediction must be a validated SemanticTurnPrediction")
         if prediction is None:
             with self._lock:
                 self._counts["predictions_rejected"] += 1
-            return self._hold("semantic_prediction_missing")
-        if not isinstance(prediction, SemanticTurnPrediction):
-            raise TypeError("prediction must be a validated SemanticTurnPrediction")
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_prediction_missing",
+            )
         with self._lock:
             self._counts["predictions_seen"] += 1
         if prediction.turn_id != expected_turn_id:
             with self._lock:
                 self._counts["predictions_rejected"] += 1
-            return self._hold("semantic_turn_mismatch", "turn_mismatches")
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_turn_mismatch", counter="turn_mismatches",
+            )
         if (prediction.observed_at_ms > now + 25.0
                 or now - prediction.observed_at_ms > self._max_prediction_age_ms
                 or now - prediction.audio_end_ms > self._max_endpointing_ms
                 or prediction.observed_at_ms - prediction.audio_end_ms > self._max_endpointing_ms):
             with self._lock:
                 self._counts["predictions_rejected"] += 1
-            return self._hold("semantic_prediction_stale", "stale_predictions")
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_prediction_stale", counter="stale_predictions",
+            )
         with self._lock:
             previous = self._last_sequences.get(prediction.turn_id, 0)
             if prediction.sequence <= previous:
                 self._counts["predictions_rejected"] += 1
                 self._counts["replays"] += 1
                 self._counts["semantic_holds"] += 1
+                if (audio_end is not None and now >= audio_end
+                        and now - audio_end >= self._max_endpointing_ms):
+                    self._counts["timeout_fallbacks"] += 1
+                    self._counts["semantic_completions"] += 1
+                    return TurnAdvice("speak", False, "semantic_timeout_fallback")
                 return TurnAdvice("hold", False, "semantic_prediction_replay")
             self._last_sequences[prediction.turn_id] = prediction.sequence
             self._last_sequences.move_to_end(prediction.turn_id)
             while len(self._last_sequences) > self._max_turn_history:
                 self._last_sequences.popitem(last=False)
         if not prediction.is_complete:
-            return self._hold("semantic_turn_continue", "continue_predictions")
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_turn_continue", counter="continue_predictions",
+            )
         if (prediction.confidence is not None
                 and prediction.confidence < self._minimum_confidence):
-            return self._hold("semantic_confidence_low", "low_confidence")
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_confidence_low", counter="low_confidence",
+            )
         with self._lock:
             self._counts["semantic_completions"] += 1
         return TurnAdvice("speak", False, "semantic_turn_complete")
