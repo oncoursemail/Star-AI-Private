@@ -16,25 +16,27 @@ The existing STAR TurnTakingGate already has valuable hard guarantees: trusted o
 
 LiveKit's EOT benchmark contains real pause segments across 14 languages, including pauses of at least 100 ms. It evaluates the tradeoff between response latency and false cutoffs rather than treating one threshold as universally correct.
 
-The published benchmark shows that the Turn Detector v1's false-cutoff rate changes materially as the latency budget changes (for example, approximately 9.9% at a 300 ms budget and 4.5% at 600 ms in the reported setup). The correct target is a measured Pareto point for Star's own audience and languages, not the lowest possible delay.
+The benchmark's key lesson is that false cutoffs and response delay move against each other. The correct target is a measured Pareto point for Star's own audience and languages, not the lowest possible delay.
 
 Source: https://github.com/livekit/agents/tree/main/tests/benchmarks/eou
 
-### Local CPU turn detection
+### Audio semantic turn detection
 
-LiveKit documents a local Turn Detector v1-mini option. Its published guidance describes roughly 396 MB of model weights and about 50–160 ms inference per turn on a typical CPU, with no hosted inference cost. Actual performance depends on CPU, language, audio length and runtime.
+LiveKit's current audio Turn Detector has two variants: v1 is served through LiveKit Inference, while v1-mini runs locally on CPU. Unlike the older text turn detector, the audio detector does not depend on an STT transcript and can be used with realtime audio models. It still requires VAD; LiveKit requires VAD minimum-silence duration of at least 250 ms.
 
-This is an attractive experiment for Star because a small CPU turn detector may leave the GPU available for the main language model, game rendering and avatar work. It is not a guaranteed speedup: measure it on the target Brain 1/Brain 2 hardware under simultaneous game, OBS and TTS load.
+With the audio detector, LiveKit's default endpointing window is 300 ms minimum and 2.5 seconds maximum. If a prediction does not arrive within about one second, the session commits the turn rather than waiting indefinitely. The detector supports 14 languages. The local v1-mini weights use about 140–250 MB per loaded copy, depending on process/runtime.
+
+This is a strong experiment for Star: CPU-only semantic turn detection can leave the GPU available for the main language model, game rendering and avatar work. It is not a guaranteed speedup; measure CPU load, memory, endpointing latency and game/OBS stability on the target machines.
+
+Important distinction: LiveKit's older text turn detector uses STT transcripts and is deprecated for new agents. Its 396 MB / ~50–160 ms per-turn benchmark belongs to that text model, not the current audio v1-mini. Do not conflate the two.
 
 Sources:
 - https://docs.livekit.io/agents/logic/turns/turn-detector/
-- https://huggingface.co/livekit/turn-detector
+- https://github.com/livekit/agents/tree/main/tests/benchmarks/eou
 
-### Full-duplex architecture
+### Two-loop streaming architecture
 
-Realtime-Venus research separates a fast perception/conversation loop from a slower reasoning/delegation loop. The useful lesson is to keep live turn decisions responsive while background research, game strategy or tool execution proceeds independently. Star should not wait for a long research task before acknowledging an audible owner interruption.
-
-Source: https://arxiv.org/abs/2609.11842
+Keep a fast live perception/turn-taking loop separate from slower research, game strategy and tool execution. The semantic turn detector only contributes an endpointing signal; it must not block owner barge-in, override guest-speech holds or wait for background reasoning. When using LiveKit's detector with a realtime model, disable the model's built-in turn detector so two endpointing systems do not conflict.
 
 ## 2. Implementation added
 
@@ -53,7 +55,7 @@ The adapter has no dependency on LiveKit and does not receive PCM, transcripts, 
 3. If VAD is stale, echo is uncleared, guest speech is active or another existing hold applies, preserve that hold.
 4. Only when the VAD gate says trusted silence may semantic endpointing permit speech.
 5. Require the prediction to match the exact current turn ID, arrive within its freshness and endpointing budgets, use a monotonically increasing sequence, and pass the configured confidence threshold when confidence is available.
-6. If the semantic detector says the speaker is continuing, keep STAR silent.
+6. If the semantic detector says the speaker is continuing, keep STAR silent until the maximum endpointing budget. If a prediction is missing/stale or still says continue at 2.5 seconds, a fresh VAD-silence decision may use the bounded timeout fallback; owner, guest and stale-VAD holds still take precedence.
 
 The semantic gate can delay or permit a response. It cannot authenticate the owner, override guest speech, authorize a tool action or trigger an actual audio interruption. The host still owns playback stop, stage interruption and avatar cancellation.
 
@@ -63,6 +65,7 @@ The semantic gate can delay or permit a response. It cannot authenticate the own
 |---|---:|
 | Prediction freshness | 500 ms |
 | Maximum audio-end-to-decision budget | 2,500 ms |
+| Timeout fallback | After 2,500 ms, only with fresh VAD silence and a host-supplied audio-end timestamp |
 | Minimum confidence when supplied | 0.50 |
 | Recent turn sequence history | 32 turn IDs |
 | Accepted detector identifiers | LiveKit v1, LiveKit v1-mini, custom |
@@ -108,8 +111,8 @@ Report median, p95 and p99, not only averages. Keep per-language results separat
 - Game-playing: semantic endpointing lets STAR listen to a viewer while the game loop continues; it must not block reflex actions or gameplay observation.
 - General knowledge: long research questions can be delegated to the background brain after the live brain acknowledges the viewer.
 - Memory: store the fact that a turn occurred and what STAR actually said, not raw microphone audio by default. Preserve the distinction between speech recognized, speech actually played and speech interrupted.
-- Model speed: a small CPU endpointing model is a candidate to reduce GPU contention, but its 50–160 ms published typical-CPU estimate must be remeasured on Star's machines.
-- Evaluation: LongMemEval-V2 is relevant to remembering evolving game/project state and workflow gotchas; SIMA 2 and Gym-Anything-RT motivate evaluating gameplay under a live clock rather than paused screenshots.
+- Model speed: the local audio v1-mini runs on CPU and uses roughly 140–250 MB per loaded copy; it is a candidate to reduce GPU contention, but CPU contention and actual latency must be measured on Star's machines.
+- Evaluation: LongMemEval-V2 is relevant to remembering evolving game/project state and workflow gotchas; SIMA 2 motivates held-out multiworld skill-transfer tests and self-directed practice.
 
 ## 6. Acceptance tests
 
@@ -130,8 +133,7 @@ Before enabling a LiveKit adapter in the desktop app, run a private 30–60 minu
 
 1. LiveKit, [End-of-turn benchmark](https://github.com/livekit/agents/tree/main/tests/benchmarks/eou) — 14-language pause benchmark and latency/false-cutoff tradeoff.
 2. LiveKit, [Turn Detector documentation](https://docs.livekit.io/agents/logic/turns/turn-detector/) — local and hosted semantic endpointing options.
-3. LiveKit, [Turn Detector model card](https://huggingface.co/livekit/turn-detector) — v1 and v1-mini model details.
+3. LiveKit, [Audio Turn Detector defaults and local fallback](https://docs.livekit.io/agents/logic/turns/turn-detector/) — VAD minimum silence, 14 languages, v1-mini CPU use and the 2.5-second maximum endpointing behavior.
 4. NVIDIA, [AIPerf metrics](https://docs.nvidia.com/aiperf/metrics.html) — TTFT, inter-token latency, request latency and throughput measurement.
 5. Wu et al., [LongMemEval-V2](https://github.com/xiaowu0162/LongMemEval-V2) — agentic memory across evolving multimodal trajectories.
-6. Google DeepMind, [SIMA 2](https://deepmind.google/discover/blog/sima-2-a-generalist-ai-agent-for-3d-virtual-worlds) — multiworld instruction following and game-agent learning.
-7. Gym-Anything-RT, [real-time game-agent benchmark](https://arxiv.org/abs/2610.22003) — why paused-environment performance is not live gameplay mastery.
+6. Google DeepMind, [SIMA 2](https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/) — multiworld instruction following, held-out game generalization and self-directed skill improvement.
