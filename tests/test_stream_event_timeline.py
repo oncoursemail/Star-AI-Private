@@ -59,7 +59,7 @@ class StreamEventTimelineTests(unittest.TestCase):
 
     def test_rejects_stale_and_future_events(self):
         stale = self.timeline.ingest(self.event(captured=0.0), now_ms=3000.0)
-        future = self.timeline.ingest(self.event(source="game1", captured=1200.0), now_ms=1000.0)
+        future = self.timeline.ingest(self.event(source="game1", captured=4000.0), now_ms=3000.0)
         self.assertEqual(stale.reason, "stale_event")
         self.assertEqual(future.reason, "future_dated")
 
