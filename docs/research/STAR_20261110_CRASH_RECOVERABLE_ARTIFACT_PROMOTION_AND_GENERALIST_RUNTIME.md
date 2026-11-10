@@ -201,13 +201,13 @@ AI identity should remain transparent to viewers. Natural timing, humor, silence
 - Recognizes an already-applied rename after a crash.
 - Never overwrites an unexpected external edit.
 - Leaves transiently failing intents pending for retry.
-- Calls recovery before starting another materialization.
+- Calls recovery before starting another materialization and blocks new writes while any earlier intent remains retry-pending.
 
 ### Tests
 
 New test file: tests/test_artifact_promotion_recovery.py
 
-Covers successful journaling, crash before replacement, crash after replacement but before journal finalization, external destination collision, missing temporary file, and unsupported journal schema.
+Covers successful journaling, crash before replacement, crash after replacement but before journal finalization, external destination collision, missing temporary file, unsupported journal schema, and refusal to overlap a new write with retry-pending recovery.
 
 ## 5. Deliberate limits
 
