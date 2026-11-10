@@ -181,9 +181,8 @@ def prepare(suite: Artifact, repeats=1) -> dict:
         fingerprint = digest(_canonical({"task_id": task["id"], "category": task["category"],
                                          "messages": messages}))
         for attempt in range(1, repeats + 1):
-            requests.append({"task_id": task["id"], "category": task["category"],
-                             "attempt": attempt, "request_sha256": fingerprint,
-                             "messages": messages})
+            requests.append({"task_id": task["id"], "attempt": attempt,
+                             "request_sha256": fingerprint, "messages": messages})
     return {"schema_version": 1, "kind": "general_foundation_prepared", "suite_id": suite.data["suite_id"],
             "suite_sha256": suite.sha256, "grader_sha256": grader_digest(), "repeats": repeats,
             "requests": requests, "category_counts": dict(sorted(category_counts.items())),
