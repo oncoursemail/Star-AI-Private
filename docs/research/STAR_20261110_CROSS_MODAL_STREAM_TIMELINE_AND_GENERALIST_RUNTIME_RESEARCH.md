@@ -326,3 +326,4 @@ No inference speedup, game skill gain, improved model intelligence or live-strea
 10. ggml-org, [llama.cpp speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md) — draft-model and n-gram methods plus accepted/rejected draft statistics.
 11. Lin et al., [M3-Agent / M3-Bench](https://mlanthology.org/iclr/2026/long2026iclr-seeing/) — multimodal episodic/semantic memory and long-video QA benchmark; ICLR 2026.
 12. Wu et al., [LongMemEval](https://xiaowu0162.github.io/publications/13_longmemeval/) and [official repository](https://github.com/xiaowu0162/LongMemEval) — 500-question long-term conversational memory benchmark; ICLR 2025.
+13. Wu et al., [LongMemEval-V2](https://github.com/xiaowu0162/LongMemEval-V2) and [paper](https://arxiv.org/abs/2605.12493) — agentic memory over multimodal web/enterprise trajectories; 451 questions, five abilities, up to 115M tokens; 2026.
