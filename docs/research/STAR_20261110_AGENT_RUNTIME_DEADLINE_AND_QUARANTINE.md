@@ -82,7 +82,7 @@ A worker that returns after its deadline is never accepted as successful, even i
 
 A cancellation-resistant task remains in the current plan's running set. `TaskPlan.ready()` therefore continues to see its read/write locks and concurrency slot. A conflicting task cannot start while the old coroutine is still alive; independent work may continue if a slot is available.
 
-At the end of a run, `AgentRuntimeState` retains a strong reference to any unconfirmed task. A later plan using the same runtime state is rejected until the quarantine clears. The host can call `wait_for_quarantine()` to wait without cancelling the worker, then safely reuse the runtime.
+At the end of a run, `AgentRuntimeState` retains a strong reference to any unconfirmed task. A later plan using the same runtime state is rejected until the quarantine clears. The caller must keep the returned `TeamResult` (or an explicitly supplied `AgentRuntimeState`) alive until that happens; the registry is in-memory and event-loop-bound. The host can call `wait_for_quarantine()` to wait without cancelling the worker, then safely reuse the runtime.
 
 ### E. Keep partial work separate from verified completion
 
