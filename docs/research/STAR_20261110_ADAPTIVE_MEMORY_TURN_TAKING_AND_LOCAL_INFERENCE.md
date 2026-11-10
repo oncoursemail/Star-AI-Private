@@ -205,6 +205,89 @@ This prevents accidental policy substitution and makes old signed receipts fail 
 - No raw viewer audio, transcript, screenshot or identity in the cross-lane evidence receipt.
 - No assumption that a benchmark result transfers to STAR's hardware or real stream without local measurement.
 
+## 7. VTuber runtime: one event timeline, several real-time loops
+
+STAR should not be a single giant prompt trying to reason over every incoming signal. Use a typed event bus and a shared, bounded world-state snapshot.
+
+### Event contract
+
+Each event should carry:
+
+- monotonic timestamp and sequence number;
+- source (microphone, chat, game, OBS, avatar, model, tool);
+- event type and schema version;
+- confidence and freshness/expiry;
+- privacy classification and retention policy;
+- correlation ID for the response or action it caused.
+
+Keep separate bounded queues for audio, gameplay, avatar, OBS and background work. Coalesce stale visual observations, drop expired commentary candidates and reject stale game actions. Do not allow a long research task to block the audio or control loop.
+
+### Stream director
+
+A lightweight director should decide which event deserves the next response:
+
+1. safety-critical or user-directed interruption;
+2. time-sensitive game event;
+3. direct viewer question;
+4. relevant group conversation;
+5. optional commentary or background thought.
+
+This is a priority policy, not a mandate to speak constantly. Silence is a valid output when STAR has nothing useful or grounded to add.
+
+### Persona and expression
+
+Keep a persistent, versioned persona specification separate from temporary stream state. The persona holds stable voice, humor, boundaries, interests and conversational style. Temporary state holds current game, objective, conversation floor, scene, recent events and the current expressive animation.
+
+Map observable interaction context to explicit expression controls (gaze target, blink, mouth shape, posture, emote and voice prosody). Use actual output audio/phoneme timing for lip sync. Treat expressive states as animation/control labels; do not represent them as proof of subjective feelings or consciousness.
+
+### Viewer interaction and privacy
+
+- Make it clear that STAR is an AI streamer.
+- Use ephemeral context by default for ordinary chat.
+- Persist viewer preferences only with clear opt-in and an explicit retention/deletion policy.
+- Keep private messages, account identifiers and raw audio out of generic long-term memory.
+- Apply moderation and privacy filters before text-to-speech.
+- Require owner approval for purchases, account changes, publishing, public posts and other consequential external actions.
+- Provide visible pause/mute and emergency stop controls.
+
+### Streamer acceptance metrics
+
+Measure response timing, false interruptions, missed addressees, ungrounded statements, speech overlap, audio underruns, lip-sync error, avatar frame drops, game FPS, OBS render/encode lag and dropped frames. Review p50/p95 and failure counts, not just average scores.
+
+STAR's existing cross-modal event-timeline work (PR #1103) is a natural integration point for this shared event contract.
+
+## 8. General knowledge and skill acquisition
+
+A generalist should not rely on one undifferentiated vector database. Use a source-aware knowledge layer:
+
+- **Concept records:** definition, scope, prerequisites, related concepts and confidence.
+- **Source records:** URL/document identity, publication/update date, author or institution, license and extraction time.
+- **Claim records:** claim text, source span, evidence quality, counterevidence and expiry/recheck date.
+- **Skill records:** prerequisites, procedure, tools, tested examples, known failure modes and version.
+- **Experience records:** task, environment, action, observed result and verified outcome.
+
+For unfamiliar topics, STAR should identify what it does not know, gather multiple suitable sources, separate facts from hypotheses, attempt a small practical exercise where possible and evaluate on held-out questions/tasks. A source being retrieved often is not proof that it is true.
+
+Recommended knowledge coverage includes science, mathematics, history, engineering, geography, languages, programming, art, music, media literacy, game design, 3D production and practical computer skills. Use a curriculum graph to expose prerequisites and measure retention over time.
+
+For each skill, retain a minimal reproducible example, a positive test, a negative/edge test and a short explanation of when the technique should not be used. This makes knowledge reusable across projects without blindly copying an old solution.
+
+## 9. Capability portfolio and integration boundaries
+
+Build specialist capabilities around shared state and common evidence contracts:
+
+| Specialist | Main job | Independent acceptance |
+|---|---|---|
+| Researcher | Find, compare and synthesize sources | Citation support, freshness, contradiction checks |
+| Programmer | Implement and repair software | Tests, static analysis, review and rollback |
+| Game player | Observe and control games | State-verifiable objectives and live-clock metrics |
+| Game creator | Plan, build and playtest | Engine execution, visual checks and regression tests |
+| Stream co-host | Talk, listen and react | EOT, grounding, addressee and audio metrics |
+| Artist/animator | Create visual/audio assets | Format validation, rig/animation checks and human review |
+| General tutor | Explain and practice topics | Held-out assessment and calibrated uncertainty |
+
+Specialists should share verified artifacts and provenance, not unrestricted internal state. A coordinator can delegate and compare results, but each tool adapter must enforce its own scope, deadline, resource budget and stop acknowledgement.
+
 ## Conclusion
 
 The strongest path to a more capable STAR is an evidence-driven compounding loop: remember causal, verified experience; learn which retrieval strategy works for each task; react quickly without cutting people off; separate fast game control from slow planning; and optimize inference against the complete interactive workload.
