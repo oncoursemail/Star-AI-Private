@@ -104,10 +104,10 @@ class TimelineContextTests(unittest.TestCase):
     def test_packet_constructor_rejects_private_fields_even_with_valid_header(self):
         _, _, _, packet = make_packet()
         self.assertIsNotNone(packet)
-        payload = json.loads(packet.context_record.split("\\n", 1)[1])
+        payload = json.loads(packet.context_record.split("\n", 1)[1])
         payload["event"]["source_id"] = "private-viewer-id"
         from star.stream_timeline_context import _HEADER
-        forged = _HEADER + "\\n" + json.dumps(payload, separators=(",", ":"))
+        forged = _HEADER + "\n" + json.dumps(payload, separators=(",", ":"))
         with self.assertRaises(ValueError):
             replace(packet, context_record=forged)
 
