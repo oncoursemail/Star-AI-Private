@@ -20,9 +20,11 @@ Official repository: https://github.com/waynchi/gamedevbench
 
 The benchmark requires Godot 4.4.1 for comparable official runs. STAR should pin the exact upstream task revision, engine build, validator, agent revision, tool configuration and visual-feedback mode before comparing candidates.
 
+The upstream repository's current leaderboard snapshot (checked 2026-11-10) lists Claude Opus 5.5 xhigh at 70.6%, GPT-6.1 Sol xhigh at 70.0%, and GPT-6 Astra High at 68.8% (229/333) with Codex, runtime-video and strict confinement. These are agent-plus-harness configurations, not model-only measurements; effort level, tools and visual feedback must be held constant before drawing comparisons.
+
 ### 2. Roblox and Godot test different but complementary creator capabilities
 
-**OpenGameEval (2026)** evaluates 84 Roblox Studio tasks across 13 models, including project inspection and executable scene checks. It is a better fit for STAR's existing Roblox workflow.
+**OpenGameEval (2026)** evaluates 84 Roblox Studio tasks across 13 models, including project inspection and executable scene checks. It is a better fit for STAR's existing Roblox workflow. The paper reports a best single-attempt pass rate of 51.7% and 39.4% for tasks solved on all five attempts; inspecting every relevant object before editing correlated with +13.4 percentage points on scene-only tasks and +9.8 points on script-only tasks. This supports an inspect-before-edit discipline, not an assumption that inspection alone guarantees success.
 
 **GameDevBench** broadens the creator stack to Godot and emphasizes multimodal assets and multi-file edits. STAR should keep separate per-engine scores rather than blend unlike task suites into one universal score.
 
@@ -55,7 +57,7 @@ Source: https://arxiv.org/abs/2611.07542
 
 ### 6. Natural VTuber interaction remains a separate capability lane
 
-Full-Duplex-Bench v3 evaluates real human speech, disfluencies, chained tasks, tool accuracy, latency and turn-taking separately. MP-Bench evaluates multi-party turn-taking and comprehension; its results show that multi-party understanding remains a weak point for current voice agents. STAR's existing PRs #1096, #1099, #1100, #1105, #1106 and #1107 already address active listening, turn-taking, delivery evaluation, semantic endpointing and addressee gating. This update deliberately does not duplicate those systems.
+Full-Duplex-Bench v3 evaluates real human speech, disfluencies, chained tasks, tool accuracy, latency and turn-taking separately. MP-Bench evaluates multi-party turn-taking and comprehension; its results show that multi-party understanding remains a weak point for current voice agents. FDB-v3 uses 100 human-recorded requests across 79 scenarios and 12 speakers, with tool-call accuracy, Pass@1, latency and turn-taking as separate measures. MP-Bench's 12-agent study reports real-time systems at or below 22% on multi-party comprehension and near chance on turn-taking. STAR's existing PRs #1096, #1099, #1100, #1105, #1106 and #1107 already address active listening, turn-taking, delivery evaluation, semantic endpointing and addressee gating. This update deliberately does not duplicate those systems.
 
 Sources:
 - https://www.full-duplex.ai/benchmarks/fdb-v3
