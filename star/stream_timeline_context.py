@@ -175,13 +175,19 @@ def build_timeline_context(
     if type(snapshot.aligned_pairs) is not tuple or len(snapshot.aligned_pairs) > 128:
         return None
     now = _finite(snapshot.now_ms, "snapshot.now_ms")
-    matches = [item for item in snapshot.events if isinstance(item, EventSummary) and item.event_key == event_key]
-    if len(matches) != 1:
-        return None
-    event = matches[0]
-    try:
-        _summary(event)
-    except ValueError:
+    events_by_key: dict[str, EventSummary] = {}
+    for item in snapshot.events:
+        if not isinstance(item, EventSummary):
+            return None
+        try:
+            _summary(item)
+        except ValueError:
+            return None
+        if item.event_key in events_by_key:
+            return None
+        events_by_key[item.event_key] = item
+    event = events_by_key.get(event_key)
+    if event is None:
         return None
     delta = now - float(event.captured_ms)
     if delta < -25.0 or delta > age_limit:
@@ -197,11 +203,17 @@ def build_timeline_context(
                 or not isinstance(pair.later, EventSummary)):
             return None
         if pair.earlier.event_key == event_key:
+            if pair.earlier != event:
+                return None
             other = pair.later
         elif pair.later.event_key == event_key:
+            if pair.later != event:
+                return None
             other = pair.earlier
         else:
             continue
+        if events_by_key.get(other.event_key) != other:
+            return None
         try:
             _summary(other)
             skew = _finite(pair.skew_ms, "skew_ms", maximum=1000)
@@ -209,7 +221,11 @@ def build_timeline_context(
                 return None
         except ValueError:
             return None
-        if other.modality == event.modality or other.age_ms > age_limit:
+        other_delta = now - float(other.captured_ms)
+        if other_delta < -25.0 or abs(max(0.0, other_delta) - float(other.age_ms)) > 25.0:
+            return None
+        other_age = max(0.0, other_delta)
+        if other.modality == event.modality or other_age > age_limit:
             continue
         expected_skew = abs(float(event.captured_ms) - float(other.captured_ms))
         if abs(expected_skew - skew) > 25.0:
@@ -217,7 +233,7 @@ def build_timeline_context(
         candidates.append((skew, {
             "other_modality": other.modality,
             "other_kind": other.kind,
-            "other_age_ms": round(float(other.age_ms), 1),
+            "other_age_ms": round(other_age, 1),
             "skew_ms": round(skew, 1),
             "relative_order_confident": pair.relative_order_confident,
         }))
