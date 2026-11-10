@@ -284,6 +284,10 @@ class StreamWorkDispatcher:
             except Exception:
                 with self._lock:
                     self._dispatching_id = None
+                    if (item.coalesce_key is not None
+                            and self._coalesce_index.get(item.coalesce_key) != job_id):
+                        self._remove(job_id)
+                        self._counts["coalesced_superseded"] += 1
                     self._counts["adapter_errors"] += 1
                 return DispatchResult(
                     "deferred", "admission_adapter_error",
