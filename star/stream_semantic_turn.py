@@ -147,6 +147,8 @@ class SemanticTurnGate:
             with self._lock:
                 self._counts["timeout_fallbacks"] += 1
                 self._counts["semantic_completions"] += 1
+                if counter is not None:
+                    self._counts[counter] += 1
             return TurnAdvice("speak", False, "semantic_timeout_fallback")
         return self._hold(reason, counter)
 
