@@ -4,7 +4,8 @@ import hashlib
 import unittest
 
 from star.game_dev_eval import (
-    GameDevCampaign, GameDevEvaluator, GameDevReceipt, GameDevTask, sign_receipt,
+    GameDevCampaign, GameDevEvaluator, GameDevReceipt, GameDevTask,
+    sign_official_manifest_digest, sign_receipt,
 )
 
 KEY = b"test-only-key-that-is-never-used-in-production-0123456789"
@@ -175,8 +176,10 @@ class GameDevEvalTests(unittest.TestCase):
             candidate_agent_sha256=base.candidate_agent_sha256,
             feedback_mode=base.feedback_mode, tasks=base.tasks,
             host_verified_official_manifest_sha256=base.task_manifest_sha256,
+            host_verified_official_manifest_signature=sign_official_manifest_digest(base.task_manifest_sha256, KEY),
         )
-        self.assertTrue(verified.official_roster_verified)
+        verified_eval = GameDevEvaluator(verified, receipt_key=KEY)
+        self.assertTrue(verified_eval.report()["official_roster_verified"])
         tampered = GameDevCampaign(
             campaign_id="campaign-tampered", suite_revision=base.suite_revision,
             engine_version=base.engine_version, validator_sha256=base.validator_sha256,
@@ -184,8 +187,10 @@ class GameDevEvalTests(unittest.TestCase):
             candidate_agent_sha256=base.candidate_agent_sha256,
             feedback_mode=base.feedback_mode, tasks=base.tasks,
             host_verified_official_manifest_sha256=H("not-the-manifest"),
+            host_verified_official_manifest_signature=sign_official_manifest_digest(H("not-the-manifest"), KEY),
         )
-        self.assertFalse(tampered.official_roster_verified)
+        tampered_eval = GameDevEvaluator(tampered, receipt_key=KEY)
+        self.assertFalse(tampered_eval.report()["official_roster_verified"])
 
 
 if __name__ == "__main__":
