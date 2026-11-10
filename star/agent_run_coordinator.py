@@ -12,7 +12,7 @@ This v1 rejects Task contracts that declare writes.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -20,6 +20,7 @@ import math
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import time
 from typing import Callable, Iterator
 from uuid import uuid4
@@ -142,6 +143,8 @@ class AgentRunCoordinator:
             raise PermissionError("Coordinator database must be an ordinary file")
         if not database.parent.is_dir():
             raise FileNotFoundError("Create the private coordinator directory first")
+        if __import__("os").name == "posix" and stat.S_IMODE(database.parent.stat().st_mode) & 0o077:
+            raise PermissionError("Coordinator directory must be private (mode 0700 on POSIX)")
         if (type(lease_seconds) not in (int, float) or not math.isfinite(lease_seconds)
                 or not 1.0 <= lease_seconds <= 3600.0):
             raise ValueError("Lease duration must be between 1 and 3600 seconds")
@@ -156,6 +159,7 @@ class AgentRunCoordinator:
         self.max_attempts = max_attempts
         self.busy_timeout_ms = busy_timeout_ms
         self._clock_ns = clock_ns
+        self._plans: dict[str, TaskPlan] = {}
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -276,6 +280,7 @@ class AgentRunCoordinator:
                         or existing["max_parallel"] != plan.max_parallel
                         or existing["max_attempts"] != self.max_attempts):
                     raise PlanMismatchError("Run ID is already bound to a different plan/policy")
+                self._plans[run_id] = plan
                 return False
             db.execute(
                 "INSERT INTO runs(run_id,plan_hash,state,max_parallel,max_attempts,next_fence,created_ns) "
@@ -289,6 +294,7 @@ class AgentRunCoordinator:
                     for task in plan.tasks.values()
                 ],
             )
+        self._plans[run_id] = plan
         return True
 
     def _expire_leases(self, db: sqlite3.Connection, run_id: str, now: int) -> int:
@@ -372,6 +378,9 @@ class AgentRunCoordinator:
         self._validate_identifier(run_id, "run_id")
         self._validate_identifier(worker_id, "worker_id")
         now = self._now()
+        plan = self._plans.get(run_id)
+        if plan is None:
+            raise CoordinatorError("Register the immutable plan on this coordinator instance first")
         with self._transaction() as db:
             run = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if run is None:
@@ -379,7 +388,7 @@ class AgentRunCoordinator:
             if run["state"] != "active":
                 return None
             self._expire_leases(db, run_id, now)
-            self._block_failed_dependents(db, run_id, self._registered_plan)
+            self._block_failed_dependents(db, run_id, plan)
             rows = db.execute(
                 "SELECT task_id,state FROM tasks WHERE run_id=?", (run_id,)
             ).fetchall()
@@ -387,7 +396,7 @@ class AgentRunCoordinator:
             completed = {task_id for task_id, state in states.items() if state == "completed"}
             running = {task_id for task_id, state in states.items() if state == "leased"}
             finished = {task_id for task_id, state in states.items() if state in _TERMINAL}
-            ready = self._registered_plan.ready(completed, running, finished=finished)
+            ready = plan.ready(completed, running, finished=finished)
             for task in ready:
                 row = db.execute(
                     "SELECT state,attempts,contract_json FROM tasks WHERE run_id=? AND task_id=?",
@@ -537,7 +546,7 @@ class AgentRunCoordinator:
             raise PlanMismatchError("Caller plan does not match the registered run")
 
     def _registered_plan_hash(self, run_id: str) -> str:
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             row = db.execute("SELECT plan_hash FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if row is None:
                 raise CoordinatorError("Unknown run")
@@ -545,7 +554,7 @@ class AgentRunCoordinator:
 
     def status(self, run_id: str) -> dict[str, object]:
         self._validate_identifier(run_id, "run_id")
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             run = db.execute(
                 "SELECT plan_hash,state,max_parallel,max_attempts,next_fence "
                 "FROM runs WHERE run_id=?", (run_id,)
@@ -607,13 +616,3 @@ class AgentRunCoordinator:
             db.execute("UPDATE runs SET state='aborted' WHERE run_id=?", (run_id,))
             return True
 
-    @property
-    def registered_plan(self) -> TaskPlan:
-        """The exact immutable plan bound by the trusted host for this coordinator."""
-        return self._registered_plan
-
-    def bind_plan(self, run_id: str, plan: TaskPlan) -> None:
-        """Bind the host's plan object after verifying its persisted digest."""
-        self._validate_identifier(run_id, "run_id")
-        self._verify_plan(run_id, plan)
-        self._registered_plan = plan
