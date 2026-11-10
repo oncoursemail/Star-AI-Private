@@ -104,6 +104,8 @@ class _Queued:
     queued_ms: float
     sequence: int
     coalesce_key: tuple[str, str] | None
+    attempts: int = 0
+    retry_after_ms: float = 0.0
 
 
 class StreamWorkDispatcher:
@@ -251,6 +253,16 @@ class StreamWorkDispatcher:
         # deadline wins, then FIFO sequence provides deterministic tie-breaking.
         return (-priority, item.job.deadline_ms, item.sequence)
 
+    def _defer(self, item: _Queued, now: float) -> None:
+        """Back off transient failures so a blocked head cannot starve the queue."""
+        attempts = item.attempts + 1
+        delay_ms = min(1000.0, 50.0 * (2 ** min(item.attempts, 4)))
+        retry_base = max(now, self._last_now_ms if self._last_now_ms is not None else now)
+        self._queue[item.job.job_id] = _Queued(
+            item.job, item.queued_ms, item.sequence, item.coalesce_key,
+            attempts, retry_base + delay_ms,
+        )
+
     def dispatch(self, *, now_ms: float | None = None) -> DispatchResult:
         """Try a bounded number of candidates and return at most one real lease."""
         with self._lock:
@@ -267,9 +279,11 @@ class StreamWorkDispatcher:
             with self._lock:
                 candidates = [
                     item for item in self._queue.values()
-                    if item.job.job_id not in attempted_ids
+                    if item.job.job_id not in attempted_ids and item.retry_after_ms <= now
                 ]
                 if not candidates:
+                    if self._queue:
+                        last_reason = "retry_backoff"
                     break
                 item = min(candidates, key=lambda row: self._sort_key(row, now))
                 job_id = item.job.job_id
@@ -288,6 +302,8 @@ class StreamWorkDispatcher:
                             and self._coalesce_index.get(item.coalesce_key) != job_id):
                         self._remove(job_id)
                         self._counts["coalesced_superseded"] += 1
+                    else:
+                        self._defer(item, now)
                     self._counts["adapter_errors"] += 1
                 return DispatchResult(
                     "deferred", "admission_adapter_error",
@@ -315,6 +331,7 @@ class StreamWorkDispatcher:
                     self._remove(job_id)
                     self._counts["coalesced_superseded"] += 1
                 else:
+                    self._defer(item, now)
                     self._counts["deferred"] += 1
 
         with self._lock:
@@ -334,11 +351,13 @@ class StreamWorkDispatcher:
             now = self._advance(self._clock() if now_ms is None else now_ms)
             self._expire(now)
             by_kind = Counter(item.job.kind for item in self._queue.values())
+            backing_off = sum(item.retry_after_ms > now for item in self._queue.values())
             oldest = max((now - item.queued_ms for item in self._queue.values()), default=0.0)
             return {
                 **dict(self._counts),
                 "queued": len(self._queue),
                 "queued_by_kind": dict(sorted(by_kind.items())),
+                "backoff_queued": backing_off,
                 "oldest_age_ms": round(oldest, 2),
                 "seen_ids": len(self._seen_ids),
                 "dispatch_in_progress": self._dispatching_id is not None,
