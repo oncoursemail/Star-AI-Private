@@ -27,7 +27,7 @@ class FakeClock:
 
 def private_database(tmp_path: Path) -> Path:
     directory = tmp_path / "private"
-    directory.mkdir(mode=0o700)
+    directory.mkdir(mode=0o700, exist_ok=True)
     directory.chmod(0o700)
     return directory / "agent-runs.sqlite3"
 
