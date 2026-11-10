@@ -34,7 +34,7 @@ Source: https://arxiv.org/abs/2610.04838
 
 ### 4. Full-duplex and multi-party streaming remain separate quality lanes
 
-Duplex-MPE (2026-09-25; arXiv 2609.31948) evaluates 2,000 three-/four-speaker scenarios, distinguishing explicit from implicit addressing and measuring response initiation, answer accuracy, silence preservation, and stopping when another person resolves a request. This complements STAR's existing multi-party floor controller and duplex evaluator; it should be used as an external held-out reference rather than reimplemented here.
+Duplex-MPE (2026-09-25; arXiv 2609.31948) evaluates 2,000 three-/four-speaker scenarios, distinguishing explicit from implicit addressing and measuring response initiation, answer accuracy, silence preservation, and stopping when another person resolves a request. This complements STAR's existing multi-party floor controller and duplex evaluator; it should be used as an external held-out reference rather than reimplemented here. The released scenarios use synthetic English speech with a small preset voice set, so this is a controlled benchmark—not a substitute for human-recorded, multilingual, noisy live-stream rehearsals.
 
 Source: https://arxiv.org/abs/2609.31948
 
