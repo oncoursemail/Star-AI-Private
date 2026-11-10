@@ -83,9 +83,9 @@ The new standard-library-only adapter adds:
 - Per-category pass rates and regression checks so a pooled gain cannot hide a 2D, 3D, UI or gameplay regression.
 - Exact one-sided paired sign-test p-value.
 - Elapsed-time p50/p95 reported separately from quality; elapsed task time is not mislabeled as model inference speed.
-- A full-suite shape flag for 333 tasks on Godot 4.4.1, plus a separate host-verified upstream manifest digest. The adapter only marks official_roster_verified=True when the trusted host's pinned manifest digest exactly matches the task roster; a matching task count alone is never enough.
+- A full-suite shape flag for 333 tasks on Godot 4.4.1, plus a host-signed upstream manifest digest. The adapter only marks official_roster_verified=True when the trusted host's HMAC attestation matches the exact task manifest digest and full suite shape; a matching task count alone is never enough. The host must independently verify the upstream manifest before signing it.
 
-The adapter is read-only with respect to games and projects. It does not launch processes, access files, call MCP, control inputs, upload assets, publish a game, or alter model routing.
+The host attestation uses the same out-of-model trusted key as the receipt signer, with a separate domain prefix. The signing key must never enter prompts, agent tool results, logs or repository files. The adapter is read-only with respect to games and projects. It does not launch processes, access files, call MCP, control inputs, upload assets, publish a game, or alter model routing.
 
 ## STAR capability roadmap
 
@@ -131,6 +131,6 @@ Not performed in this change:
 - Running the 333 benchmark tasks.
 - Measuring a model or inference speedup.
 - Running the actual Windows game + OBS + TTS + avatar rehearsal.
-- Verifying that a supplied task roster matches the official upstream manifest; the host must perform that independent check and pass the verified manifest digest.
+- Verifying that a supplied task roster matches the official upstream manifest; the host must perform that independent check and pass a signed manifest digest.
 
 Before a model/agent candidate is considered for a private pilot, the trusted Windows runner must pin the upstream commit and task manifest, run both arms with balanced order, verify all 666 receipts, preserve all task artifacts, and inspect category-level regressions. Production main remains unchanged until independent CI, review and owner approval.
