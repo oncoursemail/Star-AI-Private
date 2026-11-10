@@ -132,7 +132,7 @@ def test_expired_worker_cannot_commit_after_a_new_fenced_lease_is_issued(tmp_pat
 def test_artifact_from_failed_task_is_not_published_to_an_independent_reader(tmp_path):
     plan = TaskPlan([
         Task("writer", "luau", "Write a file", writes=("src",)),
-        Task("reader", "review", "Inspect a file", reads=("src",)),
+        Task("reader", "review", "Inspect a file", reads=("src",), writes=("src",)),
     ], max_parallel=2)
     coordinator = make_coordinator(tmp_path)
     coordinator.register_run("workspace-5", plan)
