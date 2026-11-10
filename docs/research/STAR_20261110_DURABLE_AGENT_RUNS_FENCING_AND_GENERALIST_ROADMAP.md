@@ -81,13 +81,13 @@ New module: star/agent_run_coordinator.py
 
 ### Capabilities
 
-- Immutable run registration bound to a canonical hash of the full task plan.
+- Immutable run registration bound to a canonical hash of a detached task-plan snapshot.
 - Read-only task contracts only; any declared write scope is rejected.
 - SQLite WAL database with synchronous=FULL, foreign keys and a bounded busy timeout.
 - Atomic BEGIN IMMEDIATE task claims across processes on one local machine.
 - Run-scoped, monotonically increasing fencing token on every new lease grant.
 - Unique lease ID and validated worker ID.
-- Bounded lease duration and attempt count, both pinned in the immutable run policy.
+- Bounded lease duration and attempt count, both pinned in the immutable run policy; lease clocks are sampled only after acquiring the SQLite write lock.
 - Lease renewal without changing the fencing token.
 - Expired-lease reclamation with a higher token on the next claim.
 - Completion accepted only when run, task, worker, lease ID, token and expiry still match.
@@ -158,13 +158,13 @@ Before any host integration is enabled:
 1. Run two independent Python processes against one private local SQLite database and prove they cannot claim the same task.
 2. Pause worker A beyond lease expiry; let worker B claim with a larger fencing token; prove A's late completion is rejected.
 3. Verify a renewal preserves its token and cannot revive an already expired lease.
-4. Kill/restart the coordinator process; re-register the exact same plan and prove completed results persist while expired leases are reclaimed only after TTL.
-5. Test SQLITE_BUSY, disk-full, read-only database, WAL recovery and corrupted result digests.
-6. Confirm a plan change under the same run ID is rejected.
-7. Confirm any write-capable task is rejected.
-8. Verify no task answer or private content appears in status metrics or logs.
-9. Only after the read-only path passes, design a separate fenced mutation gateway.
-10. Run the full Windows mixed-workload rehearsal: game + OBS + TTS + VTube Studio + local inference + background agents. Measure p50/p95 first-audible latency, game frame time, OBS render/network loss, audio underruns, VRAM/RAM and worker stop time.
+4. Hold a competing SQLite writer long enough to advance the test clock; prove the new lease expiry is calculated after the lock is acquired, not before the wait.\n5. Kill/restart the coordinator process; re-register the exact same plan and prove completed results persist while expired leases are reclaimed only after TTL.
+6. Test SQLITE_BUSY, disk-full, read-only database, WAL recovery and corrupted result digests.
+7. Confirm a plan change under the same run ID is rejected.
+8. Confirm any write-capable task is rejected.
+9. Verify no task answer or private content appears in status metrics or logs.
+10. Only after the read-only path passes, design a separate fenced mutation gateway.
+11. Run the full Windows mixed-workload rehearsal: game + OBS + TTS + VTube Studio + local inference + background agents. Measure p50/p95 first-audible latency, game frame time, OBS render/network loss, audio underruns, VRAM/RAM and worker stop time.
 
 ## Explicit non-claims
 
