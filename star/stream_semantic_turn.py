@@ -203,12 +203,12 @@ class SemanticTurnGate:
             if prediction.sequence <= previous:
                 self._counts["predictions_rejected"] += 1
                 self._counts["replays"] += 1
-                self._counts["semantic_holds"] += 1
                 if (audio_end is not None and now >= audio_end
                         and now - audio_end >= self._max_endpointing_ms):
                     self._counts["timeout_fallbacks"] += 1
                     self._counts["semantic_completions"] += 1
                     return TurnAdvice("speak", False, "semantic_timeout_fallback")
+                self._counts["semantic_holds"] += 1
                 return TurnAdvice("hold", False, "semantic_prediction_replay")
             self._last_sequences[prediction.turn_id] = prediction.sequence
             self._last_sequences.move_to_end(prediction.turn_id)
