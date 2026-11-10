@@ -31,10 +31,10 @@ def test_studio_mcp_permissions_are_per_game_and_owner_controlled():
     for required in (
         "open_cloud_invoke",
         "per game and per person",
-        "only the owner can change them",
+        "each collaborator manages their own permission set",
         "safe or a narrow custom selection",
         "full access",
-        "exact missing permission",
+        "exact missing permission",\n        "client cannot enable or widen those permissions",
     ):
         assert required in body
 
