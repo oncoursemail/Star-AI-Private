@@ -145,7 +145,7 @@ The commit path performs current-lease validation, scope enforcement, content di
 
 ### Publication semantics
 
-A task may inspect its own current-attempt workspace artifacts. Other tasks cannot read or replace those artifacts until the writing task reaches durable `completed`. This avoids accidentally treating partial output from a failed worker as a published dependency.
+A task may inspect its own workspace artifacts across lease retries, which allows a replacement attempt for the same immutable task to resume from staged work. Other tasks cannot read or replace those artifacts until the writing task reaches durable `completed`. This avoids accidentally treating partial output from a failed worker as a published dependency.
 
 ## Tests added or updated
 
