@@ -27,7 +27,9 @@ from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
 from .stream_timeline_context import TimelineContextPacket
-from .stream_multiparty_floor import FloorObservation, StreamMultipartyFloorGate
+from .stream_multiparty_floor import (
+    FloorDecision, FloorObservation, StreamMultipartyFloorGate,
+)
 
 
 def _now(clock: Callable[[], float]) -> float:
@@ -98,6 +100,7 @@ class StreamBrainGovernor:
         self._generation = 0
         self._leases: dict[int, BrainLease] = {}
         self._speech_binding: tuple[StagePlan, BrainLease] | None = None
+        self._last_floor_decision: FloorDecision | None = None
         self._counts = {
             "admitted": 0, "deferred": 0, "stopped": 0,
             "successful": 0, "stale_lease": 0, "missing_sensor": 0,
@@ -166,6 +169,7 @@ class StreamBrainGovernor:
                 self._telemetry.disable()
                 self._stage.disable()
                 self._speech_binding = None
+                self._last_floor_decision = None
 
     def _sample(self) -> LiveHostSample | None:
         sample = self._telemetry.snapshot()
@@ -265,6 +269,7 @@ class StreamBrainGovernor:
         if not spoken_turn and floor_observation is not None:
             raise ValueError("floor_observation requires spoken_turn=True")
         with self._lock:
+            self._last_floor_decision = None
             if not self._enabled:
                 return False
             floor_authorized = False
@@ -287,6 +292,7 @@ class StreamBrainGovernor:
                     self._counts["floor_rejected"] += 1
                     return False
                 decision = gate.decide(signal.signal_id, now_ms=_now(self._clock))
+                self._last_floor_decision = decision
                 if not decision.should_speak:
                     self._counts["floor_suppressed"] += 1
                     return False
@@ -297,6 +303,22 @@ class StreamBrainGovernor:
             if queued and floor_authorized:
                 self._counts["floor_admitted"] += 1
             return queued
+
+    def take_floor_decision(self, signal_id: str) -> FloorDecision | None:
+        """Consume the most recent one-use floor result for the exact event.
+
+        A trusted host can route a non-spoken `backchannel` result to the
+        existing avatar/listener-cue path. This method does not play audio,
+        move the rig, or make the decision reusable.
+        """
+        if type(signal_id) is not str:
+            raise TypeError("signal_id must be a string")
+        with self._lock:
+            decision = self._last_floor_decision
+            if decision is None or decision.turn_id != signal_id:
+                return None
+            self._last_floor_decision = None
+            return decision
 
     def prepare(
         self, *, voice_speaking: bool = False,
