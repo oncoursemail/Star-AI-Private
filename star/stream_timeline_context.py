@@ -166,8 +166,8 @@ def build_timeline_context(
     if type(event_key) is not str or _EVENT_KEY.fullmatch(event_key) is None:
         raise ValueError("event_key must be a 20-character lowercase hex identifier")
     age_limit = _finite(max_age_ms, "max_age_ms", minimum=100.0, maximum=MAX_CONTEXT_AGE_MS)
-    if type(max_pairs) is not int or not 0 <= max_pairs <= 8:
-        raise ValueError("max_pairs must be 0..8")
+    if type(max_pairs) is not int or not 0 <= max_pairs <= 4:
+        raise ValueError("max_pairs must be 0..4")
     if type(snapshot.faulted) is not bool or snapshot.faulted:
         return None
     if type(snapshot.events) is not tuple or len(snapshot.events) > 512:
