@@ -138,6 +138,7 @@ class StreamBrainGovernor:
                 if floor_started and self._multiparty_floor is not None:
                     self._multiparty_floor.disable()
                 self._qos.disable()
+                self._telemetry.disable()
                 self._stage.disable()
                 raise
             self._enabled = True
