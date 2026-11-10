@@ -124,6 +124,11 @@ class TimelineContextTests(unittest.TestCase):
         self.assertIsNotNone(packet)
         self.assertEqual(packet.pair_count, 2)
 
+    def test_max_pairs_cannot_exceed_packet_schema_limit(self):
+        _, receipt, snapshot, _ = make_packet()
+        with self.assertRaises(ValueError):
+            build_timeline_context(snapshot, receipt.event_key, max_pairs=5)
+
     def test_packet_constructor_rejects_private_fields_even_with_valid_header(self):
         _, _, _, packet = make_packet()
         self.assertIsNotNone(packet)
