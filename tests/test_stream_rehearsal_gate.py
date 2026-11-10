@@ -108,6 +108,12 @@ class StreamRehearsalGateTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("lane_failed:gameplay", result.reasons)
 
+    def test_failed_lane_blocks_even_with_too_few_samples(self):
+        manifest, session, receipts = build_campaign({"gameplay": "fail"}, sample_count=3)
+        result = evaluate_rehearsal(manifest, session, receipts, signing_key=KEY)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("lane_failed:gameplay", result.reasons)
+
     def test_inconclusive_lane_keeps_campaign_inconclusive(self):
         manifest, session, receipts = build_campaign({"speech": "inconclusive"})
         result = evaluate_rehearsal(manifest, session, receipts, signing_key=KEY)
