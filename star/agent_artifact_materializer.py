@@ -19,6 +19,11 @@ import tempfile
 import threading
 
 from .agent_run_coordinator import AgentRunCoordinator, ArtifactRecord
+from .artifact_promotion_journal import (
+    ArtifactPromotionJournal,
+    PromotionJournalError,
+    PromotionRecovery,
+)
 
 _MARKER = ".star-artifact-staging"
 _MARKER_CONTENT = b"star-artifact-staging-v1\n"
@@ -133,6 +138,9 @@ class ArtifactStagingMaterializer:
         if os.name == "posix" and stat.S_IMODE(self.root.stat().st_mode) & 0o077:
             raise MaterializationError("Staging root must be private (mode 0700)")
         self._lock = threading.RLock()
+        self._journal = ArtifactPromotionJournal(
+            self.root / ".star-promotion-journal.sqlite3"
+        )
 
     @classmethod
     def initialize(cls, root: Path) -> "ArtifactStagingMaterializer":
@@ -216,6 +224,112 @@ class ArtifactStagingMaterializer:
         _check_no_symlink_components(current)
         return current
 
+    def _journal_path(self, relative_path: str) -> Path:
+        """Resolve a journal path only after validating its root-relative spelling."""
+        normalized = _resource_path(relative_path)
+        candidate = self.root.joinpath(*normalized.split("/"))
+        _check_no_symlink_components(candidate)
+        try:
+            candidate.relative_to(self.root)
+        except ValueError as exc:
+            raise MaterializationError("Journal path escaped the staging root") from exc
+        return candidate
+
+    def recover_pending(self) -> tuple[PromotionRecovery, ...]:
+        """Reconcile durable intents after a process crash.
+
+        A prepared intent is replayed only when the destination still has the
+        exact pre-write digest and the same-directory temporary file has the
+        expected new digest. If the destination already has the new digest, the
+        rename happened and only the journal finalization is repeated. Any
+        unrelated destination change is recorded as a conflict and never
+        overwritten. Transient I/O errors leave the intent pending for retry.
+        """
+        outcomes: list[PromotionRecovery] = []
+        with self._lock:
+            for intent in self._journal.pending():
+                try:
+                    if intent.target_relpath != f"{intent.run_id}/{intent.resource}":
+                        raise ValueError("Journal target binding is invalid")
+                    target = self._journal_path(intent.target_relpath)
+                    temporary = self._journal_path(intent.temp_relpath)
+                    if (
+                        temporary.parent != target.parent
+                        or not temporary.name.startswith(".star-stage-")
+                    ):
+                        raise ValueError("Journal temporary path is invalid")
+
+                    current = self._read_target_digest(target)
+                    if current == intent.new_sha256:
+                        self._journal.finish(intent.operation_id, "committed")
+                        outcomes.append(
+                            PromotionRecovery(intent.operation_id, "already_applied")
+                        )
+                        continue
+
+                    if current != intent.expected_sha256:
+                        self._journal.finish(
+                            intent.operation_id, "conflict",
+                            error_code="destination_digest_changed",
+                        )
+                        outcomes.append(
+                            PromotionRecovery(
+                                intent.operation_id, "conflict",
+                                "destination_digest_changed",
+                            )
+                        )
+                        continue
+
+                    temporary_digest = self._read_target_digest(temporary)
+                    if temporary_digest != intent.new_sha256:
+                        self._journal.finish(
+                            intent.operation_id, "aborted",
+                            error_code="temporary_missing_or_corrupt",
+                        )
+                        outcomes.append(
+                            PromotionRecovery(
+                                intent.operation_id, "aborted",
+                                "temporary_missing_or_corrupt",
+                            )
+                        )
+                        continue
+
+                    if not target.parent.is_dir():
+                        self._journal.finish(
+                            intent.operation_id, "aborted",
+                            error_code="destination_parent_missing",
+                        )
+                        outcomes.append(
+                            PromotionRecovery(
+                                intent.operation_id, "aborted",
+                                "destination_parent_missing",
+                            )
+                        )
+                        continue
+
+                    os.replace(temporary, target)
+                    _fsync_directory(target.parent)
+                    self._journal.finish(intent.operation_id, "committed")
+                    outcomes.append(
+                        PromotionRecovery(intent.operation_id, "replayed")
+                    )
+                except (ValueError, MaterializationError):
+                    self._journal.finish(
+                        intent.operation_id, "conflict",
+                        error_code="invalid_journal_path_or_file",
+                    )
+                    outcomes.append(
+                        PromotionRecovery(
+                            intent.operation_id, "conflict",
+                            "invalid_journal_path_or_file",
+                        )
+                    )
+                except OSError:
+                    outcomes.append(
+                        PromotionRecovery(intent.operation_id, "retry_pending", "io_error")
+                    )
+        return tuple(outcomes)
+
     def materialize(
         self,
         coordinator: AgentRunCoordinator,
@@ -224,12 +338,12 @@ class ArtifactStagingMaterializer:
         *,
         expected_current_sha256: str | None = None,
     ) -> MaterializationReceipt | None:
-        """Export one verified artifact to root/run_id/resource using SHA-256 CAS.
+        """Export one verified artifact with CAS and a durable write-ahead intent.
 
-        A missing destination is created only when expected_current_sha256 is
-        None. An existing different file is replaced only when its current digest
-        exactly matches expected_current_sha256. Repeating an identical export is
-        idempotent. No arbitrary destination path is accepted.
+        The PREPARED journal row is committed before os.replace(). After a crash,
+        recover_pending() either recognizes an already-applied replacement,
+        replays it if the destination still matches the recorded old digest, or
+        records a conflict without overwriting unexpected content.
         """
         if not isinstance(coordinator, AgentRunCoordinator):
             raise TypeError("A trusted AgentRunCoordinator is required")
@@ -253,6 +367,7 @@ class ArtifactStagingMaterializer:
             raise MaterializationError("Artifact digest does not match its content")
 
         with self._lock:
+            self.recover_pending()
             parent = self._ensure_parent(run_id, resource)
             target_name = resource.split("/")[-1]
             self._reject_casefold_collision(parent, target_name)
@@ -275,6 +390,7 @@ class ArtifactStagingMaterializer:
                 prefix=".star-stage-", dir=parent
             )
             temporary = Path(temporary_name)
+            journal_prepared = False
             try:
                 if os.name == "posix":
                     os.fchmod(descriptor, 0o600)
@@ -282,20 +398,43 @@ class ArtifactStagingMaterializer:
                     stream.write(record.content)
                     stream.flush()
                     os.fsync(stream.fileno())
+
                 _check_no_symlink_components(target)
                 if self._read_target_digest(target) != current:
                     raise MaterializationConflict(
                         "Destination changed during staging; no replacement performed"
                     )
+
+                target_relpath = target.relative_to(self.root).as_posix()
+                temp_relpath = temporary.relative_to(self.root).as_posix()
+                intent = self._journal.prepare(
+                    run_id=run_id,
+                    resource=resource,
+                    artifact_version=record.version,
+                    expected_sha256=current,
+                    new_sha256=digest,
+                    target_relpath=target_relpath,
+                    temp_relpath=temp_relpath,
+                )
+                journal_prepared = True
                 os.replace(temporary, target)
                 _fsync_directory(parent)
+                self._journal.finish(intent.operation_id, "committed")
+                journal_prepared = False
             except OSError as exc:
-                raise MaterializationError("Atomic staging write failed") from exc
+                raise MaterializationError(
+                    "Staging write interrupted; call recover_pending() before retrying"
+                ) from exc
+            except PromotionJournalError as exc:
+                raise MaterializationError(
+                    "Promotion journal interrupted; call recover_pending() before retrying"
+                ) from exc
             finally:
-                try:
-                    temporary.unlink()
-                except FileNotFoundError:
-                    pass
+                if not journal_prepared:
+                    try:
+                        temporary.unlink()
+                    except FileNotFoundError:
+                        pass
             return MaterializationReceipt(
                 run_id, resource, digest, record.version, target, "materialized"
             )
