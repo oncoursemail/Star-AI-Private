@@ -321,6 +321,10 @@ class StreamBrainGovernor:
             decision = self._last_floor_decision
             if decision is None or decision.turn_id != signal_id:
                 return None
+            if (not self._enabled or self._multiparty_floor is None
+                    or decision.session_epoch != self._multiparty_floor.session_epoch):
+                self._last_floor_decision = None
+                return None
             self._last_floor_decision = None
             return decision
 
