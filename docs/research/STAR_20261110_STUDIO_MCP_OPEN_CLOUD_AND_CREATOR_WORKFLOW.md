@@ -6,7 +6,7 @@
 
 ## Executive finding
 
-Roblox Studio MCP now provides a first-party bridge from an external MCP client into selected Open Cloud operations through the currently open published game. The important architectural distinction is that Studio owns the permission boundary: the client does not receive an API key, permissions are saved per game and per person, and only the owner can change them.
+Roblox Studio MCP now provides a first-party bridge from an external MCP client into selected Open Cloud operations through the currently open published game. The important architectural distinction is that Studio owns the permission boundary: the client does not receive an API key, permissions are saved per game and per person, each collaborator manages their own permission set, and the user's group role must allow the requested operation.
 
 This is materially different from STAR's existing direct Open Cloud integration in `star/roblox_cloud.py`, which uses an owner-configured key and an owner-approved private test experience for headless workflows. The two paths should remain distinct:
 
@@ -27,7 +27,7 @@ Prerequisites:
 - Studio MCP is enabled and the external client is connected.
 - A place belonging to a published game is open.
 - The owner or group role has permission to manage the requested resource.
-- The owner explicitly enables the required permissions in Studio's MCP Permissions UI.
+- The connected user explicitly enables their own required permissions in Studio's MCP Permissions UI; group-owned games also require a suitable group role.
 
 Important properties:
 - Permissions are saved for each game.
@@ -119,7 +119,7 @@ STAR must:
 2. Inspect the current scene, scripts, dependencies and existing changes.
 3. Produce a task plan and classify every operation as read, edit, data, network, asset, financial, moderation or security.
 4. Calculate the smallest permission set required.
-5. Ask the owner to enable only those scopes in the Studio MCP Permissions UI.
+5. Ask the connected user to enable only those scopes in their own Studio MCP Permissions UI; verify the group role for group-owned games.
 6. Build in Edit mode with the source repository as the source of truth.
 7. Run static checks and dependency-closure checks.
 8. Test in a private experience with synthetic data.
