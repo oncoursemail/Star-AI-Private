@@ -327,11 +327,15 @@ def test_corrupted_dependency_result_digest_fails_closed(tmp_path):
     lease = coordinator.claim_next("run-18", "worker-a")
     coordinator.complete(lease, answer="verified result")
 
-    with sqlite3.connect(path) as db:
+    db = sqlite3.connect(path)
+    try:
         db.execute(
             "UPDATE tasks SET result_json=? WHERE run_id=? AND task_id=?",
             ('{"answer":"tampered"}', "run-18", "a"),
         )
+        db.commit()
+    finally:
+        db.close()
 
     with pytest.raises(CoordinatorError, match="integrity"):
         coordinator.claim_next("run-18", "worker-b")
