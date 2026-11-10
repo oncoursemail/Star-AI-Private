@@ -34,7 +34,7 @@ def test_studio_mcp_permissions_are_per_game_and_person_controlled():
         "each collaborator manages their own permission set",
         "safe or a narrow custom selection",
         "full access",
-        "exact missing permission",\n        "client cannot enable or widen those permissions",
+        "exact missing permission",\n        "client cannot widen permissions",
     ):
         assert required in body
 
