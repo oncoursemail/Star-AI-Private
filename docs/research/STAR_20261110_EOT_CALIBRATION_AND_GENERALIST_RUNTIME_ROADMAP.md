@@ -50,7 +50,7 @@ New module: star/voice/eot_calibration.py
 The module is standard-library-only and defines:
 - ScoreObservation: a host-monotonic timestamp and end-of-turn probability.
 - EOTTrial: metadata-only labeled final-turn or mid-turn pause, model ID, language, conversation group, split and a bounded sequence of score observations.
-- CalibrationConfig: threshold grid, false-cutoff budget, missed-turn budget, maximum response delay, confidence level and minimum sample counts.
+- CalibrationConfig: threshold grid, false-cutoff budget, missed-turn budget, maximum response delay, confidence level and minimum independent conversation counts.
 - evaluate_threshold: replays the first score crossing for a threshold and reports false-cutoff rate, missed-turn rate, median and p95 response delay, plus one-sided Wilson upper confidence bounds.
 - calibrate_end_of_turn: sweeps only the calibration split, selects the feasible threshold with the lowest p95 response delay, and requires the untouched conversation-level holdout split to pass before returning manual_review_recommended.
 - A JSONL CLI with duplicate-key rejection, strict field allowlists, input/record/observation bounds, aggregate-only output and overwrite protection.
