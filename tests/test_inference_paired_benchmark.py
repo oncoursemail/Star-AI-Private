@@ -262,5 +262,3 @@ def test_seeded_schedule_is_reproducible_and_third_model_is_supported():
         assert set(reports[0]["by_candidate"]) == {"candidate", "alternate"}
 
     asyncio.run(run())
-
-[executed on device: starai (04f6aa98-0095-4f4d-8546-724e7fb588fa)]

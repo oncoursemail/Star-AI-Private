@@ -324,5 +324,3 @@ On the STAR Linux development workspace:
 - The CLI help path was exercised successfully.
 
 No live model, RTX 4060, Windows audio, OBS, VTube Studio, or gameplay benchmark was run in this change. GitHub Actions must still run the repository's full offline regression and desktop workflows after publication.
-
-[executed on device: starai (04f6aa98-0095-4f4d-8546-724e7fb588fa)]
