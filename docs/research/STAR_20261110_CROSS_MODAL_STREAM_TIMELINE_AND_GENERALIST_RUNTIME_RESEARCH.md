@@ -157,6 +157,12 @@ Roblox's April 15, 2026 roadmap describes a plan/build/test loop, structured pla
 
 **Star implication:** Creator should use inspect → plan → isolated build → static checks → real playtest → visual/runtime inspection → repair → rerun → held-out test. Start with Safe or a narrowly customized scope set; do not request Full access for ordinary code/scene work. Keep approved asset folders separate. Use a private test experience for data-store work because Studio may access the same live data stores. Publishing, purchases, live settings, bans, secrets, player-data writes and cross-server messaging remain separate owner-approved operations.
 
+### SIMA 2: transfer and self-improvement, plus the remaining gaps
+
+Google DeepMind reports that SIMA 2 extends instruction-following across more than 600 learned skills, reasons about high-level goals, generalizes to held-out games and can improve through self-directed play with feedback. The same report is explicit about remaining limitations: long-horizon tasks that require multi-step reasoning and goal verification, short interaction memory, precise low-level keyboard/mouse control and robust visual understanding of complex scenes. Star should turn these into separate acceptance suites rather than treating a successful demonstration as proof of game mastery.
+
+Source: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+
 ## 4. Recommended Star architecture
 
 **Host adapters**
