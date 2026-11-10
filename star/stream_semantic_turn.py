@@ -120,6 +120,7 @@ class SemanticTurnGate:
             "continue_predictions": 0,
             "low_confidence": 0,
             "timeout_fallbacks": 0,
+            "audio_end_mismatches": 0,
         }
 
     def _hold(self, reason: str, counter: str | None = None) -> TurnAdvice:
@@ -172,6 +173,15 @@ class SemanticTurnGate:
             audio_end = None
         if prediction is not None and not isinstance(prediction, SemanticTurnPrediction):
             raise TypeError("prediction must be a validated SemanticTurnPrediction")
+        if (prediction is not None and prediction.turn_id == expected_turn_id
+                and expected_audio_end_ms is not None
+                and abs(audio_end - prediction.audio_end_ms) > 25.0):
+            with self._lock:
+                self._counts["predictions_rejected"] += 1
+            return self._fallback_or_hold(
+                now_ms=now, audio_end_ms=audio_end,
+                reason="semantic_audio_end_mismatch", counter="audio_end_mismatches",
+            )
         if prediction is None:
             with self._lock:
                 self._counts["predictions_rejected"] += 1
