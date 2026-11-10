@@ -16,7 +16,7 @@ import math
 import re
 from threading import RLock
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _ADDRESSEES = frozenset({"star", "other", "group", "unknown"})
 _SPEECH_ACTS = frozenset({
     "question", "request", "correction", "backchannel",
@@ -259,7 +259,7 @@ class StreamMultipartyFloorGate:
             if self._last_now_ms is not None and now < self._last_now_ms:
                 self._clock_fault = True
                 self._counts["clock_faults"] += 1
-                return self._decision("hold", "clock_regression", turn_id, None, now)
+                return self._decision("hold", "clock_regression", turn_id, None, 0.0)
             self._last_now_ms = now
             observation = self._pending.pop(turn_id, None)
             if observation is None:
