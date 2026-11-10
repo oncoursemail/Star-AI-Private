@@ -6,6 +6,7 @@ transaction, provide multi-process writer safety, or authorize source-tree write
 """
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -66,7 +67,7 @@ class ArtifactPromotionJournal:
             if descriptor is not None:
                 os.close(descriptor)
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db:
                 mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
                 if str(mode).lower() != "wal":
                     raise PromotionJournalError("SQLite WAL mode is required")
@@ -178,7 +179,7 @@ class ArtifactPromotionJournal:
         operation_id = uuid4().hex
         now = time.time_ns()
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db:
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     db.execute(
@@ -208,7 +209,7 @@ class ArtifactPromotionJournal:
 
     def pending(self) -> tuple[PromotionIntent, ...]:
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db:
                 rows = db.execute(
                     """
                     SELECT operation_id,run_id,resource,artifact_version,
@@ -244,7 +245,7 @@ class ArtifactPromotionJournal:
             raise ValueError("Invalid promotion error code")
         now = time.time_ns()
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db:
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     row = db.execute(
