@@ -18,6 +18,18 @@ Use when driving Roblox Studio through MCP or plugins to install scripts from fi
 9. Lock big static models (BasePart.Locked), never send Delete or clipboard keys to an Edit viewport, and run a guard that re-parents the map if it is removed. [F1][F4]
 10. Runtime folders get Archivable = false, so Play-time clones never end up in a saved place. Yield inside long Studio loops to avoid script timeouts. [F4]
 
+## Studio MCP permissions
+
+For an eligible game place, the Studio MCP server exposes the `open_cloud_invoke` tool. Permissions are per game and per person; each collaborator manages their own permission set, and the external client never receives credentials. Group role must permit the operation; the client cannot widen permissions. These scopes affect external MCP clients, not the in-Studio Assistant. [S7]
+
+- Start with Safe or a narrow Custom selection. Do not use Full access for routine code, scene inspection or playtesting.
+- Request only the scopes needed for the current task. Read-only inspection may need `universe:read`, `universe.place:read`, `universe.analytics:read` or `universe.place.instance:read`; remote script edits may need `universe.place.instance:write`.
+- Keep settings, asset-sharing, money, player-consequence and security permissions off unless the owner explicitly needs that exact operation.
+- Asset uploads are limited to folders the owner approved. Keep build exports in a dedicated folder.
+- Studio-executed Luau can reach live data stores when the relevant scopes and Studio API Services setting are enabled. Use a separate private test experience; never experiment against production player data.
+- HTTP requests require the Network capability and an explicit domain allowlist. Add only the domains required by the task.
+- If Studio denies a scope, stop and report the exact missing permission. Never work around the denial with another account, hidden credential or broader unrelated permission.
+
 ## Three common mistakes
 1. Installing a new module without adding it to the installer list; the next server start fails on require. [F1]
 2. Reporting "saved" after pressing Ctrl+S without reading the confirmation line, or saving while the map was missing. [F1][F4]
