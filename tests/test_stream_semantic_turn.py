@@ -152,10 +152,29 @@ def test_stale_future_and_overlong_endpointing_predictions_are_rejected():
         owner_probability=0.0, guest_probability=0.0, echo_cleared=True,
     ))
     slow = _prediction(observed=4000.0, audio_end=1000.0)
-    assert SemanticTurnGate(slow_gate).advise(
+    slow_advice = SemanticTurnGate(slow_gate).advise(
         now_ms=4000.0, star_speaking=False,
         expected_turn_id=TURN, prediction=slow,
-    ).reason == "semantic_prediction_stale"
+    )
+    assert slow_advice.action == "speak"
+    assert slow_advice.reason == "semantic_timeout_fallback"
+
+
+def test_missing_prediction_uses_bounded_fallback_after_max_endpointing():
+    gate = _quiet_gate()
+    gate.observe(VoiceFrame(
+        at_ms=3610.0, duration_ms=10.0,
+        owner_probability=0.0, guest_probability=0.0, echo_cleared=True,
+    ))
+    semantic = SemanticTurnGate(gate)
+    advice = semantic.advise(
+        now_ms=3610.0, star_speaking=False,
+        expected_turn_id=TURN, prediction=None,
+        expected_audio_end_ms=1110.0,
+    )
+    assert advice.action == "speak"
+    assert advice.reason == "semantic_timeout_fallback"
+    assert semantic.metrics()["timeout_fallbacks"] == 1
 
 
 def test_replayed_sequence_is_rejected_and_higher_sequence_is_accepted():
