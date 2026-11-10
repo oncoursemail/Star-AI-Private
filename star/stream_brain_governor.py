@@ -267,6 +267,7 @@ class StreamBrainGovernor:
         with self._lock:
             if not self._enabled:
                 return False
+            floor_authorized = False
             if spoken_turn:
                 gate = self._multiparty_floor
                 if gate is None or floor_observation is None:
@@ -289,10 +290,13 @@ class StreamBrainGovernor:
                 if not decision.should_speak:
                     self._counts["floor_suppressed"] += 1
                     return False
-                self._counts["floor_admitted"] += 1
-            return self._stage.offer(
+                floor_authorized = True
+            queued = self._stage.offer(
                 signal, now=_now(self._clock) / 1000, moderated=moderated
             )
+            if queued and floor_authorized:
+                self._counts["floor_admitted"] += 1
+            return queued
 
     def prepare(
         self, *, voice_speaking: bool = False,
