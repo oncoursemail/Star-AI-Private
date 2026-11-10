@@ -28,7 +28,7 @@ from uuid import uuid4
 
 from .orchestration import Task, TaskPlan
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _ERROR = re.compile(r"^[a-z][a-z0-9_.-]{0,79}$")
 _TERMINAL = frozenset({"completed", "failed", "blocked", "cancelled"})
@@ -208,6 +208,7 @@ class AgentRunCoordinator:
                     ),
                     max_parallel INTEGER NOT NULL,
                     max_attempts INTEGER NOT NULL,
+                    lease_ns INTEGER NOT NULL,
                     next_fence INTEGER NOT NULL DEFAULT 0,
                     created_ns INTEGER NOT NULL
                 );
@@ -234,7 +235,7 @@ class AgentRunCoordinator:
                 );
                 CREATE INDEX IF NOT EXISTS tasks_run_state
                     ON tasks(run_id, state, lease_expires_ns);
-                PRAGMA user_version=1;
+                PRAGMA user_version=2;
                 """
             )
             if self.database.exists() and self.database.stat().st_size > 0:
@@ -273,20 +274,21 @@ class AgentRunCoordinator:
         now = self._now()
         with self._transaction() as db:
             existing = db.execute(
-                "SELECT plan_hash,max_parallel,max_attempts FROM runs WHERE run_id=?",
+                "SELECT plan_hash,max_parallel,max_attempts,lease_ns FROM runs WHERE run_id=?",
                 (run_id,),
             ).fetchone()
             if existing:
                 if (existing["plan_hash"] != digest
                         or existing["max_parallel"] != plan.max_parallel
-                        or existing["max_attempts"] != self.max_attempts):
+                        or existing["max_attempts"] != self.max_attempts
+                        or existing["lease_ns"] != self.lease_ns):
                     raise PlanMismatchError("Run ID is already bound to a different plan/policy")
                 self._plans[run_id] = plan
                 return False
             db.execute(
-                "INSERT INTO runs(run_id,plan_hash,state,max_parallel,max_attempts,next_fence,created_ns) "
-                "VALUES(?,?, 'active', ?, ?, 0, ?)",
-                (run_id, digest, plan.max_parallel, self.max_attempts, now),
+                "INSERT INTO runs(run_id,plan_hash,state,max_parallel,max_attempts,lease_ns,next_fence,created_ns) "
+                "VALUES(?,?, 'active', ?, ?, ?, 0, ?)",
+                (run_id, digest, plan.max_parallel, self.max_attempts, self.lease_ns, now),
             )
             db.executemany(
                 "INSERT INTO tasks(run_id,task_id,role,contract_json,state) VALUES(?,?,?,?, 'pending')",
@@ -557,7 +559,7 @@ class AgentRunCoordinator:
         self._validate_identifier(run_id, "run_id")
         with closing(self._connect()) as db:
             run = db.execute(
-                "SELECT plan_hash,state,max_parallel,max_attempts,next_fence "
+                "SELECT plan_hash,state,max_parallel,max_attempts,lease_ns,next_fence "
                 "FROM runs WHERE run_id=?", (run_id,)
             ).fetchone()
             if run is None:
@@ -575,6 +577,7 @@ class AgentRunCoordinator:
                 "state": run["state"],
                 "max_parallel": run["max_parallel"],
                 "max_attempts": run["max_attempts"],
+                "lease_ns": run["lease_ns"],
                 "next_fencing_token": run["next_fence"],
                 "counts": counts,
             }
