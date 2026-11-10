@@ -12,6 +12,7 @@ import asyncio
 from dataclasses import dataclass
 import json
 import math
+import inspect
 from pathlib import Path
 from statistics import median
 from time import monotonic
@@ -136,7 +137,7 @@ async def _close_stream(stream: Any) -> None:
         return
     try:
         result = closer()
-        if hasattr(result, "__await__"):
+        if inspect.isawaitable(result):
             await result
     except Exception:
         # A close failure is already reflected by the request/transport layer;
