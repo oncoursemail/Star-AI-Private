@@ -29,6 +29,7 @@ def candidate(**overrides):
         privacy_scope="project_private",
         dependency_manifest_sha256=sha("deps-v1"),
         current_dependency_manifest_sha256=sha("deps-v1"),
+        host_clock_epoch_sha256=sha("boot-epoch-1"),
         previous_snapshot_sha256=sha("previous-snapshot"),
         proposed_snapshot_sha256=sha("proposed-snapshot"),
         created_at_ms=NOW - 1000,
@@ -48,7 +49,8 @@ def candidate(**overrides):
 class MemoryConsolidationGateTests(unittest.TestCase):
     def evaluate(self, item, policy=None, now=NOW):
         return evaluate_consolidation(
-            item, policy or MemoryConsolidationPolicy(), trusted_host_key=KEY, now_ms=now
+            item, policy or MemoryConsolidationPolicy(), trusted_host_key=KEY, now_ms=now,
+            current_host_clock_epoch_sha256=sha("boot-epoch-1"),
         )
 
     def test_valid_semantic_candidate_is_only_eligible_for_owner_review(self):
@@ -81,6 +83,15 @@ class MemoryConsolidationGateTests(unittest.TestCase):
         item = candidate(created_at_ms=NOW + 1, expires_at_ms=NOW + 60_000)
         decision = self.evaluate(item)
         self.assertEqual(decision.status, "revalidation_required")
+
+    def test_host_clock_epoch_change_requires_revalidation(self):
+        item = candidate()
+        decision = evaluate_consolidation(
+            item, MemoryConsolidationPolicy(), trusted_host_key=KEY, now_ms=NOW,
+            current_host_clock_epoch_sha256=sha("boot-epoch-2"),
+        )
+        self.assertEqual(decision.status, "revalidation_required")
+        self.assertIn("host_clock_epoch_changed", decision.reasons)
 
     def test_stale_dependency_counter_requires_revalidation(self):
         item = candidate(stale_dependency_count=1)
@@ -151,7 +162,8 @@ class MemoryConsolidationGateTests(unittest.TestCase):
     def test_invalid_key_is_rejected(self):
         with self.assertRaises(ValueError):
             evaluate_consolidation(
-                candidate(), MemoryConsolidationPolicy(), trusted_host_key=b"short", now_ms=NOW
+                candidate(), MemoryConsolidationPolicy(), trusted_host_key=b"short", now_ms=NOW,
+                current_host_clock_epoch_sha256=sha("boot-epoch-1"),
             )
 
 
