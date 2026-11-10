@@ -192,6 +192,10 @@ Prioritize: (1) audio stop/owner interrupt, (2) game frame-time and OBS stabilit
 
 Keep client first-content latency, model TTFT, first-audible latency and first-avatar-reaction latency as separate measurements. They describe different stages.
 
+NVIDIA AIPerf's metric reference is useful because it explicitly separates request latency, time-to-first-token (TTFT), inter-token latency (ITL), inter-chunk latency (ICL), and aggregate throughput. TTFT includes queueing, network transport, prompt processing and first-token delivery; it is not pure decode time. ITL excludes TTFT. Star should therefore preserve raw client timings and report p50/p95/p99 distributions instead of relabeling one end-to-end stopwatch as model speed. [AIPerf metrics](https://docs.nvidia.com/aiperf/reference/ai-perf-metrics-reference)
+
+The llama.cpp server exposes prompt/decode counters, active/deferred requests, context high-water marks and speculative-draft acceptance through its Prometheus-compatible endpoint when metrics are enabled. In router mode the endpoint needs a model identifier. This is a useful server-side diagnostic complement to client timing, not a replacement for first-audible and game/OBS measurements. [llama.cpp server metrics](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+
 ## 6. General intelligence, memory and self-improvement
 
 The existing repository already has knowledge stores, game-skill memory, practice ladders, mistake memory, transfer evaluation and sealed evaluation infrastructure. The next intelligence gains should come from making their evidence portable and trustworthy, not by stuffing every past interaction into the prompt.
@@ -285,3 +289,5 @@ The standalone implementation was tested in a clean scratch package.
 5. Google DeepMind, [SIMA 2](https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/) — multiworld game interaction, reasoning, practice and self-improvement; dated November 13, 2025.
 6. Roblox, [Agentic Studio workflows](https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic) — plan/build/test and playtesting; dated April 15, 2026.
 7. Roblox Creator Hub, [Studio MCP and Open Cloud permissions](https://create.roblox.com/docs/studio/mcp-open-cloud) — per-game scopes, approved upload folders and high-risk operations; verified November 10, 2026.
+8. NVIDIA, [AIPerf Metrics Reference](https://docs.nvidia.com/aiperf/reference/ai-perf-metrics-reference) — TTFT, ITL, ICL, request latency and throughput definitions.
+9. ggml-org, [llama.cpp server metrics](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) — prompt/decode counters, queue gauges and speculative decoding metrics.
