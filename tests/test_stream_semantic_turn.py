@@ -177,6 +177,31 @@ def test_missing_prediction_uses_bounded_fallback_after_prediction_timeout():
     assert semantic.metrics()["timeout_fallbacks"] == 1
 
 
+def test_prediction_timeout_does_not_override_stale_vad():
+    advice = SemanticTurnGate(_quiet_gate()).advise(
+        now_ms=3610.0, star_speaking=False,
+        expected_turn_id=TURN, prediction=None,
+        expected_audio_end_ms=1110.0,
+    )
+    assert advice.action == "hold"
+    assert advice.reason == "vad_missing_or_stale"
+
+
+def test_missing_prediction_before_timeout_remains_held():
+    gate = _quiet_gate()
+    gate.observe(VoiceFrame(
+        at_ms=2109.0, duration_ms=10.0,
+        owner_probability=0.0, guest_probability=0.0, echo_cleared=True,
+    ))
+    advice = SemanticTurnGate(gate).advise(
+        now_ms=2109.0, star_speaking=False,
+        expected_turn_id=TURN, prediction=None,
+        expected_audio_end_ms=1110.0,
+    )
+    assert advice.action == "hold"
+    assert advice.reason == "semantic_prediction_missing"
+
+
 def test_continue_prediction_uses_the_longer_max_endpointing_budget():
     gate = _quiet_gate()
     gate.observe(VoiceFrame(
