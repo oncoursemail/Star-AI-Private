@@ -14,6 +14,26 @@ STAR should not select a model because it is larger, newer, or faster in one iso
 
 This update implements the first two constraints as an offline review gate. It deliberately does not modify STAR's router. A passing report means *human review is justified*, not that the candidate is approved for production or livestream use.
 
+ 
+## Existing STAR foundations inspected
+
+The repository already has several substantial, separate draft changes. This PR is intended to connect their evidence rather than duplicate their runtime code:
+
+| Existing draft | Existing foundation | How this gate relates |
+|---|---|---|
+| [#1097](https://github.com/oncoursemail/Star-AI-Project/pull/1097) | Paired local inference, mixed-workload benchmark, 24-task/12-domain general-knowledge suite, and stream-response timing evaluator | Supplies the paired latency and quality-comparison artifacts this gate consumes |
+| [#1101](https://github.com/oncoursemail/Star-AI-Project/pull/1101) | Read-only llama.cpp Prometheus metrics sampler | Supplies optional per-model aggregate counter windows |
+| [#1096](https://github.com/oncoursemail/Star-AI-Project/pull/1096) | Addressee-aware active-listening/backchannel logic | Remains the conversational event layer; this PR does not change it |
+| [#1084–#1085](https://github.com/oncoursemail/Star-AI-Project/pull/1085) | Long-session voice health and host-witnessed audible-turn evidence | Remains a separate voice-quality and physical-output acceptance gate |
+| [#1086](https://github.com/oncoursemail/Star-AI-Project/pull/1086) | Real-time game outcome benchmark with distinct scenario/state checks and paired win evidence | Remains the game-mastery gate; general-knowledge scores cannot substitute for game outcomes |
+| [#1087–#1088](https://github.com/oncoursemail/Star-AI-Project/pull/1088) | Optional GPU-worker lease accounting and restart-safe admission | Remains the resource-admission boundary; this PR does not schedule or launch workers |
+
+These are separate open review branches at the time of this research, not a claim that all of them are already integrated into production. This PR is stacked on #1101. The producer modules from #1097 must be available in the checked-out integration branch before the CLI can be run end to end; the gate intentionally validates their JSON artifacts without importing their runtime code.
+
+The model-quality gate currently covers paired inference latency plus the development general-knowledge comparison only. A candidate still needs the independent game, voice, audible-output, GPU-budget, OBS and Windows acceptance evidence above before any real VTuber rollout.
+
+
+
 ## 1. New implementation: `star/model_quality_speed_gate.py`
 
 ### Why it is needed
@@ -306,7 +326,7 @@ Before any candidate is used for live VTubing, require:
 ## Primary sources (checked 2026-11-10)
 
 - NVIDIA AIPerf, [metrics reference](https://docs.nvidia.com/aiperf/dev/reference/ai-perf-metrics-reference) — request, TTFT, TTST, ITL, latency distributions and throughput semantics.
-- llama.cpp, [server metrics documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#-metrics-prometheus-compatible-metrics-exporter) — `/metrics`, `--metrics`, router model scoping and metric types.
+- llama.cpp, [server metrics documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) — `/metrics`, `--metrics`, router model scoping and metric types.
 - vLLM, [Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/) — shared-prefix KV reuse and prefill/decode limits.
 - Roblox, [OpenGameEval](https://github.com/Roblox/open-game-eval) and [paper](https://arxiv.org/abs/2610.02563) — stateful Studio evaluation, exploration and simulated play.
 - Aggarwal & Welleck, [Gym-Anything-RT](https://arxiv.org/abs/2610.37567), submitted 2026-10-27 — real-time visual-agent evaluation.
