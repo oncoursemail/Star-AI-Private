@@ -85,6 +85,7 @@ class SemanticTurnGate:
         *,
         max_prediction_age_ms: float = MAX_PREDICTION_AGE_MS,
         max_endpointing_ms: float = MAX_ENDPOINTING_MS,
+        prediction_timeout_ms: float = 1000.0,
         minimum_confidence: float = 0.5,
         max_turn_history: int = 32,
     ) -> None:
@@ -96,11 +97,16 @@ class SemanticTurnGate:
         self._max_endpointing_ms = _finite(
             max_endpointing_ms, "max_endpointing_ms", maximum=5000.0
         )
+        self._prediction_timeout_ms = _finite(
+            prediction_timeout_ms, "prediction_timeout_ms", maximum=5000.0
+        )
         self._minimum_confidence = _finite(
             minimum_confidence, "minimum_confidence", maximum=1.0
         )
-        if self._max_prediction_age_ms < 50.0 or self._max_endpointing_ms < 250.0:
-            raise ValueError("semantic timing budgets are too small")
+        if (self._max_prediction_age_ms < 50.0 or self._max_endpointing_ms < 250.0
+                or self._prediction_timeout_ms < 250.0
+                or self._prediction_timeout_ms > self._max_endpointing_ms):
+            raise ValueError("semantic timing budgets are inconsistent or too small")
         if type(max_turn_history) is not int or not 1 <= max_turn_history <= 256:
             raise ValueError("max_turn_history must be 1..256")
         self._vad_gate = vad_gate
@@ -133,9 +139,11 @@ class SemanticTurnGate:
     def _fallback_or_hold(
         self, *, now_ms: float, audio_end_ms: float | None,
         reason: str, counter: str | None = None,
+        fallback_after_ms: float | None = None,
     ) -> TurnAdvice:
+        threshold = self._max_endpointing_ms if fallback_after_ms is None else fallback_after_ms
         if (audio_end_ms is not None and now_ms >= audio_end_ms
-                and now_ms - audio_end_ms >= self._max_endpointing_ms):
+                and now_ms - audio_end_ms >= threshold):
             with self._lock:
                 self._counts["timeout_fallbacks"] += 1
                 self._counts["semantic_completions"] += 1
@@ -181,6 +189,7 @@ class SemanticTurnGate:
             return self._fallback_or_hold(
                 now_ms=now, audio_end_ms=audio_end,
                 reason="semantic_audio_end_mismatch", counter="audio_end_mismatches",
+                fallback_after_ms=self._prediction_timeout_ms,
             )
         if prediction is None:
             with self._lock:
@@ -188,6 +197,7 @@ class SemanticTurnGate:
             return self._fallback_or_hold(
                 now_ms=now, audio_end_ms=audio_end,
                 reason="semantic_prediction_missing",
+                fallback_after_ms=self._prediction_timeout_ms,
             )
         with self._lock:
             self._counts["predictions_seen"] += 1
@@ -197,6 +207,7 @@ class SemanticTurnGate:
             return self._fallback_or_hold(
                 now_ms=now, audio_end_ms=audio_end,
                 reason="semantic_turn_mismatch", counter="turn_mismatches",
+                fallback_after_ms=self._prediction_timeout_ms,
             )
         if (prediction.observed_at_ms > now + 25.0
                 or now - prediction.observed_at_ms > self._max_prediction_age_ms
@@ -207,6 +218,7 @@ class SemanticTurnGate:
             return self._fallback_or_hold(
                 now_ms=now, audio_end_ms=audio_end,
                 reason="semantic_prediction_stale", counter="stale_predictions",
+                fallback_after_ms=self._prediction_timeout_ms,
             )
         with self._lock:
             previous = self._last_sequences.get(prediction.turn_id, 0)
@@ -214,7 +226,7 @@ class SemanticTurnGate:
                 self._counts["predictions_rejected"] += 1
                 self._counts["replays"] += 1
                 if (audio_end is not None and now >= audio_end
-                        and now - audio_end >= self._max_endpointing_ms):
+                        and now - audio_end >= self._prediction_timeout_ms):
                     self._counts["timeout_fallbacks"] += 1
                     self._counts["semantic_completions"] += 1
                     return TurnAdvice("speak", False, "semantic_timeout_fallback")
