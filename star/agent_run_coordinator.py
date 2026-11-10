@@ -28,7 +28,11 @@ from uuid import uuid4
 
 from .orchestration import Task, TaskPlan
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
+_MAX_ARTIFACT_BYTES = 4 * 1024 * 1024
+_MAX_RUN_ARTIFACT_BYTES = 64 * 1024 * 1024
+_MAX_RUN_ARTIFACTS = 256
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _ERROR = re.compile(r"^[a-z][a-z0-9_.-]{0,79}$")
 _TERMINAL = frozenset({"completed", "failed", "blocked", "cancelled"})
@@ -44,6 +48,10 @@ class StaleLeaseError(CoordinatorError):
 
 class PlanMismatchError(CoordinatorError):
     """A run ID was reused with a different immutable task plan."""
+
+
+class ArtifactConflictError(CoordinatorError):
+    """An artifact compare-and-swap or commit-id check failed."""
 
 
 class RunNotReadyError(CoordinatorError):
@@ -71,6 +79,30 @@ class AgentLease:
     lease_expires_ns: int
     plan_hash: str
     dependency_results: tuple[DependencyResult, ...]
+
+
+@dataclass(frozen=True)
+class ArtifactCommit:
+    run_id: str
+    resource: str
+    commit_id: str
+    sha256: str
+    version: int
+    fencing_token: int
+    created_ns: int
+    status: str
+
+
+@dataclass(frozen=True)
+class ArtifactRecord:
+    run_id: str
+    resource: str
+    content: bytes
+    sha256: str
+    version: int
+    updated_task_id: str
+    fencing_token: int
+    updated_ns: int
 
 
 def _task_payload(task: Task) -> dict:
@@ -131,6 +163,24 @@ def _result_payload(answer: str, evidence: tuple[str, ...], elapsed_ms: int) -> 
         "evidence": list(evidence),
         "elapsed_ms": elapsed_ms,
     })
+
+
+def _artifact_path(value: str) -> str:
+    """Normalize a virtual-workspace path without interpreting it on the host OS."""
+    if (type(value) is not str or not value or len(value) > 500
+            or value.startswith("/") or value.endswith("/")
+            or "\\\\" in value or "//" in value or ":" in value):
+        raise ValueError("Artifact path must be a bounded relative POSIX path")
+    parts = value.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("Artifact path traversal is not allowed")
+    if any(any(ord(char) < 32 or ord(char) == 127 for char in part) for part in parts):
+        raise ValueError("Artifact path contains control characters")
+    return value
+
+
+def _within_scope(resource: str, scopes: tuple[str, ...]) -> bool:
+    return any(resource == scope or resource.startswith(scope + "/") for scope in scopes)
 
 
 class AgentRunCoordinator:
@@ -216,7 +266,7 @@ class AgentRunCoordinator:
             if str(mode).lower() != "wal":
                 raise CoordinatorError("SQLite WAL mode is required on the local database")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, _SCHEMA_VERSION):
+            if version not in (0, 2, _SCHEMA_VERSION):
                 raise CoordinatorError("Unsupported coordinator database schema")
             connection.executescript(
                 """
@@ -255,7 +305,37 @@ class AgentRunCoordinator:
                 );
                 CREATE INDEX IF NOT EXISTS tasks_run_state
                     ON tasks(run_id, state, lease_expires_ns);
-                PRAGMA user_version=2;
+                CREATE TABLE IF NOT EXISTS artifacts (
+                    run_id TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    content BLOB NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    version INTEGER NOT NULL CHECK (version > 0),
+                    updated_task_id TEXT NOT NULL,
+                    fencing_token INTEGER NOT NULL CHECK (fencing_token > 0),
+                    updated_ns INTEGER NOT NULL,
+                    PRIMARY KEY (run_id, resource),
+                    FOREIGN KEY (run_id, updated_task_id)
+                        REFERENCES tasks(run_id, task_id)
+                );
+                CREATE TABLE IF NOT EXISTS artifact_commits (
+                    run_id TEXT NOT NULL,
+                    commit_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    fencing_token INTEGER NOT NULL,
+                    expected_sha256 TEXT,
+                    new_sha256 TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    created_ns INTEGER NOT NULL,
+                    PRIMARY KEY (run_id, commit_id),
+                    UNIQUE (run_id, resource, version),
+                    FOREIGN KEY (run_id, task_id)
+                        REFERENCES tasks(run_id, task_id)
+                );
+                CREATE INDEX IF NOT EXISTS artifacts_run_updated
+                    ON artifacts(run_id, updated_ns);
+                PRAGMA user_version=3;
                 """
             )
             if self.database.exists() and self.database.stat().st_size > 0:
@@ -281,16 +361,11 @@ class AgentRunCoordinator:
         return value
 
     def register_run(self, run_id: str, plan: TaskPlan) -> bool:
-        """Register an immutable read-only plan; return False if already identical."""
+        """Register an immutable plan; writes are limited to the fenced artifact workspace."""
         self._validate_identifier(run_id, "run_id")
         if not isinstance(plan, TaskPlan) or not plan.tasks or len(plan.tasks) > 64:
             raise ValueError("Expected a nonempty TaskPlan containing at most 64 tasks")
         plan = _snapshot_plan(plan)
-        if any(task.writes for task in plan.tasks.values()):
-            raise PermissionError(
-                "Durable coordinator v1 accepts read-only tasks only; "
-                "mutations need a resource-side fencing gateway"
-            )
         digest = _plan_hash(plan)
         with self._transaction() as db:
             now = self._now()
@@ -543,6 +618,153 @@ class AgentRunCoordinator:
                 ),
             )
         return "completed"
+
+
+    def commit_artifact(
+        self,
+        lease: AgentLease,
+        *,
+        resource: str,
+        content: str | bytes,
+        commit_id: str,
+        expected_sha256: str | None = None,
+    ) -> ArtifactCommit:
+        """Atomically commit a virtual-workspace artifact under the current lease.
+
+        This is the resource-side fencing boundary for STAR's *logical* workspace:
+        lease validation, compare-and-swap, artifact bytes, and the immutable commit
+        receipt are written in one SQLite BEGIN IMMEDIATE transaction. It does not
+        write to the host filesystem, Git, Roblox, or external services.
+        """
+        if not isinstance(lease, AgentLease):
+            raise TypeError("Expected an AgentLease")
+        resource = _artifact_path(resource)
+        self._validate_identifier(commit_id, "commit_id")
+        if type(content) is str:
+            payload = content.encode("utf-8")
+        elif type(content) is bytes:
+            payload = content
+        else:
+            raise TypeError("Artifact content must be UTF-8 text or bytes")
+        if len(payload) > _MAX_ARTIFACT_BYTES:
+            raise ValueError("Artifact exceeds the 4 MiB per-file limit")
+        if expected_sha256 is not None and (
+            type(expected_sha256) is not str or not _SHA256.fullmatch(expected_sha256)
+        ):
+            raise ValueError("expected_sha256 must be a lowercase SHA-256 digest or None")
+        if not _within_scope(resource, lease.task.writes):
+            raise PermissionError("Artifact path is outside this task's declared write scopes")
+        digest = hashlib.sha256(payload).hexdigest()
+
+        with self._transaction() as db:
+            now = self._now()
+            self._current_row(db, lease, now)
+            previous_commit = db.execute(
+                "SELECT task_id,resource,fencing_token,expected_sha256,new_sha256,version,created_ns "
+                "FROM artifact_commits WHERE run_id=? AND commit_id=?",
+                (lease.run_id, commit_id),
+            ).fetchone()
+            if previous_commit is not None:
+                same = (
+                    previous_commit["task_id"] == lease.task.id
+                    and previous_commit["resource"] == resource
+                    and previous_commit["fencing_token"] == lease.fencing_token
+                    and previous_commit["expected_sha256"] == expected_sha256
+                    and previous_commit["new_sha256"] == digest
+                )
+                if not same:
+                    raise ArtifactConflictError("Commit ID was already used for different content or ownership")
+                return ArtifactCommit(
+                    lease.run_id, resource, commit_id, digest,
+                    previous_commit["version"], lease.fencing_token,
+                    previous_commit["created_ns"], "already_committed",
+                )
+
+            current = db.execute(
+                "SELECT sha256,version,length(content) AS size FROM artifacts "
+                "WHERE run_id=? AND resource=?",
+                (lease.run_id, resource),
+            ).fetchone()
+            if current is None:
+                if expected_sha256 is not None:
+                    raise ArtifactConflictError("Artifact does not exist at the expected digest")
+                version = 1
+                old_size = 0
+            else:
+                if expected_sha256 is None or current["sha256"] != expected_sha256:
+                    raise ArtifactConflictError("Artifact changed since the worker's read; refresh and retry")
+                version = int(current["version"]) + 1
+                old_size = int(current["size"])
+
+            totals = db.execute(
+                "SELECT COUNT(*) AS files,COALESCE(SUM(length(content)),0) AS bytes "
+                "FROM artifacts WHERE run_id=?",
+                (lease.run_id,),
+            ).fetchone()
+            if current is None and int(totals["files"]) >= _MAX_RUN_ARTIFACTS:
+                raise CoordinatorError("Run artifact-count budget exceeded")
+            new_total = int(totals["bytes"]) - old_size + len(payload)
+            if new_total > _MAX_RUN_ARTIFACT_BYTES:
+                raise CoordinatorError("Run artifact-storage budget exceeded")
+
+            db.execute(
+                "INSERT INTO artifacts(run_id,resource,content,sha256,version,updated_task_id,fencing_token,updated_ns) "
+                "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,resource) DO UPDATE SET "
+                "content=excluded.content,sha256=excluded.sha256,version=excluded.version,"
+                "updated_task_id=excluded.updated_task_id,fencing_token=excluded.fencing_token,"
+                "updated_ns=excluded.updated_ns",
+                (
+                    lease.run_id, resource, sqlite3.Binary(payload), digest, version,
+                    lease.task.id, lease.fencing_token, now,
+                ),
+            )
+            db.execute(
+                "INSERT INTO artifact_commits(run_id,commit_id,task_id,resource,fencing_token,"
+                "expected_sha256,new_sha256,version,created_ns) VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    lease.run_id, commit_id, lease.task.id, resource, lease.fencing_token,
+                    expected_sha256, digest, version, now,
+                ),
+            )
+        return ArtifactCommit(
+            lease.run_id, resource, commit_id, digest, version,
+            lease.fencing_token, now, "committed",
+        )
+
+    def read_artifact(self, lease: AgentLease, resource: str) -> ArtifactRecord | None:
+        """Read a workspace artifact only within the active task's declared scopes."""
+        if not isinstance(lease, AgentLease):
+            raise TypeError("Expected an AgentLease")
+        resource = _artifact_path(resource)
+        allowed_scopes = tuple(lease.task.reads) + tuple(lease.task.writes)
+        if not _within_scope(resource, allowed_scopes):
+            raise PermissionError("Artifact path is outside this task's declared read/write scopes")
+        with closing(self._connect()) as db:
+            try:
+                db.execute("BEGIN")
+                now = self._now()
+                self._current_row(db, lease, now)
+                row = db.execute(
+                    "SELECT content,sha256,version,updated_task_id,fencing_token,updated_ns "
+                    "FROM artifacts WHERE run_id=? AND resource=?",
+                    (lease.run_id, resource),
+                ).fetchone()
+                if row is None:
+                    db.commit()
+                    return None
+                payload = bytes(row["content"])
+                digest = hashlib.sha256(payload).hexdigest()
+                if digest != row["sha256"]:
+                    raise CoordinatorError("Stored artifact failed integrity validation")
+                result = ArtifactRecord(
+                    lease.run_id, resource, payload, digest, row["version"],
+                    row["updated_task_id"], row["fencing_token"], row["updated_ns"],
+                )
+                db.commit()
+                return result
+            except BaseException:
+                db.rollback()
+                raise
 
     def fail(self, lease: AgentLease, *, error_code: str, retryable: bool) -> str:
         """Release a current lease as pending (retry) or failed (terminal)."""
