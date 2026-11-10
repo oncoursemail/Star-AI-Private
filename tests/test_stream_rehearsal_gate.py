@@ -63,6 +63,7 @@ def build_campaign(status_overrides=None, sample_count=10):
         campaign_id="campaign-1",
         environment_sha256=ENV,
         source_revision=REV,
+        campaign_nonce="a" * 64,
         min_duration_ms=60_000,
         max_duration_ms=120_000,
         min_samples_per_lane=8,
@@ -71,6 +72,7 @@ def build_campaign(status_overrides=None, sample_count=10):
     session = seal_session_receipt(SessionReceipt(
         campaign_id="campaign-1", session_id="session-1",
         environment_sha256=ENV, source_revision=REV,
+        manifest_sha256=manifest.sha256,
         started_ms=1_000_000, ended_ms=1_090_000,
     ), KEY)
     receipts = []
@@ -78,6 +80,7 @@ def build_campaign(status_overrides=None, sample_count=10):
         receipt = LaneReceipt(
             campaign_id="campaign-1", session_id="session-1",
             environment_sha256=ENV, source_revision=REV,
+            manifest_sha256=manifest.sha256,
             lane=lane, status=(status_overrides or {}).get(lane, "pass"),
             sample_count=sample_count, window_start_ms=1_001_000,
             window_end_ms=1_089_000, evidence_sha256=EVIDENCE,
@@ -199,6 +202,55 @@ class StreamRehearsalGateTests(unittest.TestCase):
         manifest, session, receipts = build_campaign()
         with self.assertRaises(ValueError):
             evaluate_rehearsal(manifest, session, receipts, signing_key=b"short")
+
+    def test_manifest_digest_changes_when_policy_changes(self):
+        manifest, _, _ = build_campaign()
+        changed = replace(manifest, min_samples_per_lane=9)
+        self.assertNotEqual(manifest.sha256, changed.sha256)
+
+    def test_session_must_bind_exact_manifest_digest(self):
+        manifest, session, receipts = build_campaign()
+        other_digest = hashlib.sha256(b"another policy").hexdigest()
+        altered = seal_session_receipt(
+            replace(session, manifest_sha256=other_digest, signature=""), KEY
+        )
+        result = evaluate_rehearsal(manifest, altered, receipts, signing_key=KEY)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("session_manifest_digest_mismatch", result.reasons)
+
+    def test_lane_must_bind_exact_manifest_digest(self):
+        manifest, session, receipts = build_campaign()
+        other_digest = hashlib.sha256(b"another policy").hexdigest()
+        receipts[0] = seal_lane_receipt(
+            replace(receipts[0], manifest_sha256=other_digest, signature=""), KEY
+        )
+        result = evaluate_rehearsal(manifest, session, receipts, signing_key=KEY)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("binding_mismatch:" + receipts[0].lane, result.reasons)
+
+    def test_new_campaign_nonce_rejects_old_signed_evidence(self):
+        manifest, session, receipts = build_campaign()
+        new_campaign = replace(manifest, campaign_nonce="b" * 64)
+        result = evaluate_rehearsal(new_campaign, session, receipts, signing_key=KEY)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("session_manifest_digest_mismatch", result.reasons)
+
+    def test_campaign_nonce_must_be_256_bit_lowercase_hex(self):
+        manifest, _, _ = build_campaign()
+        with self.assertRaises(ValueError):
+            replace(manifest, campaign_nonce="not-a-secure-nonce")
+
+    def test_host_generated_campaign_nonces_are_unique(self):
+        first = RehearsalManifest(
+            campaign_id="campaign-unique", environment_sha256=ENV,
+            source_revision=REV,
+        )
+        second = RehearsalManifest(
+            campaign_id="campaign-unique", environment_sha256=ENV,
+            source_revision=REV,
+        )
+        self.assertNotEqual(first.campaign_nonce, second.campaign_nonce)
+        self.assertNotEqual(first.sha256, second.sha256)
 
 
 if __name__ == "__main__":
