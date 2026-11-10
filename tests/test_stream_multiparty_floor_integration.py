@@ -97,6 +97,7 @@ def test_group_address_and_overlap_are_suppressed():
     assert not rig.governor.offer(
         group_signal, moderated=True, spoken_turn=True, floor_observation=group
     )
+    rig.now += 1
     overlap_signal = rig.signal(ident="turn-0002")
     overlap = FloorObservation(
         turn_id=overlap_signal.signal_id,
@@ -152,7 +153,9 @@ def test_ordinary_chat_and_owner_interrupt_paths_remain_compatible():
     rig = Rig()
     chat = rig.signal()
     assert rig.governor.offer(chat, moderated=True)
-    rig.stage.finish(rig.governor.prepare(), now=rig.now / 1000, played_to_end=False)
+    plan = rig.governor.prepare()
+    assert plan is not None
+    assert rig.stage.finish(plan, now=rig.now / 1000, played_to_end=False)
     owner = StreamSignal(
         "owner-interrupt-1", "owner_interrupt", rig.now / 1000,
         "Please stop and listen.", "owner", "observed",
