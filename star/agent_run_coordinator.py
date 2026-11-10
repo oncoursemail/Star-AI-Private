@@ -290,8 +290,8 @@ class AgentRunCoordinator:
                 "mutations need a resource-side fencing gateway"
             )
         digest = _plan_hash(plan)
-        now = self._now()
         with self._transaction() as db:
+            now = self._now()
             existing = db.execute(
                 "SELECT plan_hash,max_parallel,max_attempts,lease_ns FROM runs WHERE run_id=?",
                 (run_id,),
@@ -411,11 +411,11 @@ class AgentRunCoordinator:
         """Atomically claim one ready task and return only its direct dependency results."""
         self._validate_identifier(run_id, "run_id")
         self._validate_identifier(worker_id, "worker_id")
-        now = self._now()
         plan = self._plans.get(run_id)
         if plan is None:
             raise CoordinatorError("Register the immutable plan on this coordinator instance first")
         with self._transaction() as db:
+            now = self._now()
             run = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if run is None:
                 raise CoordinatorError("Unknown run")
@@ -486,8 +486,8 @@ class AgentRunCoordinator:
         """Renew the same ownership; renewal never increments its fencing token."""
         if not isinstance(lease, AgentLease):
             raise TypeError("Expected an AgentLease")
-        now = self._now()
         with self._transaction() as db:
+            now = self._now()
             current = self._current_row(db, lease, now)
             expires = max(now + self.lease_ns, current["lease_expires_ns"])
             db.execute(
@@ -516,8 +516,8 @@ class AgentRunCoordinator:
             evidence = tuple(evidence)
         payload = _result_payload(answer, evidence, elapsed_ms)
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        now = self._now()
         with self._transaction() as db:
+            now = self._now()
             row = db.execute(
                 "SELECT * FROM tasks WHERE run_id=? AND task_id=?",
                 (lease.run_id, lease.task.id),
@@ -548,8 +548,8 @@ class AgentRunCoordinator:
             raise TypeError("Expected an AgentLease and boolean retryable flag")
         if type(error_code) is not str or not _ERROR.fullmatch(error_code):
             raise ValueError("Invalid bounded error code")
-        now = self._now()
         with self._transaction() as db:
+            now = self._now()
             row = self._current_row(db, lease, now)
             run = db.execute(
                 "SELECT max_attempts FROM runs WHERE run_id=?", (lease.run_id,)
@@ -569,8 +569,8 @@ class AgentRunCoordinator:
         """Expire old leases and block descendants whose dependencies failed."""
         self._validate_identifier(run_id, "run_id")
         plan = self._verified_plan(run_id, plan)
-        now = self._now()
         with self._transaction() as db:
+            now = self._now()
             count = self._expire_leases(db, run_id, now)
             self._block_failed_dependents(db, run_id, plan)
             return count
