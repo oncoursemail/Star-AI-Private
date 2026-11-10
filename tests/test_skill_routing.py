@@ -12,18 +12,25 @@ NO_TRIGGER = "Players in my Roblox game sometimes lose their progress when the s
 
 
 class Embedder:
-    """Unit vectors: a pack whose name contains `near` points the same way as every query; others are orthogonal."""
+    """Scripted vectors with a canary signature that changes when model weights change."""
 
-    def __init__(self, near="roblox-datastore-safety", fail=None):
-        self.near, self.fail, self.calls = near, fail, []
+    def __init__(self, near="roblox-datastore-safety", fail=None, revision="v1", switch_after=None):
+        self.near, self.fail, self.revision, self.switch_after = near, fail, revision, switch_after
+        self.calls = []
 
     async def __call__(self, texts):
         self.calls.append(list(texts))
         if self.fail:
             raise self.fail
+        revision = self.revision
+        if self.switch_after is not None and len(self.calls) > self.switch_after:
+            revision = "v2"
+        canaries = {skill_routing.QUERY_PREFIX + probe for probe in skill_routing.FINGERPRINT_PROBES}
         out = []
         for text in texts:
-            if text.startswith(skill_routing.QUERY_PREFIX) or self.near.replace("-", " ") in text:
+            if text in canaries:
+                out.append([1.0, 0.0] if revision == "v1" else [0.0, 1.0])
+            elif text.startswith(skill_routing.QUERY_PREFIX) or self.near.replace("-", " ") in text:
                 out.append([1.0, 0.0])
             else:
                 out.append([0.0, 1.0])
@@ -79,15 +86,70 @@ def test_server_problems_fall_back_to_the_keyword_answer_and_are_reported(tmp_pa
     assert run(skill_routing.select(NO_TRIGGER, odd, enabled=ALL, home=tmp_path)) == []
 
 
-def test_pack_vectors_are_cached_on_disk_and_only_the_query_is_embedded_next_time(tmp_path):
+def test_pack_vectors_are_cached_and_query_is_paired_with_fixed_canaries(tmp_path):
     first = Embedder()
     run(skill_routing.select(NO_TRIGGER, first, enabled=ALL, home=tmp_path))
-    assert len(first.calls) == 2 and len(first.calls[0]) > 1                     # pack batch, then the query
+    query_and_canaries = [
+        skill_routing.QUERY_PREFIX + NO_TRIGGER,
+        *(skill_routing.QUERY_PREFIX + probe for probe in skill_routing.FINGERPRINT_PROBES),
+    ]
+    canary_only = [skill_routing.QUERY_PREFIX + probe for probe in skill_routing.FINGERPRINT_PROBES]
+    assert len(first.calls) == 3
+    assert first.calls[0] == query_and_canaries
+    assert len(first.calls[1]) > 1                                      # missing pack documents
+    assert first.calls[2] == canary_only
     cache = json.loads((tmp_path / skill_routing.CACHE_FILE).read_text(encoding="utf-8"))
-    assert len(cache) == len(first.calls[0])
+    assert len(cache) == len(first.calls[1])
     second = Embedder()
     run(skill_routing.select(NO_TRIGGER, second, enabled=ALL, home=tmp_path))
-    assert second.calls == [[skill_routing.QUERY_PREFIX + NO_TRIGGER]]
+    assert second.calls == [query_and_canaries]                         # canary fingerprint hits cache
+
+
+def test_cache_invalidates_when_weights_change_behind_the_same_model_alias(tmp_path):
+    first = Embedder(revision="v1")
+    run(skill_routing.select(NO_TRIGGER, first, enabled=ALL, home=tmp_path))
+    second = Embedder(revision="v2")
+    run(skill_routing.select(NO_TRIGGER, second, enabled=ALL, home=tmp_path))
+    assert len(second.calls) == 3
+    assert len(second.calls[1]) > 1                                     # old alias, new embedding space
+    third = Embedder(revision="v2")
+    run(skill_routing.select(NO_TRIGGER, third, enabled=ALL, home=tmp_path))
+    assert len(third.calls) == 1
+
+
+def test_invalid_cached_vectors_are_reembedded_and_bad_live_vectors_fall_back(tmp_path):
+    first = Embedder()
+    run(skill_routing.select(NO_TRIGGER, first, enabled=ALL, home=tmp_path))
+    cache_path = tmp_path / skill_routing.CACHE_FILE
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    key = next(iter(cache))
+    cache[key] = [float("nan"), 0.0]
+    cache_path.write_text(json.dumps(cache), encoding="utf-8")
+    second = Embedder()
+    run(skill_routing.select(NO_TRIGGER, second, enabled=ALL, home=tmp_path))
+    assert len(second.calls) == 3
+    assert len(second.calls[1]) == 1                                     # only the corrupt entry is rebuilt
+
+    async def nonfinite(texts):
+        return [[float("nan"), 0.0] for _ in texts]
+    assert run(skill_routing.select(NO_TRIGGER, nonfinite, enabled=ALL, home=tmp_path)) == []
+
+
+def test_embedding_model_change_during_refresh_does_not_write_mixed_vectors(tmp_path):
+    embed = Embedder(switch_after=2)
+    with pytest.raises(RuntimeError, match="changed during"):
+        run(skill_routing.rank(NO_TRIGGER, embed, allowed=ALL, cache_dir=tmp_path))
+    assert not (tmp_path / skill_routing.CACHE_FILE).exists()
+
+
+def test_embedding_vectors_reject_bool_nonfinite_and_mixed_dimensions():
+    with pytest.raises(ValueError, match="finite"):
+        skill_routing._vectors([[True, 0.0]], 1)
+    with pytest.raises(ValueError, match="finite"):
+        skill_routing._vectors([[float("inf"), 0.0]], 1)
+    with pytest.raises(ValueError, match="inconsistent dimensions"):
+        skill_routing._vectors([[1.0, 0.0], [1.0]], 2)
+    assert skill_routing._cached_vector([1.0], 2) is None
 
 
 @pytest.mark.parametrize("value", [None, "yes", 1])
@@ -114,10 +176,11 @@ def test_run_task_asks_star_server_for_embeddings_only_when_opted_in(tmp_path, m
     models, asked = Models(), []
     models.responses.append(reply("Done.", model="star-fast"))
 
-    async def embeddings(*, model, input):
-        asked.append((model, list(input)))
+    async def embeddings(*, model, **kwargs):
+        inputs = kwargs["input"]
+        asked.append((model, list(inputs)))
         vectors = [[1.0, 0.0] if t.startswith(skill_routing.QUERY_PREFIX) or "datastore safety" in t else [0.0, 1.0]
-                   for t in input]
+                   for t in inputs]
         return SimpleNamespace(data=[SimpleNamespace(index=i, embedding=v) for i, v in enumerate(vectors)])
 
     class Client:
