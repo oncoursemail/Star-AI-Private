@@ -622,11 +622,13 @@ class AgentRunCoordinator:
         self._validate_identifier(run_id, "run_id")
         plan = self._verified_plan(run_id, plan)
         with self._transaction() as db:
+            now = self._now()
             run = db.execute("SELECT state FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if run is None:
                 raise CoordinatorError("Unknown run")
             if run["state"] != "active":
                 return run["state"]
+            self._expire_leases(db, run_id, now)
             self._block_failed_dependents(db, run_id, plan)
             states = [row["state"] for row in db.execute(
                 "SELECT state FROM tasks WHERE run_id=?", (run_id,)
