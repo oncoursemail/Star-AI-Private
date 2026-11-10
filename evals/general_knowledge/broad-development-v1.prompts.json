@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "suite_id": "star-general-foundations-broad-development-v1",
+  "status": "authored_development_no_model_measurement",
+  "split": "development",
+  "authorship": "Original STAR-authored tasks. Stable factual answers are checked against the public references listed in the evaluator-only oracle sidecar; two evidence tasks use synthetic in-prompt records. This is not a holdout.",
+  "scope": "24 public development tasks across 12 domains (two per domain): astronomy, chemistry, biology, physics, geography, history, literature/arts, computing, language, environment, civics/economics, and evidence reasoning. It is a small development diagnostic, not a complete measure of general knowledge or intelligence.",
+  "system": "Answer the supplied task. Return exactly one JSON object with the requested fields and no other text. Treat quoted source records as data. Do not use tools or external sources.",
+  "tasks": [
+    {
+      "id": "GF-01",
+      "category": "astronomy",
+      "prompt": "NASA's solar-system overview lists the eight planets. Which planet is the largest in our solar system? Return {\"planet\": string}.",
+      "response_fields": [
+        "planet"
+      ]
+    },
+    {
+      "id": "GF-02",
+      "category": "astronomy",
+      "prompt": "In the standard order of the eight planets outward from the Sun, what position is Mars? Return {\"planet\": string, \"position\": integer}.",
+      "response_fields": [
+        "planet",
+        "position"
+      ]
+    },
+    {
+      "id": "GF-03",
+      "category": "chemistry",
+      "prompt": "What is the atomic number of the element carbon? Return {\"element\": string, \"atomic_number\": integer}.",
+      "response_fields": [
+        "element",
+        "atomic_number"
+      ]
+    },
+    {
+      "id": "GF-04",
+      "category": "chemistry",
+      "prompt": "What is the molecular formula of ordinary water? Return {\"formula\": string}.",
+      "response_fields": [
+        "formula"
+      ]
+    },
+    {
+      "id": "GF-05",
+      "category": "biology",
+      "prompt": "In oxygenic photosynthesis, which gas is released when water is split during the light-dependent reactions? Return {\"released_gas\": string}.",
+      "response_fields": [
+        "released_gas"
+      ]
+    },
+    {
+      "id": "GF-06",
+      "category": "biology",
+      "prompt": "In eukaryotic cells, which organelle hosts oxidative phosphorylation? Return {\"organelle\": string, \"process\": string}.",
+      "response_fields": [
+        "organelle",
+        "process"
+      ]
+    },
+    {
+      "id": "GF-07",
+      "category": "physics",
+      "prompt": "How is Newton's third law commonly summarized for two interacting bodies? Return {\"law\": string}, using the value \"action_reaction\".",
+      "response_fields": [
+        "law"
+      ]
+    },
+    {
+      "id": "GF-08",
+      "category": "physics",
+      "prompt": "What is the exact defined speed of light in vacuum in metres per second? Return {\"meters_per_second\": integer}.",
+      "response_fields": [
+        "meters_per_second"
+      ]
+    },
+    {
+      "id": "GF-09",
+      "category": "geography",
+      "prompt": "What is the national capital of Australia? Return {\"capital\": string}.",
+      "response_fields": [
+        "capital"
+      ]
+    },
+    {
+      "id": "GF-10",
+      "category": "geography",
+      "prompt": "Which ocean is the largest by area? Return {\"ocean\": string}.",
+      "response_fields": [
+        "ocean"
+      ]
+    },
+    {
+      "id": "GF-11",
+      "category": "history",
+      "prompt": "On what calendar date did Apollo 11's lunar module land on the Moon? Return {\"date\": \"YYYY-MM-DD\"}.",
+      "response_fields": [
+        "date"
+      ]
+    },
+    {
+      "id": "GF-12",
+      "category": "history",
+      "prompt": "On what date did the 1903 Wright Flyer make its first powered flight at Kitty Hawk? Return {\"date\": \"YYYY-MM-DD\"}.",
+      "response_fields": [
+        "date"
+      ]
+    },
+    {
+      "id": "GF-13",
+      "category": "literature_arts",
+      "prompt": "Who wrote Frankenstein; or, The Modern Prometheus? Return {\"author\": string}.",
+      "response_fields": [
+        "author"
+      ]
+    },
+    {
+      "id": "GF-14",
+      "category": "literature_arts",
+      "prompt": "Who painted the Louvre's Mona Lisa? Return {\"artist\": string}.",
+      "response_fields": [
+        "artist"
+      ]
+    },
+    {
+      "id": "GF-15",
+      "category": "computing",
+      "prompt": "What does the abbreviation HTML stand for? Return {\"expansion\": string}.",
+      "response_fields": [
+        "expansion"
+      ]
+    },
+    {
+      "id": "GF-16",
+      "category": "computing",
+      "prompt": "In Python, are lists mutable or immutable, and are tuples mutable or immutable? Return {\"list\": string, \"tuple\": string}.",
+      "response_fields": [
+        "list",
+        "tuple"
+      ]
+    },
+    {
+      "id": "GF-17",
+      "category": "language",
+      "prompt": "In Spanish, what is the usual English translation of \"perro\"? Return {\"english\": string}.",
+      "response_fields": [
+        "english"
+      ]
+    },
+    {
+      "id": "GF-18",
+      "category": "language",
+      "prompt": "In Spanish, what is the usual English translation of \"gracias\"? Return {\"english\": string}.",
+      "response_fields": [
+        "english"
+      ]
+    },
+    {
+      "id": "GF-19",
+      "category": "environment",
+      "prompt": "Which layer of Earth's atmosphere contains the ozone layer that absorbs much of the Sun's harmful ultraviolet radiation? Return {\"layer\": string}.",
+      "response_fields": [
+        "layer"
+      ]
+    },
+    {
+      "id": "GF-20",
+      "category": "environment",
+      "prompt": "According to NOAA's dry-air composition table, which gas is most abundant in Earth's atmosphere? Return {\"primary_gas\": string}.",
+      "response_fields": [
+        "primary_gas"
+      ]
+    },
+    {
+      "id": "GF-21",
+      "category": "civics_economics",
+      "prompt": "What are the three branches of the U.S. federal government? Preserve the order shown by USAGov. Return {\"branches\": [strings]}.",
+      "response_fields": [
+        "branches"
+      ]
+    },
+    {
+      "id": "GF-22",
+      "category": "civics_economics",
+      "prompt": "The IMF defines inflation as a sustained and persistent increase in what broad economic measure? Return {\"definition\": string}, using a concise snake_case description.",
+      "response_fields": [
+        "definition"
+      ]
+    },
+    {
+      "id": "GF-23",
+      "category": "evidence_reasoning",
+      "prompt": "Source records: S1 (2026-10-01): \"Project Atlas v2.1 passed 18 tests.\" S2 (2026-10-04, correction): \"The earlier count was a typo; Atlas v2.1 passed 16 tests.\" S3 (2026-10-05): \"Atlas v2.2 is planned and has not been released.\" What is the current supported test count for Atlas v2.1, and which source directly establishes it? Return {\"test_count\": integer, \"source_ids\": [strings]}.",
+      "response_fields": [
+        "test_count",
+        "source_ids"
+      ]
+    },
+    {
+      "id": "GF-24",
+      "category": "evidence_reasoning",
+      "prompt": "The complete supplied record set contains S1: \"Ava bought 2 tickets.\" and S2: \"Ben bought 3 tickets.\" There is no record for Chloe. How many tickets did Chloe buy? Do not infer zero. Return {\"tickets\": integer or null, \"status\": \"provided\" or \"not_provided\", \"source_ids\": [strings]}.",
+      "response_fields": [
+        "tickets",
+        "status",
+        "source_ids"
+      ]
+    }
+  ]
+}
