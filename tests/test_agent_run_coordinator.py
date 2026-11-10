@@ -7,6 +7,7 @@ import pytest
 
 from star.agent_run_coordinator import (
     AgentRunCoordinator,
+    CoordinatorError,
     PlanMismatchError,
     RunNotReadyError,
     StaleLeaseError,
@@ -299,3 +300,38 @@ def test_restart_reclaims_expired_lease_with_new_fence(tmp_path):
     with pytest.raises(StaleLeaseError):
         first.complete(old, answer="late old process result")
     assert restarted.complete(new, answer="recovered result") == "completed"
+
+
+def test_expired_lease_cannot_be_resurrected_by_renewal(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    coordinator = make_coordinator(tmp_path, clock=clock)
+    coordinator.register_run("run-17", plan)
+    lease = coordinator.claim_next("run-17", "worker-a")
+    clock.advance(2)
+
+    with pytest.raises(StaleLeaseError, match="expired"):
+        coordinator.renew(lease)
+
+
+def test_corrupted_dependency_result_digest_fails_closed(tmp_path):
+    import sqlite3
+
+    plan = make_plan(
+        Task("a", "research", "Upstream"),
+        Task("b", "review", "Downstream", dependencies=("a",)),
+    )
+    path = private_database(tmp_path)
+    coordinator = AgentRunCoordinator(path)
+    coordinator.register_run("run-18", plan)
+    lease = coordinator.claim_next("run-18", "worker-a")
+    coordinator.complete(lease, answer="verified result")
+
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE tasks SET result_json=? WHERE run_id=? AND task_id=?",
+            ('{"answer":"tampered"}', "run-18", "a"),
+        )
+
+    with pytest.raises(CoordinatorError, match="integrity"):
+        coordinator.claim_next("run-18", "worker-b")
