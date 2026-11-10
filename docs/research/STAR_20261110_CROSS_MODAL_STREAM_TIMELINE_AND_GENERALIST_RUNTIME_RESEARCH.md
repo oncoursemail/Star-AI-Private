@@ -1,7 +1,7 @@
 # STAR — Cross-Modal Stream Timeline, Generalist VTuber and Runtime Research
 
 **Research date:** 2026-11-10  
-**Implementation:** bounded, opt-in, in-memory event alignment in star/stream_event_timeline.py; regression coverage in tests/test_stream_event_timeline.py.  
+**Implementation:** bounded, opt-in event alignment in star/stream_event_timeline.py, plus compact event-bound context forwarded through star/stream_context_host.py → star/stream_brain_governor.py → star/stream_stage.py.  
 **Scope:** a deterministic host-integration primitive, not a new perception model or a live streamer.
 
 ## Executive finding
@@ -18,7 +18,7 @@ The Star repository already contains distinct foundations for:
 
 The missing architectural seam is a small, explicit event-time layer. It should let those asynchronous host adapters describe what happened on one shared timeline without sending raw media through every subsystem or allowing a stale clock from one modality to be mistaken for current state from another.
 
-This update supplies that seam. It does not add capture, diarization, transcription, OBS control, TTS, avatar control, game input, persistence or model inference.
+This update supplies that seam and the missing final-mile context adapter: only the exact fresh event that caused a speech intent, plus a few aligned metadata pairs, can enter the live turn. It still does not add capture, diarization, transcription, OBS control, TTS, avatar control, game input, persistence or model inference.
 
 ## 1. New implementation: StreamEventTimeline
 
@@ -87,6 +87,30 @@ Hosts must use ephemeral sensor IDs, never viewer identities, as source IDs. A S
 
 The shared monotonic clock is also a host responsibility. This module does not convert Windows performance-counter values, audio sample clocks, video presentation timestamps or game-engine clocks. The adapter layer must translate them into one clock domain and provide a realistic uncertainty bound.
 
+### Selective event-bound context: connecting the timeline to the live brain
+
+The first timeline implementation could align events but did not yet forward them into the existing governed speech path. The follow-up adds star/stream_timeline_context.py and passes its packet through StreamContextHost, StreamBrainGovernor and StarStage.
+
+The context builder:
+- accepts only a TimelineSnapshot and the exact event key returned by the trusted host's IngestResult;
+- selects one matching event and at most four fresh cross-modal pairs;
+- emits at most 2,048 UTF-8 bytes;
+- rejects a faulted clock, missing event, inconsistent age, stale event or malformed alignment;
+- copies no raw source ID, session ID, clock epoch, evidence digest, transcript, media, viewer name or chat text.
+
+The stage attaches the packet only when all of these match:
+1. the packet event key equals the selected StreamSignal.signal_id;
+2. the event modality/kind is compatible with the selected speech intent (for example, a game_success requires a host-classified game victory event);
+3. the snapshot is no more than 250 ms old at the moment of use;
+4. the event remains within a 1,000 ms age budget;
+5. a game-success signal is independently classified as observed.
+
+A mismatched or stale packet is counted and omitted; it does not block an otherwise valid speech turn. The event key remains host-side correlation data and is not placed in the model-facing JSON.
+
+**Why this matters:** it prevents a nearby but unrelated event, an old screenshot, or a delayed packet from contaminating the current reply. The packet is deliberately tiny so the live path does not pay for the full 16 KiB timeline snapshot on every turn. This is a context-size bound, not a measured token-latency improvement.
+
+The host must still use the same monotonic clock for the timeline and stage. This bridge does not prove sensor truth, event causality or actual audible playback.
+
 ## 2. Research: what current voice-agent work teaches Star
 
 ### VAD is not end-of-turn detection
@@ -129,9 +153,9 @@ Google DeepMind's SIMA 2 research describes an agent that combines high-level re
 
 ### Roblox now exposes permission-scoped agent workflows
 
-Roblox's April 15, 2026 roadmap describes a plan/build/test loop, structured plans, parallel task execution and playtesting against the original plan. Its November 4, 2026 Studio MCP/Open Cloud documentation adds per-game permission scopes and approved upload folders. Full access includes operations that can affect live players, publishing, monetization and data. [Agentic Studio roadmap](https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic) · [Studio MCP/Open Cloud permissions](https://create.roblox.com/docs/studio/mcp-open-cloud)
+Roblox's April 15, 2026 roadmap describes a plan/build/test loop, structured plans, parallel task execution and playtesting against the original plan. Its November 4, 2026 Studio MCP/Open Cloud documentation adds the open_cloud_invoke tool, per-game and per-person permissions, access levels (Safe, Balanced, Full access, Custom), and approved upload folders. Full access includes scopes that can affect live players, publish to a live game, change monetization or access data. DataStore/MemoryStore access through execute_luau can reach live data, and HTTP requests require the Network capability plus an explicit domain allowlist. [Agentic Studio roadmap](https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic) · [Studio MCP/Open Cloud permissions](https://create.roblox.com/docs/studio/mcp-open-cloud)
 
-**Star implication:** Creator should use inspect → plan → isolated build → static checks → real playtest → visual/runtime inspection → repair → rerun → held-out test. Use Safe/Balanced/custom least-privilege scopes, private test places and approved asset folders. Publishing, purchases, live settings, bans, credentials and player-data writes must remain separate owner-approved operations.
+**Star implication:** Creator should use inspect → plan → isolated build → static checks → real playtest → visual/runtime inspection → repair → rerun → held-out test. Start with Safe or a narrowly customized scope set; do not request Full access for ordinary code/scene work. Keep approved asset folders separate. Use a private test experience for data-store work because Studio may access the same live data stores. Publishing, purchases, live settings, bans, secrets, player-data writes and cross-server messaging remain separate owner-approved operations.
 
 ## 4. Recommended Star architecture
 
@@ -196,9 +220,15 @@ NVIDIA AIPerf's metric reference is useful because it explicitly separates reque
 
 The llama.cpp server exposes prompt/decode counters, active/deferred requests, context high-water marks and speculative-draft acceptance through its Prometheus-compatible endpoint when metrics are enabled. In router mode the endpoint needs a model identifier. This is a useful server-side diagnostic complement to client timing, not a replacement for first-audible and game/OBS measurements. [llama.cpp server metrics](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 
+llama.cpp also supports speculative decoding with a smaller draft model and several n-gram methods. The official documentation exposes generated/accepted draft-token counts and acceptance rates. A high acceptance ratio is not itself proof of faster end-to-end speech: compare matched prompts, output quality, TTFT, ITL, first audible PCM and mixed game/OBS load. Keep a no-speculation baseline and disable a configuration that adds overhead or harms quality. [llama.cpp speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md)
+
 ## 6. General intelligence, memory and self-improvement
 
 The existing repository already has knowledge stores, game-skill memory, practice ladders, mistake memory, transfer evaluation and sealed evaluation infrastructure. The next intelligence gains should come from making their evidence portable and trustworthy, not by stuffing every past interaction into the prompt.
+
+M3-Agent (ICLR 2026) is a useful multimodal-memory reference: it builds episodic and semantic memory from ongoing visual/audio input and evaluates long-video understanding with M3-Bench (100 robot-perspective videos and 920 web videos). The practical lesson for Star is to keep event-level episodic records linked to source evidence and retrieve only relevant memories for the current task—not to retain every raw stream frame. [M3-Agent / M3-Bench](https://mlanthology.org/iclr/2026/long2026iclr-seeing/)
+
+LongMemEval (ICLR 2025) provides 500 questions across information extraction, multi-session reasoning, temporal reasoning, knowledge updates, preferences and abstention, with long histories around 115K tokens per question in its S split. Star should use it to measure retrieval and temporal consistency, while keeping its own user data private and never placing the benchmark's hidden answers in prompts. [LongMemEval paper](https://xiaowu0162.github.io/publications/13_longmemeval/) · [official repository](https://github.com/xiaowu0162/LongMemEval)
 
 | Memory class | Retain | Promotion evidence |
 |---|---|---|
@@ -272,13 +302,15 @@ Only after offline replay and private rehearsal pass. Keep publishing, monetizat
 
 ## 9. Verification and limitations for this change
 
-The standalone implementation was tested in a clean scratch package.
+The new packet builder was exercised in a clean scratch package with a minimal timeline-type stub:
 
-- 30 focused unit tests passed.
-- Python compilation passed.
+- 8 focused builder smoke checks passed (fresh alignment, privacy omissions, stale/faulted snapshots, missing event and invalid event key).
+- The new repository test file adds builder and stage-integration regressions, and tests/test_stream_context_host.py now covers the full context-host → governor → stage forwarding path.
+- The repository integration tests have not been executed in this run; GitHub Actions is the independent verification step.
 - Ruff was not installed in the scratch runtime.
 - The connected starai Remote Desktop Commander device was online, but its monthly execution quota was exhausted. Repository-wide tests and native Windows rehearsal could not be run.
-- GitHub Actions is the next independent type/lint/regression check.
+
+No inference speedup, game skill gain, improved model intelligence or live-stream acceptance is claimed. The 2 KiB context ceiling and freshness windows are policy bounds; their quality/latency tradeoff still needs replay and Windows measurements.
 
 ## Sources
 
@@ -291,3 +323,6 @@ The standalone implementation was tested in a clean scratch package.
 7. Roblox Creator Hub, [Studio MCP and Open Cloud permissions](https://create.roblox.com/docs/studio/mcp-open-cloud) — per-game scopes, approved upload folders and high-risk operations; verified November 10, 2026.
 8. NVIDIA, [AIPerf Metrics Reference](https://docs.nvidia.com/aiperf/reference/ai-perf-metrics-reference) — TTFT, ITL, ICL, request latency and throughput definitions.
 9. ggml-org, [llama.cpp server metrics](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) — prompt/decode counters, queue gauges and speculative decoding metrics.
+10. ggml-org, [llama.cpp speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md) — draft-model and n-gram methods plus accepted/rejected draft statistics.
+11. Lin et al., [M3-Agent / M3-Bench](https://mlanthology.org/iclr/2026/long2026iclr-seeing/) — multimodal episodic/semantic memory and long-video QA benchmark; ICLR 2026.
+12. Wu et al., [LongMemEval](https://xiaowu0162.github.io/publications/13_longmemeval/) and [official repository](https://github.com/xiaowu0162/LongMemEval) — 500-question long-term conversational memory benchmark; ICLR 2025.
