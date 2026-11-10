@@ -55,6 +55,10 @@ def test_register_is_idempotent_but_plan_is_immutable(tmp_path):
     with pytest.raises(PlanMismatchError):
         coordinator.register_run("run-1", changed)
 
+    other_policy = AgentRunCoordinator(private_database(tmp_path), lease_seconds=2)
+    with pytest.raises(PlanMismatchError):
+        other_policy.register_run("run-1", plan)
+
 
 def test_claim_respects_dependencies_and_exposes_only_direct_results(tmp_path):
     plan = make_plan(
