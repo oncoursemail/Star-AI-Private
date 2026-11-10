@@ -56,7 +56,7 @@ class DispatchPolicy:
     """Small fixed policy; these are scheduling weights, not model priorities."""
 
     max_queue: int = 64
-    max_seen_ids: int = 8192
+    max_seen_ids: int = 4096
     max_per_kind: int = 32
     max_queue_age_ms: int = 120_000
     aging_interval_ms: int = 5_000
