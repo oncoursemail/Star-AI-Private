@@ -182,7 +182,7 @@ class StreamRehearsalGateTests(unittest.TestCase):
                 campaign_id="campaign-1", session_id="session-1",
                 environment_sha256=ENV, source_revision=REV,
                 manifest_sha256=hashlib.sha256(b"test manifest").hexdigest(),
-                lane="speech", status="pass",
+                lane="speech", status="pass", sample_count=1,
                 window_start_ms=1_001_000, window_end_ms=1_089_000,
                 evidence_sha256=EVIDENCE, metrics={"transcript": "hello"},
             )
@@ -195,7 +195,7 @@ class StreamRehearsalGateTests(unittest.TestCase):
                 campaign_id="campaign-1", session_id="session-1",
                 environment_sha256=ENV, source_revision=REV,
                 manifest_sha256=hashlib.sha256(b"test manifest").hexdigest(),
-                lane="obs", status="pass",
+                lane="obs", status="pass", sample_count=1,
                 window_start_ms=1_001_000, window_end_ms=1_089_000,
                 evidence_sha256=EVIDENCE, metrics=values,
             )
