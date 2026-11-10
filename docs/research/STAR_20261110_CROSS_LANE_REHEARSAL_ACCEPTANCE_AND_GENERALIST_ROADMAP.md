@@ -68,11 +68,12 @@ The evaluator aggregates eight independent lanes:
 
 ### Integrity contract
 
-- A host-created manifest pins campaign ID, environment SHA-256, source revision, required lanes, duration range, minimum samples and allowed edge-coverage gap.
-- A host-signed session receipt pins the actual monotonic session start/end.
-- Every lane receipt is HMAC-SHA256 signed by the trusted host and binds the exact campaign, session, environment and source revision.
+- A host-created manifest pins campaign ID, a cryptographically random 256-bit campaign nonce, environment SHA-256, source revision, required lanes, duration range, minimum samples and allowed edge-coverage gap.
+- Canonical JSON serialization covers every manifest policy field; its SHA-256 digest is the policy identity.
+- A host-signed session receipt pins the actual monotonic session start/end and the exact manifest digest.
+- Every lane receipt is HMAC-SHA256 signed by the trusted host and binds the exact campaign, session, environment, source revision and manifest digest.
 - Each lane uses an exact allowlist of aggregate metric names and bounded numeric types. Boolean values are not accepted as numbers.
-- Duplicate lanes, missing lanes, invalid signatures, mismatched environment/revision, insufficient samples and incomplete time windows cannot become a pass.
+- Duplicate lanes, missing lanes, invalid signatures, mismatched environment/revision/policy digest, insufficient samples and incomplete time windows cannot become a pass. A new nonce or changed policy invalidates old signed receipts.
 - Raw prompts, transcripts, screenshots, audio, viewer identities, chat text and file contents are not part of the receipt schema.
 - HMAC keys are supplied only by the trusted local host; never expose them to models, skills, chat or viewers.
 
@@ -123,11 +124,15 @@ These are draft development branches, not features in the published v1.0 install
 
 ## 6. Verification and limits
 
-- 15 focused standard-library unittest cases passed in an isolated Python 3.13 environment before publication.
-- Tests cover full pass, missing/failed/inconclusive lanes, short session, invalid session/lane signatures, environment mismatch, duplicate lane, insufficient samples, incomplete lane window, wrong key, forbidden raw-media fields and boolean-as-number rejection.
+- The original 16 focused standard-library unittest cases passed before the manifest-binding extension. Six additional regression cases are authored for policy-digest changes, exact session/lane binding, nonce-based replay rejection, nonce validation and nonce uniqueness (22 total); current-head GitHub CI is the acceptance run for these additions.
+- Tests cover full pass, missing/failed/inconclusive lanes, short session, invalid session/lane signatures, environment mismatch, duplicate lane, insufficient samples, incomplete lane window, wrong key, forbidden raw-media fields, boolean-as-number rejection and manifest policy substitution/replay.
 - GitHub Actions must independently rerun Python compile/lint/Pyright and the repository offline test suite.
 - No actual OBS, game, microphone, avatar, model server, GPU, Windows host or broadcast was started.
 - No real performance improvement, model intelligence gain, game win-rate gain or human-equivalent behavior is claimed.
+
+## Related follow-on research
+
+See [Adaptive Memory, Natural Turn-Taking and Local Inference Research](STAR_20261110_ADAPTIVE_MEMORY_TURN_TAKING_AND_LOCAL_INFERENCE.md) for AMA-Bench/AEL memory-policy experiments, LiveKit EOT-Bench evaluation, GameWorld/Roblox creator workflows and llama.cpp MoE-cache experiments.
 
 ## Next engineering milestone
 
