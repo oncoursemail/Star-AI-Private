@@ -42,7 +42,7 @@ def test_live_data_and_network_capabilities_have_separate_guards():
 def test_permission_sources_are_official_and_current():
     path = Path(__file__).resolve().parents[1] / "star" / "skill_packs" / "roblox-studio-mcp-workflow" / "references" / "sources.md"
     sources = path.read_text(encoding="utf-8")
-    assert "Reviewed 2026-11-10" in sources
+    assert "permissions reviewed 2026-11-10" in sources
     assert "https://create.roblox.com/docs/studio/mcp-open-cloud" in sources
     assert "https://create.roblox.com/docs/cloud/reference/scopes" in sources
     assert "https://create.roblox.com/docs/cloud-services/data-stores" in sources
