@@ -27,7 +27,7 @@ _REASONS = frozenset({
     "addressed_question", "addressed_request", "addressed_correction",
     "listener_backchannel", "turn_in_progress", "group_address",
     "other_addressee", "side_conversation", "uncertain_addressee",
-    "low_speaker_confidence", "low_act_confidence", "overlapping_speakers",
+    "low_speaker_confidence", "low_act_confidence", "uncertain_speech_act", "overlapping_speakers",
     "interrupted_turn", "stale_receipt", "future_receipt", "clock_regression",
     "missing_receipt", "replayed_receipt", "owner_opt_in_missing",
     "session_mismatch", "sequence_replay", "capacity_exhausted",
@@ -137,9 +137,9 @@ class FloorDecision:
             raise ValueError("invalid floor decision")
         if type(self.turn_id) is not str or _ID.fullmatch(self.turn_id) is None:
             raise ValueError("invalid decision turn_id")
-        if type(self.session_epoch) is not int or self.session_epoch < 1:
+        if type(self.session_epoch) is not int or self.session_epoch < 0:
             raise ValueError("invalid decision session")
-        if type(self.sequence) is not int or self.sequence < 1:
+        if type(self.sequence) is not int or self.sequence < 0:
             raise ValueError("invalid decision sequence")
         if isinstance(self.age_ms, bool) or not isinstance(self.age_ms, (int, float)):
             raise ValueError("invalid decision age")
@@ -253,9 +253,9 @@ class StreamMultipartyFloorGate:
         now = _finite(now_ms, "now_ms", maximum=1e13)
         with self._lock:
             if not self._enabled:
-                return self._decision("hold", "owner_opt_in_missing", turn_id, None, now)
+                return self._decision("hold", "owner_opt_in_missing", turn_id, None, 0.0)
             if self._clock_fault:
-                return self._decision("hold", "clock_regression", turn_id, None, now)
+                return self._decision("hold", "clock_regression", turn_id, None, 0.0)
             if self._last_now_ms is not None and now < self._last_now_ms:
                 self._clock_fault = True
                 self._counts["clock_faults"] += 1
@@ -264,7 +264,7 @@ class StreamMultipartyFloorGate:
             observation = self._pending.pop(turn_id, None)
             if observation is None:
                 self._counts["rejected"] += 1
-                return self._decision("hold", "missing_receipt", turn_id, None, now)
+                return self._decision("hold", "missing_receipt", turn_id, None, 0.0)
             age = now - float(observation.captured_ms)
             if age < -self.policy.future_tolerance_ms:
                 return self._decision("hold", "future_receipt", turn_id, observation, age)
@@ -299,6 +299,8 @@ class StreamMultipartyFloorGate:
             if observation.speech_act in reason_by_act:
                 return self._decision("respond", reason_by_act[observation.speech_act],
                                       turn_id, observation, age)
+            if observation.speech_act == "uncertain":
+                return self._decision("hold", "uncertain_speech_act", turn_id, observation, age)
             return self._decision("listen", "turn_in_progress", turn_id, observation, age)
 
     def _decision(
