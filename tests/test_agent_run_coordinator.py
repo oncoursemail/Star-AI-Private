@@ -211,11 +211,22 @@ def test_abort_invalidates_active_leases_but_does_not_claim_to_kill_workers(tmp_
     assert coordinator.status("run-9")["state"] == "aborted"
 
 
-def test_write_capable_tasks_are_rejected_until_a_resource_side_fence_exists(tmp_path):
+def test_write_capable_tasks_are_limited_to_the_fenced_artifact_workspace(tmp_path):
     plan = make_plan(Task("a", "luau", "Edit a script", writes=("game/scripts",)))
     coordinator = make_coordinator(tmp_path)
-    with pytest.raises(PermissionError, match="resource-side fencing gateway"):
-        coordinator.register_run("run-10", plan)
+    coordinator.register_run("run-10", plan)
+    lease = coordinator.claim_next("run-10", "worker-a")
+    with pytest.raises(PermissionError, match="declared write scopes"):
+        coordinator.commit_artifact(
+            lease, resource="private/secrets.txt", content="no",
+            commit_id="out-of-scope",
+        )
+    receipt = coordinator.commit_artifact(
+        lease, resource="game/scripts/main.lua", content="print('safe')",
+        commit_id="initial-write",
+    )
+    assert receipt.status == "committed"
+    assert coordinator.complete(lease, answer="Committed to the virtual workspace") == "completed"
 
 
 def test_status_does_not_expose_task_answers(tmp_path):
