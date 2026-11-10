@@ -10,7 +10,6 @@ from star.agent_artifact_materializer import (
     MaterializationError,
 )
 from star.artifact_promotion_journal import PromotionJournalError
-from star.agent_run_coordinator import AgentRunCoordinator
 from star.orchestration import Task, TaskPlan
 
 
@@ -117,8 +116,6 @@ def test_recovery_never_overwrites_external_destination_change(tmp_path, monkeyp
     expected = hashlib.sha256(b"old source").hexdigest()
 
     import star.agent_artifact_materializer as materializer_module
-
-    real_replace = materializer_module.os.replace
 
     def collide(source, destination):
         Path(destination).write_bytes(b"external edit")
