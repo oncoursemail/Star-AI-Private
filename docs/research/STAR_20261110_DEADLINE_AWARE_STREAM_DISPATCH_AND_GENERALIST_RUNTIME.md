@@ -84,7 +84,7 @@ The dispatcher is deliberately narrow. It adds the missing ordering layer withou
 
 Implemented behavior:
 
-- Bounded queue (default 64) and bounded session ID ledger (8,192).
+- Bounded queue (default 64) and bounded session ID ledger (4,096).
 - Per-kind queue cap (32 by default).
 - Monotonic clock and explicit job deadlines.
 - Earliest-deadline ordering within a priority class, with FIFO tie-break.
