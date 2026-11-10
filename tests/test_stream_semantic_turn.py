@@ -146,8 +146,13 @@ def test_stale_future_and_overlong_endpointing_predictions_are_rejected():
         expected_turn_id=TURN, prediction=future,
     ).reason == "semantic_prediction_stale"
 
+    slow_gate = _quiet_gate()
+    slow_gate.observe(VoiceFrame(
+        at_ms=4000.0, duration_ms=10.0,
+        owner_probability=0.0, guest_probability=0.0, echo_cleared=True,
+    ))
     slow = _prediction(observed=4000.0, audio_end=1000.0)
-    assert gate.advise(
+    assert SemanticTurnGate(slow_gate).advise(
         now_ms=4000.0, star_speaking=False,
         expected_turn_id=TURN, prediction=slow,
     ).reason == "semantic_prediction_stale"
