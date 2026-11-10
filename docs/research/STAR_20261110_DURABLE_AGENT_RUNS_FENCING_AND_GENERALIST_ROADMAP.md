@@ -90,7 +90,7 @@ New module: star/agent_run_coordinator.py
 - Bounded lease duration and attempt count, both pinned in the immutable run policy; lease clocks are sampled only after acquiring the SQLite write lock.
 - Lease renewal without changing the fencing token.
 - Expired-lease reclamation with a higher token on the next claim.
-- Completion accepted only when run, task, worker, lease ID, token and expiry still match.
+- Completion accepted only when run, task, worker, lease ID, token and expiry still match.\n- Run finalization reaps expired leases and commits retryable requeues before reporting that work remains.
 - Idempotent retry of the exact same completion; changed/stale completion is rejected.
 - Retryable failure, terminal failure, dependency blocking and run finalization.
 - Only direct dependency results are included in a worker's lease, reducing unnecessary context exposure. Treat those results as untrusted data, never as tool instructions.
@@ -164,7 +164,7 @@ Before any host integration is enabled:
 8. Confirm any write-capable task is rejected.
 9. Verify no task answer or private content appears in status metrics or logs.
 10. Only after the read-only path passes, design a separate fenced mutation gateway.
-11. Run the full Windows mixed-workload rehearsal: game + OBS + TTS + VTube Studio + local inference + background agents. Measure p50/p95 first-audible latency, game frame time, OBS render/network loss, audio underruns, VRAM/RAM and worker stop time.
+11. Verify run finalization commits expired-lease requeue/failure transitions before returning not-ready.\n12. Run the full Windows mixed-workload rehearsal: game + OBS + TTS + VTube Studio + local inference + background agents. Measure p50/p95 first-audible latency, game frame time, OBS render/network loss, audio underruns, VRAM/RAM and worker stop time.
 
 ## Explicit non-claims
 
