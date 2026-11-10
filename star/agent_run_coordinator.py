@@ -169,7 +169,7 @@ def _artifact_path(value: str) -> str:
     """Normalize a virtual-workspace path without interpreting it on the host OS."""
     if (type(value) is not str or not value or len(value) > 500
             or value.startswith("/") or value.endswith("/")
-            or "\\\\" in value or "//" in value or ":" in value):
+            or "\\" in value or "//" in value or ":" in value):
         raise ValueError("Artifact path must be a bounded relative POSIX path")
     parts = value.split("/")
     if any(part in ("", ".", "..") for part in parts):
@@ -184,11 +184,11 @@ def _within_scope(resource: str, scopes: tuple[str, ...]) -> bool:
 
 
 class AgentRunCoordinator:
-    """SQLite-backed lease coordinator for read-only multi-process agent runs.
+    """SQLite-backed lease coordinator with a fenced virtual-artifact workspace.
 
     Use a local filesystem (NTFS/ext4/APFS), not a network share or sync folder.
     Multiple processes on the same host may open the same database. SQLite's
-    BEGIN IMMEDIATE serializes claims; WAL allows concurrent readers.
+    BEGIN IMMEDIATE serializes claims and artifact commits; WAL allows readers.
 
     Leases use the host wall clock because expiry must survive process restarts.
     A forward clock jump may cause safe rework; a backward jump may delay reclaim.
@@ -681,10 +681,17 @@ class AgentRunCoordinator:
                 )
 
             current = db.execute(
-                "SELECT sha256,version,length(content) AS size FROM artifacts "
+                "SELECT sha256,version,length(content) AS size,updated_task_id FROM artifacts "
                 "WHERE run_id=? AND resource=?",
                 (lease.run_id, resource),
             ).fetchone()
+            if current is not None and current["updated_task_id"] != lease.task.id:
+                source = db.execute(
+                    "SELECT state FROM tasks WHERE run_id=? AND task_id=?",
+                    (lease.run_id, current["updated_task_id"]),
+                ).fetchone()
+                if source is None or source["state"] != "completed":
+                    raise ArtifactConflictError("Artifact from another task is not published until that task completes")
             if current is None:
                 if expected_sha256 is not None:
                     raise ArtifactConflictError("Artifact does not exist at the expected digest")
@@ -752,6 +759,13 @@ class AgentRunCoordinator:
                 if row is None:
                     db.commit()
                     return None
+                if row["updated_task_id"] != lease.task.id:
+                    source = db.execute(
+                        "SELECT state FROM tasks WHERE run_id=? AND task_id=?",
+                        (lease.run_id, row["updated_task_id"]),
+                    ).fetchone()
+                    if source is None or source["state"] != "completed":
+                        raise ArtifactConflictError("Artifact is not visible until its writer task completes")
                 payload = bytes(row["content"])
                 digest = hashlib.sha256(payload).hexdigest()
                 if digest != row["sha256"]:
