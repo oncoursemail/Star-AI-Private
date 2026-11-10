@@ -4,7 +4,8 @@ The keyword router (`star.skill_packs.select`) needs the prompt to name a pack's
 it finds nothing, this router embeds the prompt with STAR's own embedding model (star-embed-ft1 on STAR Server) and
 picks the pack whose name and description are closest, above a similarity floor. The same context rules apply (a
 Roblox, Godot or named-engine prompt, only enabled packs), so unrelated prompts stay unchanged. Pack vectors are
-cached on disk per model and pack text. Any problem (server unreachable, slow, odd reply) gives the keyword answer.
+cached by model alias, pack text and a live canary fingerprint of the embedding space. A changed model behind the
+same alias invalidates the cache; malformed vectors fall back to the keyword path.
 
 Why keyword first: on the 197 held-out routing cases of the pack tests the embedding router alone was right 171
 times at this floor and the keyword router 197; on 36 requests that describe a topic without its trigger words the
@@ -27,9 +28,20 @@ EMBED_MODEL = "star-embed-ft1"
 QUERY_PREFIX = "task: search result | query: "      # EmbeddingGemma's retrieval-query prompt (as in starkb)
 CACHE_FILE = "skill_pack_embeddings.json"
 MIN_SIMILARITY = 0.45
-QUERY_TIMEOUT = 3.0          # seconds for the prompt's vector, every turn
-PACKS_TIMEOUT = 15.0         # seconds for pack vectors not cached yet (once per pack text and model)
+QUERY_TIMEOUT = 3.0          # seconds for query + two tiny canary vectors
+PACKS_TIMEOUT = 15.0         # seconds for the missing pack-document batch
 MAX_QUERY_CHARS = 2000
+CACHE_SCHEMA_VERSION = 2
+MAX_CACHE_ENTRIES = 256
+MAX_CACHE_BYTES = 2_000_000
+MAX_VECTOR_DIMENSIONS = 8192
+# A tiny, fixed query-side canary set fingerprints the live embedding space.
+# These are embedded in the SAME request as the user's query, so a model reload
+# helps detect when a new query vector must not reuse old cached document vectors.
+FINGERPRINT_PROBES = (
+    "A Roblox server validates remote event arguments before updating player data.",
+    "A conversational agent waits for a speaker to finish before replying.",
+)
 
 
 def pack_document(pack: Pack) -> str:
@@ -52,21 +64,49 @@ def candidates(prompt: str, allowed) -> list[Pack]:
 
 
 def _cosine(a, b) -> float:
+    if not a or len(a) != len(b):
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
     return dot / norm if norm else 0.0
 
 
-def _key(document: str) -> str:
-    return hashlib.sha256((EMBED_MODEL + "\n" + document).encode("utf-8")).hexdigest()
+def _fingerprint(vectors: list[list[float]]) -> str:
+    """Stable, privacy-safe canary digest for the embedding space actually answering now."""
+    payload = {
+        "schema": CACHE_SCHEMA_VERSION,
+        "model": EMBED_MODEL,
+        "probes": [[round(value, 5) for value in vector] for vector in vectors],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _key(document: str, fingerprint: str) -> str:
+    material = f"{CACHE_SCHEMA_VERSION}\n{EMBED_MODEL}\n{fingerprint}\n{document}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _read_cache(path: Path | None) -> dict:
     if path is None:
         return {}
     try:
+        if path.stat().st_size > MAX_CACHE_BYTES:
+            return {}
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        valid = {}
+        for key, vector in list(data.items())[-MAX_CACHE_ENTRIES:]:
+            if (type(key) is not str or len(key) != 64 or type(vector) is not list
+                    or not 1 <= len(vector) <= MAX_VECTOR_DIMENSIONS):
+                continue
+            try:
+                if all(type(value) in (int, float) and math.isfinite(float(value)) for value in vector):
+                    valid[key] = vector
+            except (OverflowError, ValueError):
+                continue
+        return valid
     except (OSError, ValueError):
         return {}
 
@@ -76,39 +116,101 @@ def _write_cache(path: Path | None, cache: dict) -> None:
         return
     try:
         from .atomic_io import atomic_write_text
-        atomic_write_text(path, json.dumps(cache))
-    except (OSError, ValueError):
+        bounded = dict(list(cache.items())[-MAX_CACHE_ENTRIES:])
+        atomic_write_text(path, json.dumps(bounded, separators=(",", ":"), allow_nan=False))
+    except (OSError, TypeError, ValueError):
         pass       # a cache that cannot be written only costs the vectors again next time
 
 
 def _vectors(reply, count: int) -> list[list[float]]:
     if not isinstance(reply, list) or len(reply) != count:
         raise ValueError("unexpected embedding reply")
-    out = []
+    out: list[list[float]] = []
+    dimension = None
     for vector in reply:
-        if not isinstance(vector, list) or not vector or not all(isinstance(x, (int, float)) for x in vector):
+        if (type(vector) is not list or not vector
+                or len(vector) > MAX_VECTOR_DIMENSIONS):
             raise ValueError("unexpected embedding vector")
-        out.append([float(x) for x in vector])
+        values = []
+        for value in vector:
+            if type(value) not in (int, float):
+                raise ValueError("embedding values must be finite numbers")
+            try:
+                number = float(value)
+            except (OverflowError, ValueError) as exc:
+                raise ValueError("embedding values must be finite numbers") from exc
+            if not math.isfinite(number):
+                raise ValueError("embedding values must be finite numbers")
+            values.append(number)
+        if dimension is None:
+            dimension = len(values)
+        elif len(values) != dimension:
+            raise ValueError("embedding vectors have inconsistent dimensions")
+        out.append(values)
     return out
 
 
+def _cached_vector(value: object, dimension: int) -> list[float] | None:
+    if type(value) is not list or len(value) != dimension:
+        return None
+    try:
+        if any(type(item) not in (int, float) or not math.isfinite(float(item)) for item in value):
+            return None
+        return [float(item) for item in value]
+    except (OverflowError, ValueError):
+        return None
+
+
 async def rank(prompt: str, embed, *, allowed, cache_dir: Path | None = None) -> list[tuple[float, Pack]]:
-    """(similarity, pack) for every candidate, best first. `embed(texts)` is async and returns one vector per text.
-    Raises on any embedding problem; `select` turns that into the keyword fallback."""
+    """(similarity, pack) for every candidate, best first.
+
+    The query and two fixed canaries are embedded together. Their rounded,
+    privacy-safe digest namespaces cached document vectors, so replacing model
+    weights behind the same alias cannot silently mix embedding spaces. On a
+    cache miss, a second canary pass verifies the model did not change while
+    document vectors were being refreshed.
+    """
     packs = candidates(prompt, allowed)
     if not packs:
         return []
+    query_inputs = [
+        QUERY_PREFIX + prompt[:MAX_QUERY_CHARS],
+        *(QUERY_PREFIX + probe for probe in FINGERPRINT_PROBES),
+    ]
+    query_vectors = _vectors(
+        await asyncio.wait_for(embed(query_inputs), QUERY_TIMEOUT), len(query_inputs)
+    )
+    query, fingerprint_vectors = query_vectors[0], query_vectors[1:]
+    fingerprint = _fingerprint(fingerprint_vectors)
     path = Path(cache_dir) / CACHE_FILE if cache_dir is not None else None
     cache = _read_cache(path)
     documents = {p.name: pack_document(p) for p in packs}
-    missing = [p.name for p in packs if not isinstance(cache.get(_key(documents[p.name])), list)]
+    keys = {name: _key(document, fingerprint) for name, document in documents.items()}
+    cached: dict[str, list[float]] = {}
+    missing = []
+    for pack in packs:
+        vector = _cached_vector(cache.get(keys[pack.name]), len(query))
+        if vector is None:
+            missing.append(pack.name)
+        else:
+            cached[pack.name] = vector
     if missing:
         texts = [documents[name] for name in missing]
         fresh = _vectors(await asyncio.wait_for(embed(texts), PACKS_TIMEOUT), len(texts))
-        cache.update({_key(documents[name]): vector for name, vector in zip(missing, fresh)})
+        if any(len(vector) != len(query) for vector in fresh):
+            raise ValueError("query and document embedding dimensions differ")
+        confirmation = _vectors(
+            await asyncio.wait_for(
+                embed([QUERY_PREFIX + probe for probe in FINGERPRINT_PROBES]), QUERY_TIMEOUT
+            ),
+            len(FINGERPRINT_PROBES),
+        )
+        if _fingerprint(confirmation) != fingerprint:
+            raise RuntimeError("embedding model changed during skill-pack cache refresh")
+        cache.update({keys[name]: vector for name, vector in zip(missing, fresh)})
+        cached.update({name: vector for name, vector in zip(missing, fresh)})
         _write_cache(path, cache)
-    query = _vectors(await asyncio.wait_for(embed([QUERY_PREFIX + prompt[:MAX_QUERY_CHARS]]), QUERY_TIMEOUT), 1)[0]
-    scored = [(_cosine(query, cache[_key(documents[p.name])]), p) for p in packs]
+    scored = [(_cosine(query, cached[p.name]), p) for p in packs]
     return sorted(scored, key=lambda item: -item[0])
 
 
