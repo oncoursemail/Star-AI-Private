@@ -69,14 +69,19 @@ def _resource_path(value: str) -> str:
     return value
 
 
+def _is_link_or_junction(path: Path) -> bool:
+    junction_check = getattr(path, "is_junction", None)
+    return path.is_symlink() or (callable(junction_check) and junction_check())
+
+
 def _check_no_symlink_components(path: Path) -> None:
     for component in reversed((path, *path.parents)):
         try:
             mode = component.lstat().st_mode
         except FileNotFoundError:
             continue
-        if stat.S_ISLNK(mode):
-            raise MaterializationError("Symlink path components are not allowed")
+        if stat.S_ISLNK(mode) or _is_link_or_junction(component):
+            raise MaterializationError("Symlink or junction path components are not allowed")
 
 
 def _inside_git_worktree(path: Path) -> bool:
@@ -111,7 +116,7 @@ class ArtifactStagingMaterializer:
         if type(root) is not Path or not root.is_absolute():
             raise ValueError("Staging root must be an absolute pathlib.Path")
         _check_no_symlink_components(root)
-        if not root.is_dir() or root.is_symlink():
+        if not root.is_dir() or _is_link_or_junction(root):
             raise MaterializationError("Staging root must be an existing real directory")
         if _inside_git_worktree(root):
             raise MaterializationError("Staging root must be outside every Git worktree")
@@ -121,7 +126,7 @@ class ArtifactStagingMaterializer:
             mode = marker.lstat().st_mode
         except FileNotFoundError as exc:
             raise MaterializationError("Staging root has not been initialized") from exc
-        if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+        if not stat.S_ISREG(mode) or _is_link_or_junction(marker):
             raise MaterializationError("Staging marker must be a regular file")
         if marker.read_bytes() != _MARKER_CONTENT:
             raise MaterializationError("Staging marker is invalid")
@@ -137,7 +142,7 @@ class ArtifactStagingMaterializer:
         if _inside_git_worktree(root):
             raise MaterializationError("Staging root must be outside every Git worktree")
         if root.exists():
-            if not root.is_dir() or root.is_symlink():
+            if not root.is_dir() or _is_link_or_junction(root):
                 raise MaterializationError("Staging root must be a real directory")
         else:
             root.mkdir(parents=True, mode=0o700)
@@ -146,7 +151,7 @@ class ArtifactStagingMaterializer:
             root.chmod(0o700)
         marker = root / _MARKER
         if marker.exists() or marker.is_symlink():
-            if marker.is_symlink() or not marker.is_file():
+            if _is_link_or_junction(marker) or not marker.is_file():
                 raise MaterializationError("Staging marker must be a regular file")
             if marker.read_bytes() != _MARKER_CONTENT:
                 raise MaterializationError("Existing staging marker is invalid")
@@ -170,7 +175,7 @@ class ArtifactStagingMaterializer:
             mode = path.lstat().st_mode
         except FileNotFoundError:
             return None
-        if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+        if not stat.S_ISREG(mode) or _is_link_or_junction(path):
             raise MaterializationError("Existing target must be a regular non-symlink file")
         if path.stat().st_size > _MAX_ARTIFACT_BYTES:
             raise MaterializationError("Existing target exceeds the artifact size limit")
@@ -206,7 +211,7 @@ class ArtifactStagingMaterializer:
                 mode = current.lstat().st_mode
             except FileNotFoundError as exc:
                 raise MaterializationError("Staging directory disappeared during creation") from exc
-            if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+            if not stat.S_ISDIR(mode) or _is_link_or_junction(current):
                 raise MaterializationError("Staging path contains a non-directory or symlink")
         _check_no_symlink_components(current)
         return current
