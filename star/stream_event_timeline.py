@@ -113,7 +113,11 @@ class TimelineEvent:
         if self.confidence is not None:
             if isinstance(self.confidence, bool) or not isinstance(self.confidence, (int, float)):
                 raise ValueError("confidence must be numeric or absent")
-            if not math.isfinite(float(self.confidence)) or not 0 <= float(self.confidence) <= 1:
+            try:
+                confidence = float(self.confidence)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("confidence must be finite") from exc
+            if not math.isfinite(confidence) or not 0 <= confidence <= 1:
                 raise ValueError("confidence must be between zero and one")
         uncertainty = _clock(self.uncertainty_ms, "uncertainty_ms")
         if uncertainty > 5000:
@@ -299,7 +303,12 @@ class StreamEventTimeline:
             try:
                 now = self._advance(now_ms)
             except ValueError:
-                return IngestResult(False, "host_clock_reversed")
+                if not self._faulted:
+                    self._faulted = True
+                    self._events.clear()
+                    self._watermarks.clear()
+                    self._rejected += 1
+                return IngestResult(False, "host_clock_untrusted")
             if not self._enabled or self._session is None:
                 self._rejected += 1
                 return IngestResult(False, "timeline_disabled")
@@ -342,9 +351,13 @@ class StreamEventTimeline:
             try:
                 now = self._advance(now_ms)
             except ValueError:
-                # The previous trusted monotonic value is the only safe clock
-                # after a reversal. Return an empty faulted snapshot, never stale
-                # context, and require disable()+enable() for a fresh epoch.
+                # Any invalid or regressing clock makes event age unknowable.
+                # Return an empty faulted snapshot and require a fresh session.
+                if not self._faulted:
+                    self._faulted = True
+                    self._events.clear()
+                    self._watermarks.clear()
+                    self._rejected += 1
                 now = self._last_now_ms if self._last_now_ms is not None else 0.0
             if not self._enabled or self._session is None or self._faulted:
                 session = self._session or TimelineSession("0" * 32, "0" * 16)
