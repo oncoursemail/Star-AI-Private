@@ -117,6 +117,8 @@ def test_recovery_never_overwrites_external_destination_change(tmp_path, monkeyp
 
     import star.agent_artifact_materializer as materializer_module
 
+    real_replace = materializer_module.os.replace
+
     def collide(source, destination):
         Path(destination).write_bytes(b"external edit")
         raise OSError("simulated concurrent external modification")
