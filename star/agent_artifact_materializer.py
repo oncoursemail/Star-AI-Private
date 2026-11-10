@@ -150,7 +150,7 @@ class ArtifactStagingMaterializer:
         if os.name == "posix":
             root.chmod(0o700)
         marker = root / _MARKER
-        if marker.exists() or marker.is_symlink():
+        if marker.exists() or _is_link_or_junction(marker):
             if _is_link_or_junction(marker) or not marker.is_file():
                 raise MaterializationError("Staging marker must be a regular file")
             if marker.read_bytes() != _MARKER_CONTENT:
