@@ -7,13 +7,13 @@ preregistered manifest.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-import secrets
 import hashlib
 import hmac
 import json
 import math
 import re
+import secrets
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
