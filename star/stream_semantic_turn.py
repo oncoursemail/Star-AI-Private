@@ -126,7 +126,7 @@ class SemanticTurnGate:
             self._counts["semantic_holds"] += 1
             if counter is not None:
                 self._counts[counter] += 1
-        return TurnAdvice("hold", True, reason)
+        return TurnAdvice("hold", False, reason)
 
     def advise(
         self,
@@ -174,7 +174,7 @@ class SemanticTurnGate:
                 self._counts["predictions_rejected"] += 1
                 self._counts["replays"] += 1
                 self._counts["semantic_holds"] += 1
-                return TurnAdvice("hold", True, "semantic_prediction_replay")
+                return TurnAdvice("hold", False, "semantic_prediction_replay")
             self._last_sequences[prediction.turn_id] = prediction.sequence
             self._last_sequences.move_to_end(prediction.turn_id)
             while len(self._last_sequences) > self._max_turn_history:
