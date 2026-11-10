@@ -163,6 +163,34 @@ def test_recovery_aborts_when_prepared_temporary_file_is_missing(tmp_path, monke
     assert not (root / "run-1" / "src" / "main.py").exists()
 
 
+
+def test_new_materialization_waits_while_recovery_is_transiently_blocked(tmp_path, monkeypatch):
+    coordinator = completed_run(tmp_path, b"new bytes")
+    root = tmp_path / "stage"
+    materializer = ArtifactStagingMaterializer.initialize(root)
+    import star.agent_artifact_materializer as materializer_module
+
+    real_replace = materializer_module.os.replace
+
+    def fail(source, destination):
+        raise OSError("simulated transient storage failure")
+
+    monkeypatch.setattr(materializer_module.os, "replace", fail)
+    with pytest.raises(MaterializationError):
+        materializer.materialize(coordinator, "run-1", "src/main.py")
+    with pytest.raises(MaterializationError, match="earlier promotion"):
+        materializer.materialize(coordinator, "run-1", "src/main.py")
+
+    with sqlite3.connect(root / ".star-promotion-journal.sqlite3") as db:
+        prepared_count = db.execute(
+            "SELECT COUNT(*) FROM promotions WHERE state='prepared'"
+        ).fetchone()[0]
+    assert prepared_count == 1
+
+    monkeypatch.setattr(materializer_module.os, "replace", real_replace)
+    assert [item.status for item in materializer.recover_pending()] == ["replayed"]
+
+
 def test_journal_rejects_unknown_schema_version(tmp_path):
     root = tmp_path / "stage"
     materializer = ArtifactStagingMaterializer.initialize(root)
