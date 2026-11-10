@@ -95,7 +95,7 @@ The context builder:
 - accepts only a TimelineSnapshot and the exact event key returned by the trusted host's IngestResult;
 - selects one matching event and at most four fresh cross-modal pairs;
 - emits at most 2,048 UTF-8 bytes;
-- rejects a faulted clock, missing event, inconsistent age, stale event or malformed alignment;
+- rejects a faulted clock, missing event, inconsistent age, stale event or malformed alignment; every pair must reference the exact event summaries in the same snapshot;
 - copies no raw source ID, session ID, clock epoch, evidence digest, transcript, media, viewer name or chat text; the packet constructor rejects extra JSON fields, duplicate keys and non-canonical payloads.
 
 The stage attaches the packet only when all of these match:
@@ -304,7 +304,7 @@ Only after offline replay and private rehearsal pass. Keep publishing, monetizat
 
 The new packet builder was exercised in a clean scratch package with a minimal timeline-type stub:
 
-- 6 focused scratch smoke checks passed after packet-schema hardening (fresh alignment, privacy omissions, stale/faulted snapshots, missing event, invalid event key and forged-field rejection).
+- 6 focused scratch smoke checks passed after packet-schema and snapshot-membership hardening (fresh alignment, privacy omissions, stale/faulted snapshots, missing event, invalid key, fabricated pair and forged-field rejection).
 - The new repository test file adds builder and stage-integration regressions, and tests/test_stream_context_host.py now covers the full context-host → governor → stage forwarding path.
 - The repository integration tests have not been executed in this run; GitHub Actions is the independent verification step.
 - Ruff was not installed in the scratch runtime.
