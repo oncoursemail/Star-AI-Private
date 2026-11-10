@@ -124,6 +124,7 @@ class MemoryConsolidationCandidate:
     privacy_scope: str
     dependency_manifest_sha256: str
     current_dependency_manifest_sha256: str
+    host_clock_epoch_sha256: str
     previous_snapshot_sha256: str
     proposed_snapshot_sha256: str
     created_at_ms: int
@@ -141,7 +142,8 @@ class MemoryConsolidationCandidate:
         _id(self.candidate_id, "candidate ID")
         for name in (
             "candidate_sha256", "evidence_sha256", "dependency_manifest_sha256",
-            "current_dependency_manifest_sha256", "previous_snapshot_sha256", "proposed_snapshot_sha256",
+            "current_dependency_manifest_sha256", "host_clock_epoch_sha256",
+            "previous_snapshot_sha256", "proposed_snapshot_sha256",
         ):
             _sha(getattr(self, name), name)
         if self.tier not in _TIERS:
@@ -177,6 +179,7 @@ class MemoryConsolidationCandidate:
             "privacy_scope": self.privacy_scope,
             "dependency_manifest_sha256": self.dependency_manifest_sha256,
             "current_dependency_manifest_sha256": self.current_dependency_manifest_sha256,
+            "host_clock_epoch_sha256": self.host_clock_epoch_sha256,
             "previous_snapshot_sha256": self.previous_snapshot_sha256,
             "proposed_snapshot_sha256": self.proposed_snapshot_sha256,
             "created_at_ms": self.created_at_ms,
@@ -226,11 +229,13 @@ def evaluate_consolidation(
     *,
     trusted_host_key: bytes,
     now_ms: int,
+    current_host_clock_epoch_sha256: str,
 ) -> ConsolidationDecision:
     """Return a signed advisory decision; never mutates or promotes memory."""
     key = _key_bytes(trusted_host_key)
     if type(now_ms) is not int or not 0 <= now_ms <= _MAX_TIME_MS:
         raise ValueError("now_ms must be a bounded monotonic host timestamp")
+    _sha(current_host_clock_epoch_sha256, "current host clock epoch")
     expected = _mac(b"star.memory-consolidation.candidate.v1", candidate.payload(), key)
     if not hmac.compare_digest(expected, candidate.signature):
         raise PermissionError("candidate host signature is invalid")
@@ -241,6 +246,9 @@ def evaluate_consolidation(
     if candidate.created_at_ms > now_ms or candidate.expires_at_ms <= now_ms or age > policy.max_age_ms:
         status = "revalidation_required"
         reasons.append("candidate_is_future_dated_or_expired")
+    elif candidate.host_clock_epoch_sha256 != current_host_clock_epoch_sha256:
+        status = "revalidation_required"
+        reasons.append("host_clock_epoch_changed")
     elif (candidate.dependency_manifest_sha256 != candidate.current_dependency_manifest_sha256
           or candidate.stale_dependency_count > 0):
         status = "revalidation_required"
