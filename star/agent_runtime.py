@@ -3,7 +3,8 @@
 Workers are trusted application-defined async adapters, never model-generated Python.
 A cancellation request does not prove that an external thread, process, model server,
 GPU operation or device worker has stopped. Unconfirmed async tasks remain retained
-by AgentRuntimeState until they really complete.
+by AgentRuntimeState until they really complete. Keep TeamResult.runtime_state alive
+until its quarantine is empty.
 """
 from __future__ import annotations
 
