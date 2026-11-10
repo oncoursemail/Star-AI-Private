@@ -96,7 +96,7 @@ The context builder:
 - selects one matching event and at most four fresh cross-modal pairs;
 - emits at most 2,048 UTF-8 bytes;
 - rejects a faulted clock, missing event, inconsistent age, stale event or malformed alignment;
-- copies no raw source ID, session ID, clock epoch, evidence digest, transcript, media, viewer name or chat text.
+- copies no raw source ID, session ID, clock epoch, evidence digest, transcript, media, viewer name or chat text; the packet constructor rejects extra JSON fields, duplicate keys and non-canonical payloads.
 
 The stage attaches the packet only when all of these match:
 1. the packet event key equals the selected StreamSignal.signal_id;
@@ -304,7 +304,7 @@ Only after offline replay and private rehearsal pass. Keep publishing, monetizat
 
 The new packet builder was exercised in a clean scratch package with a minimal timeline-type stub:
 
-- 8 focused builder smoke checks passed (fresh alignment, privacy omissions, stale/faulted snapshots, missing event and invalid event key).
+- 6 focused scratch smoke checks passed after packet-schema hardening (fresh alignment, privacy omissions, stale/faulted snapshots, missing event, invalid event key and forged-field rejection).
 - The new repository test file adds builder and stage-integration regressions, and tests/test_stream_context_host.py now covers the full context-host → governor → stage forwarding path.
 - The repository integration tests have not been executed in this run; GitHub Actions is the independent verification step.
 - Ruff was not installed in the scratch runtime.
