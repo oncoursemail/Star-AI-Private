@@ -185,7 +185,7 @@ class SemanticTurnGate:
             raise TypeError("prediction must be a validated SemanticTurnPrediction")
         if (prediction is not None and prediction.turn_id == expected_turn_id
                 and expected_audio_end_ms is not None
-                and abs(audio_end - prediction.audio_end_ms) > 25.0):
+                and abs(expected_audio_end_ms - prediction.audio_end_ms) > 25.0):
             with self._lock:
                 self._counts["predictions_rejected"] += 1
             return self._fallback_or_hold(
