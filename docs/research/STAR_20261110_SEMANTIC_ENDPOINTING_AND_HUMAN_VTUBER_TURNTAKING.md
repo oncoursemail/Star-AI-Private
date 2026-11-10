@@ -54,8 +54,8 @@ The adapter has no dependency on LiveKit and does not receive PCM, transcripts, 
 2. If authenticated owner barge-in is confirmed, return owner-yield immediately; semantic prediction cannot delay it.
 3. If VAD is stale, echo is uncleared, guest speech is active or another existing hold applies, preserve that hold.
 4. Only when the VAD gate says trusted silence may semantic endpointing permit speech.
-5. Require the prediction to match the exact current turn ID, arrive within its freshness and endpointing budgets, use a monotonically increasing sequence, and pass the configured confidence threshold when confidence is available.
-6. If the semantic detector says the speaker is continuing, keep STAR silent until the maximum endpointing budget. If a prediction is missing/stale or still says continue at 2.5 seconds, a fresh VAD-silence decision may use the bounded timeout fallback; owner, guest and stale-VAD holds still take precedence.
+5. Require the prediction to match the exact current turn ID and host audio-end timestamp, arrive within its freshness and endpointing budgets, use a monotonically increasing sequence, and pass the configured confidence threshold when confidence is available.
+6. If no fresh prediction arrives, use the host's audio-end timestamp and allow a fallback after 1.0 second of waiting, but only when VAD still reports trusted silence. If the detector explicitly says continue or confidence is low, hold until the 2.5-second maximum endpointing budget. Owner, guest and stale-VAD holds always take precedence.
 
 The semantic gate can delay or permit a response. It cannot authenticate the owner, override guest speech, authorize a tool action or trigger an actual audio interruption. The host still owns playback stop, stage interruption and avatar cancellation.
 
@@ -64,8 +64,8 @@ The semantic gate can delay or permit a response. It cannot authenticate the own
 | Setting | Default |
 |---|---:|
 | Prediction freshness | 500 ms |
-| Maximum audio-end-to-decision budget | 2,500 ms |
-| Timeout fallback | After 2,500 ms, only with fresh VAD silence and a host-supplied audio-end timestamp |
+| Missing/stale prediction timeout | 1,000 ms, only with fresh VAD silence and host audio-end timestamp |
+| Explicit continue/low-confidence maximum | 2,500 ms, still subject to fresh VAD silence |
 | Minimum confidence when supplied | 0.50 |
 | Recent turn sequence history | 32 turn IDs |
 | Accepted detector identifiers | LiveKit v1, LiveKit v1-mini, custom |
