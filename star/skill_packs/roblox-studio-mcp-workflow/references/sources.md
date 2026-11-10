@@ -1,6 +1,6 @@
 # Sources for roblox-studio-mcp-workflow
 
-Written 2026-10-13. The field evidence comes from the owner's private Paintball port project, a Roblox Studio port that
+Original field notes written 2026-10-13; Studio MCP/Open Cloud permissions reviewed 2026-11-10 against the current official Creator Hub pages. The field evidence comes from the owner's private Paintball port project, a Roblox Studio port that
 Claude and Codex ran from 2026-09-20 to 2026-10-08. It was read only and rewritten as general lessons; no game assets
 or code were copied. The official pages are from the Roblox Creator Documentation (CC-BY-4.0), found through the STAR
 Knowledge index.
@@ -17,6 +17,9 @@ Knowledge index.
 | S4 | https://create.roblox.com/docs/reference/engine/classes/ChangeHistoryService |
 | S5 | https://create.roblox.com/docs/reference/engine/classes/RunService |
 | S6 | https://create.roblox.com/docs/reference/engine/classes/BasePart |
+| S7 | Studio MCP Open Cloud integration: open_cloud_invoke, per-game and per-person permissions, Safe/Balanced/Full access/Custom levels, scope categories, approved upload folders, Network capability/domain allowlist, and unavailable scopes | https://create.roblox.com/docs/studio/mcp-open-cloud |
+| S8 | Open Cloud scope names, target types and supported endpoints | https://create.roblox.com/docs/cloud/reference/scopes |
+| S9 | Studio data-store access shares live experience data; use a separate test experience and enable Studio API Services only there | https://create.roblox.com/docs/cloud-services/data-stores |
 
 API names verified with the knowledge service /api-lookup on 2026-10-13: RunService:IsRunning, Instance:FindFirstChild,
 Instance.AncestryChanged, BasePart.Locked, Instance.Archivable, ChangeHistoryService:Undo, Instance:GetDescendants.
