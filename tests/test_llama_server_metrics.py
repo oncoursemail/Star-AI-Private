@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from urllib.error import HTTPError
 
 import pytest
@@ -170,29 +169,29 @@ class FakeResponse:
 
     def __init__(self, body: bytes):
         self.body = body
-        self.read_limit = None
+        self.read_limit: int | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> FakeResponse:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *_args: object) -> bool:
         return False
 
     def read(self, limit: int) -> bytes:
         self.read_limit = limit
         return self.body[:limit]
 
-    def getcode(self):
+    def getcode(self) -> int:
         return self.status
 
 
 class FakeOpener:
-    def __init__(self, response):
+    def __init__(self, response: FakeResponse | Exception):
         self.response = response
-        self.request = None
-        self.timeout = None
+        self.request: object | None = None
+        self.timeout: float | None = None
 
-    def open(self, request, timeout):
+    def open(self, request: object, timeout: float) -> FakeResponse:
         self.request = request
         self.timeout = timeout
         if isinstance(self.response, Exception):
@@ -205,6 +204,7 @@ def test_fetch_uses_loopback_get_without_auth_and_bounds_response():
     opener = FakeOpener(response)
     snapshot = fetch_metrics("http://127.0.0.1:8080/v1", opener=opener)
     assert snapshot.get("llamacpp:prompt_tokens_total") == 100
+    assert opener.request is not None
     assert opener.request.get_method() == "GET"
     assert opener.request.full_url == "http://127.0.0.1:8080/metrics"
     assert opener.request.get_header("Authorization") is None
@@ -236,7 +236,7 @@ def test_capture_window_uses_two_snapshots_and_returns_only_aggregate_metrics():
     ])
     sleeps = []
 
-    def fake_fetcher(endpoint, *, model, timeout_seconds):
+    def fake_fetcher(endpoint: str, *, model: str | None, timeout_seconds: float) -> LlamaMetricsSnapshot:
         assert endpoint == "http://127.0.0.1:8080/v1"
         assert model is None
         assert timeout_seconds == 1.5
