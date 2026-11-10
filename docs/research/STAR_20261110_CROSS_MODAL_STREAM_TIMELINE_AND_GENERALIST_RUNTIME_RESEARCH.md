@@ -134,6 +134,7 @@ Realtime-Venus (technical report dated September 12, 2026) describes two coopera
 ### Natural interaction includes appropriate silence
 
 The Realtime-Venus evaluation separately measures continuing through backchannels, speech directed at other people, background speech and responding to actual interruptions. This supports Star's existing decision vocabulary: speak, acknowledge, hold, yield or remain silent.
+Its published Full-Duplex-Bench v1.5 results report 97% continuation through user backchannels, 88% through speech directed at others and 86% through background speech; actual interruption response is reported separately at 75%. These are results for that system and benchmark, not expected Star performance. Star should track continuation and interruption-response rates separately rather than optimizing one aggregate score. [Realtime-Venus results](https://realtime-venus.github.io/)
 
 **Star implication:** do not narrate every frame or respond to every chat line. Measure unnecessary responses and correct silence alongside response quality.
 
