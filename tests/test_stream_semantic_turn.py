@@ -72,6 +72,21 @@ def test_semantic_completion_allows_speech_only_after_trusted_vad_silence():
     assert advice.reason == "semantic_turn_complete"
 
 
+def test_detector_boolean_result_can_be_used_without_confidence_score():
+    prediction = SemanticTurnPrediction(
+        turn_id=TURN, sequence=1, audio_end_ms=1110.0,
+        observed_at_ms=1450.0, is_complete=True,
+        model="livekit-turn-detector-v1-mini", language="en",
+        confidence=None, latency_ms=80.0,
+    )
+    advice = SemanticTurnGate(_quiet_gate()).advise(
+        now_ms=1460.0, star_speaking=False,
+        expected_turn_id=TURN, prediction=prediction,
+    )
+    assert advice.action == "speak"
+    assert advice.reason == "semantic_turn_complete"
+
+
 def test_mid_sentence_pause_prediction_keeps_star_silent():
     gate = SemanticTurnGate(_quiet_gate())
     advice = gate.advise(
