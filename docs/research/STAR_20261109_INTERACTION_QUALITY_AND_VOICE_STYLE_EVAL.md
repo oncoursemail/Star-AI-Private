@@ -6,7 +6,7 @@
 
 ## Executive finding
 
-STAR already has a content-free full-duplex evaluator for floor control, interruptions, silence, backchannels, and first-audio/avatar timing in `star/voice/duplex_eval.py`. That is necessary, but it does not answer three separate questions:
+A separate draft, PR #1099, proposes a content-free full-duplex evaluator for floor control, interruptions, silence, backchannels, and first-audio/avatar timing. This PR is intentionally standalone and adds three complementary questions without importing or depending on that draft:
 
 1. Does the voice sound appropriate for the moment (including requested whisper/soft/projected delivery)?
 2. Does STAR complete a spoken task correctly?
