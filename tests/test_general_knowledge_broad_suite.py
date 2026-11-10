@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from copy import deepcopy
 import json
 from pathlib import Path
 
