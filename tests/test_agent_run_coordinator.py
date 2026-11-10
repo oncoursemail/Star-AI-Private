@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+import os
 import sqlite3
 import threading
 
@@ -252,6 +253,8 @@ def test_result_and_identifier_budgets_are_enforced(tmp_path):
 
 
 def test_private_directory_is_required(tmp_path):
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits are not enforced on Windows")
     public = tmp_path / "public"
     public.mkdir(mode=0o755)
     public.chmod(0o755)
