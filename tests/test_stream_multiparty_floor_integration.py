@@ -76,6 +76,9 @@ def test_spoken_question_addressed_to_star_enters_governed_stage():
     plan = rig.governor.prepare()
     assert plan is not None
     assert plan.signal_id == signal.signal_id
+    decision = rig.governor.take_floor_decision(signal.signal_id)
+    assert decision is not None and decision.action == "respond"
+    assert rig.governor.take_floor_decision(signal.signal_id) is None
     assert rig.governor.status()["floor_admitted"] == 1
 
 
@@ -196,3 +199,31 @@ def test_spoken_turn_is_rejected_when_floor_gate_is_not_configured():
     )
     assert not governor.offer(signal, moderated=True, spoken_turn=True)
     assert governor.status()["floor_missing"] == 1
+
+
+
+def test_backchannel_decision_is_host_visible_but_never_queued_as_speech():
+    rig = Rig()
+    signal = StreamSignal(
+        "turn-backchannel", "viewer_comment", rig.now / 1000, "Mm-hmm.",
+        "session-speaker-slot-1", "reported",
+    )
+    receipt = FloorObservation(
+        turn_id=signal.signal_id,
+        session_epoch=rig.floor.session_epoch,
+        sequence=1,
+        captured_ms=rig.now,
+        speaker_slot=1,
+        addressed_to="star",
+        speech_act="backchannel",
+        speaker_confidence=0.95,
+        addressee_confidence=0.95,
+        act_confidence=0.95,
+    )
+    assert not rig.governor.offer(
+        signal, moderated=True, spoken_turn=True, floor_observation=receipt
+    )
+    decision = rig.governor.take_floor_decision(signal.signal_id)
+    assert decision is not None and decision.action == "backchannel"
+    assert rig.governor.take_floor_decision(signal.signal_id) is None
+    assert rig.governor.prepare() is None
