@@ -317,8 +317,6 @@ def test_expired_lease_cannot_be_resurrected_by_renewal(tmp_path):
 
 
 def test_corrupted_dependency_result_digest_fails_closed(tmp_path):
-    import sqlite3
-
     plan = make_plan(
         Task("a", "research", "Upstream"),
         Task("b", "review", "Downstream", dependencies=("a",)),
