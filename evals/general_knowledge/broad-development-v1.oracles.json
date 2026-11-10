@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "suite_id": "star-general-foundations-broad-development-v1",
+  "status": "root_reviewed_development_oracles_no_model_measurement",
+  "visibility": "Evaluator-only sidecar. Never serialize this file, derivations, expected outputs or oracle hashes into model messages.",
+  "grading_policy": "Strict bounded JSON parsing, duplicate-key rejection, exact key sets and JSON types, then semantic equality to independently checked expected objects. Reject booleans as integers, non-finite numbers and malformed ISO dates. Object key order and whitespace do not affect correctness; array order is significant.",
+  "cases": {
+    "GF-01": {
+      "expected": {
+        "planet": "Jupiter"
+      },
+      "derivation": "NASA's About Planets page identifies Jupiter as the largest planet in the solar system: https://science.nasa.gov/solar-system/planets/"
+    },
+    "GF-02": {
+      "expected": {
+        "planet": "Mars",
+        "position": 4
+      },
+      "derivation": "NASA lists the inner planets as Mercury, Venus, Earth, Mars and explicitly identifies Mars as fourth from the Sun: https://science.nasa.gov/solar-system/planets/"
+    },
+    "GF-03": {
+      "expected": {
+        "element": "carbon",
+        "atomic_number": 6
+      },
+      "derivation": "Carbon occupies atomic number 6 in the IUPAC periodic table: https://iupac.org/what-we-do/periodic-table-of-elements/"
+    },
+    "GF-04": {
+      "expected": {
+        "formula": "H2O"
+      },
+      "derivation": "PubChem lists the molecular formula for water as H2O: https://pubchem.ncbi.nlm.nih.gov/compound/Water"
+    },
+    "GF-05": {
+      "expected": {
+        "released_gas": "oxygen"
+      },
+      "derivation": "OpenStax Biology 2e explains that splitting water in the light-dependent reactions releases oxygen: https://openstax.org/books/biology-2e/pages/8-2-the-light-dependent-reactions-of-photosynthesis"
+    },
+    "GF-06": {
+      "expected": {
+        "organelle": "mitochondrion",
+        "process": "oxidative_phosphorylation"
+      },
+      "derivation": "OpenStax Biology 2e states that oxidative phosphorylation takes place in mitochondria in eukaryotic cells: https://openstax.org/books/biology-2e/pages/7-1-energy-in-living-systems"
+    },
+    "GF-07": {
+      "expected": {
+        "law": "action_reaction"
+      },
+      "derivation": "Newton's third law is conventionally summarized as equal and opposite action-reaction forces; NASA Glenn's beginner guide is a public explanatory reference: https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/newtons-laws-of-motion/"
+    },
+    "GF-08": {
+      "expected": {
+        "meters_per_second": 299792458
+      },
+      "derivation": "NIST CODATA lists the speed of light in vacuum as exactly 299792458 m s^-1: https://physics.nist.gov/cgi-bin/cuu/Value?c"
+    },
+    "GF-09": {
+      "expected": {
+        "capital": "Canberra"
+      },
+      "derivation": "The Australian National Capital Authority identifies Canberra as Australia's national capital: https://www.nca.gov.au/"
+    },
+    "GF-10": {
+      "expected": {
+        "ocean": "Pacific"
+      },
+      "derivation": "NOAA identifies the Pacific as the largest ocean basin: https://oceanservice.noaa.gov/facts/biggestocean.html"
+    },
+    "GF-11": {
+      "expected": {
+        "date": "1969-07-20"
+      },
+      "derivation": "NASA's Apollo 11 mission overview dates the lunar landing to July 20, 1969: https://www.nasa.gov/history/apollo-11-mission-overview/"
+    },
+    "GF-12": {
+      "expected": {
+        "date": "1903-12-17"
+      },
+      "derivation": "The Smithsonian National Air and Space Museum dates the Wright Flyer's first powered flight at Kitty Hawk to December 17, 1903: https://airandspace.si.edu/collection-objects/wright-1903-flyer/nasm_A19610048000"
+    },
+    "GF-13": {
+      "expected": {
+        "author": "Mary Shelley"
+      },
+      "derivation": "The Library of Congress catalog record names Mary Wollstonecraft Shelley as the author of the 1818 Frankenstein: https://www.loc.gov/item/53051218/"
+    },
+    "GF-14": {
+      "expected": {
+        "artist": "Leonardo da Vinci"
+      },
+      "derivation": "The Louvre identifies the Mona Lisa as Leonardo da Vinci's masterpiece: https://www.louvre.fr/en/explore/the-palace/from-the-mona-lisa-to-the-wedding-feast-at-cana"
+    },
+    "GF-15": {
+      "expected": {
+        "expansion": "HyperText Markup Language"
+      },
+      "derivation": "MDN's HTML reference expands HTML as HyperText Markup Language: https://developer.mozilla.org/en-US/docs/Web/HTML"
+    },
+    "GF-16": {
+      "expected": {
+        "list": "mutable",
+        "tuple": "immutable"
+      },
+      "derivation": "The Python tutorial explicitly describes lists as mutable and tuples as immutable: https://docs.python.org/3/tutorial/datastructures.html"
+    },
+    "GF-17": {
+      "expected": {
+        "english": "dog"
+      },
+      "derivation": "The Royal Spanish Academy dictionary entry for perro: https://dle.rae.es/perro"
+    },
+    "GF-18": {
+      "expected": {
+        "english": "thank you"
+      },
+      "derivation": "The Royal Spanish Academy dictionary entry for gracias: https://dle.rae.es/gracias"
+    },
+    "GF-19": {
+      "expected": {
+        "layer": "stratosphere"
+      },
+      "derivation": "NOAA explains that the ozone layer is in the stratosphere: https://www.nesdis.noaa.gov/news/unlocking-the-secrets-of-the-stratosphere-the-jpss-ozone-mapping-and-profiler-suite-omps"
+    },
+    "GF-20": {
+      "expected": {
+        "primary_gas": "nitrogen"
+      },
+      "derivation": "NOAA's dry-air composition table lists nitrogen at 78.084%, the largest share: https://www.noaa.gov/jetstream/atmosphere"
+    },
+    "GF-21": {
+      "expected": {
+        "branches": [
+          "Legislative",
+          "Judicial",
+          "Executive"
+        ]
+      },
+      "derivation": "USAGov lists the three federal branches in this order: legislative, judicial, executive: https://www.usa.gov/branches-of-government"
+    },
+    "GF-22": {
+      "expected": {
+        "definition": "sustained_general_increase_in_overall_price_level"
+      },
+      "derivation": "The IMF describes inflation as a sustained and persistent increase in the economy's overall price level: https://www.elibrary.imf.org/abstract/book/9781557756282/C02.xml"
+    },
+    "GF-23": {
+      "expected": {
+        "test_count": 16,
+        "source_ids": [
+          "S2"
+        ]
+      },
+      "derivation": "Synthetic closed-world example. S2 is the explicit dated correction to S1; S3 concerns a different unreleased version and does not change v2.1."
+    },
+    "GF-24": {
+      "expected": {
+        "tickets": null,
+        "status": "not_provided",
+        "source_ids": []
+      },
+      "derivation": "Synthetic closed-world example. Neither supplied source states Chloe's ticket count; missing evidence must be represented as unknown, not zero."
+    }
+  }
+}

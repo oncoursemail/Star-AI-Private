@@ -16,9 +16,10 @@ DEFAULT_SUITE = ROOT / "evals/general_knowledge/development-v1.prompts.json"
 DEFAULT_ORACLES = ROOT / "evals/general_knowledge/development-v1.oracles.json"
 MAX_FILE = 1_048_576
 MAX_RESPONSE = 8_192
-IDS = [f"GF-{number:02}" for number in range(1, 11)]
+MAX_TASKS = 64
+IDS = [f"GF-{number:02}" for number in range(1, MAX_TASKS + 1)]
 DECLARATION = "operator_declared_not_authenticated"
-SCOPE = "Ten public development tasks; artifact consistency only, no model delivery, broad knowledge or gain proof."
+SCOPE = "Legacy v1 label only; reports use the scope declared by each suite."
 
 
 def digest(data: bytes) -> str:
@@ -125,10 +126,13 @@ def load_suite(path=DEFAULT_SUITE) -> Artifact:
     if type(data["schema_version"]) is not int or data["schema_version"] != 1 or data["split"] != "development":
         _reject("Only the development suite version is supported")
     _label(data["suite_id"])
+    if (type(data["authorship"]) is not str or not 1 <= len(data["authorship"]) <= 2000
+            or type(data["scope"]) is not str or not 1 <= len(data["scope"]) <= 2000):
+        _reject("Invalid suite authorship or scope declaration")
     if type(data["system"]) is not str or not 1 <= len(data["system"]) <= 2000:
         _reject("Invalid shared prompt")
-    if type(data["tasks"]) is not list or len(data["tasks"]) != 10:
-        _reject("Exactly ten development tasks are required")
+    if type(data["tasks"]) is not list or not 10 <= len(data["tasks"]) <= MAX_TASKS:
+        _reject("Development suites must contain 10..64 ordered tasks")
     for task, identifier in zip(data["tasks"], IDS):
         _keys(task, ("id", "category", "prompt", "response_fields"))
         if task["id"] != identifier or type(task["prompt"]) is not str or not 1 <= len(task["prompt"]) <= 6000:
@@ -139,6 +143,8 @@ def load_suite(path=DEFAULT_SUITE) -> Artifact:
             _reject("Invalid response fields")
         for field in fields:
             _label(field)
+    if len({task["category"] for task in data["tasks"]}) < 2:
+        _reject("A general-foundation suite must cover at least two categories")
     return artifact
 
 
@@ -148,7 +154,7 @@ def load_oracles(suite: Artifact, path=DEFAULT_ORACLES) -> Artifact:
     _keys(data, ("schema_version", "suite_id", "status", "visibility", "grading_policy", "cases"))
     if type(data["schema_version"]) is not int or data["schema_version"] != 1 or data["suite_id"] != suite.data["suite_id"]:
         _reject("Oracle suite identity differs")
-    _keys(data["cases"], IDS)
+    _keys(data["cases"], [task["id"] for task in suite.data["tasks"]])
     for task in suite.data["tasks"]:
         case = data["cases"][task["id"]]
         _keys(case, ("expected", "derivation"))
@@ -167,16 +173,20 @@ def prepare(suite: Artifact, repeats=1) -> dict:
     """Allowlisted messages only. This function never reads an oracle file."""
     _integer(repeats, 1, 3)
     requests = []
+    category_counts = {}
     for task in suite.data["tasks"]:
+        category_counts[task["category"]] = category_counts.get(task["category"], 0) + 1
         messages = [{"role": "system", "content": suite.data["system"]},
                     {"role": "user", "content": task["prompt"]}]
-        fingerprint = digest(_canonical({"task_id": task["id"], "messages": messages}))
+        fingerprint = digest(_canonical({"task_id": task["id"], "category": task["category"],
+                                         "messages": messages}))
         for attempt in range(1, repeats + 1):
             requests.append({"task_id": task["id"], "attempt": attempt,
                              "request_sha256": fingerprint, "messages": messages})
     return {"schema_version": 1, "kind": "general_foundation_prepared", "suite_id": suite.data["suite_id"],
             "suite_sha256": suite.sha256, "grader_sha256": grader_digest(), "repeats": repeats,
-            "requests": requests, "scope": SCOPE}
+            "requests": requests, "category_counts": dict(sorted(category_counts.items())),
+            "scope": suite.data["scope"]}
 
 
 def _model(value):
@@ -222,7 +232,7 @@ def _format(value, expected):
                 _reject("Expected bounded identifier array")
         elif type(item) is not type(reference):
             _reject("Wrong response value type")
-        if key in {"end_utc", "delivery_date"}:
+        if key in {"end_utc", "delivery_date", "date"}:
             pattern = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z" if key == "end_utc" else r"\d{4}-\d{2}-\d{2}"
             if not re.fullmatch(pattern, item):
                 _reject("Wrong date representation")
@@ -263,6 +273,8 @@ def _rows(suite, oracles, run):
 
 def score_run(suite: Artifact, oracles: Artifact, run: dict) -> dict:
     rows, scored, counts = _rows(suite, oracles, run), [], {}
+    task_categories = {task["id"]: task["category"] for task in suite.data["tasks"]}
+    category_counts = {}
     for row in rows:
         if row["outcome"] == "transport_error":
             status = "transport_error"
@@ -277,12 +289,18 @@ def score_run(suite: Artifact, oracles: Artifact, run: dict) -> dict:
             except (ValueError, TypeError, OverflowError):
                 status = "invalid_format"
         counts[status] = counts.get(status, 0) + 1
+        category = task_categories[row["task_id"]]
+        category_bucket = category_counts.setdefault(category, {})
+        category_bucket[status] = category_bucket.get(status, 0) + 1
         scored.append({key: row[key] for key in ("task_id", "attempt", "request_sha256", "response_sha256", "error_code")}
-                      | {"status": status})
+                      | {"category": category, "status": status})
     return {"schema_version": 1, "kind": "general_foundation_scores", "suite_sha256": suite.sha256,
             "oracle_sha256": oracles.sha256, "grader_sha256": grader_digest(), "identity": run["identity"],
-            "provenance": DECLARATION, "scope": SCOPE, "repeats": run["repeats"], "total": len(scored),
-            "counts": counts, "rows": scored}
+            "provenance": DECLARATION, "scope": suite.data["scope"], "repeats": run["repeats"], "total": len(scored),
+            "counts": counts,
+            "category_counts": {name: dict(sorted(values.items()))
+                                for name, values in sorted(category_counts.items())},
+            "rows": scored}
 
 
 def compare_runs(suite, oracles, baseline, candidate, *, axis="same", expected_baseline_model=None, expected_candidate_model=None):
@@ -299,10 +317,11 @@ def compare_runs(suite, oracles, baseline, candidate, *, axis="same", expected_b
         _reject("Expected model pairs require explicit model-axis comparison")
     if _canonical(first) != _canonical(second):
         _reject("Declared source, model, adapter, backend, mode or options differ")
-    changes = [{"task_id": a["task_id"], "attempt": a["attempt"], "baseline": a["status"], "candidate": b["status"]}
+    changes = [{"task_id": a["task_id"], "category": a["category"], "attempt": a["attempt"],
+                 "baseline": a["status"], "candidate": b["status"]}
                for a, b in zip(before["rows"], after["rows"]) if a["status"] != b["status"]]
     return {"kind": "general_foundation_comparison", "axis": axis, "provenance": DECLARATION,
-            "scope": SCOPE, "comparison_status": "incomplete_transport" if any(
+            "scope": suite.data["scope"], "comparison_status": "incomplete_transport" if any(
                 item["counts"].get("transport_error", 0) for item in (before, after)) else "artifact_consistent",
             "baseline": before, "candidate": after, "changes": changes}
 
@@ -328,7 +347,9 @@ def main(arguments=None):
         suite = load_suite(args.suite)
         if args.command == "list":
             result = {"suite_id": suite.data["suite_id"], "suite_sha256": suite.sha256,
-                      "scope": SCOPE, "tasks": [{k: task[k] for k in ("id", "category")} for task in suite.data["tasks"]]}
+                      "scope": suite.data["scope"],
+                      "category_counts": prepare(suite, 1)["category_counts"],
+                      "tasks": [{k: task[k] for k in ("id", "category")} for task in suite.data["tasks"]]}
         elif args.command == "prepare":
             result = prepare(suite, args.repeats)
         else:
