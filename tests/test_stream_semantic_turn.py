@@ -197,6 +197,16 @@ def test_replayed_sequence_is_rejected_and_higher_sequence_is_accepted():
     ).action == "speak"
 
 
+def test_host_audio_endpoint_must_match_the_prediction():
+    advice = SemanticTurnGate(_quiet_gate()).advise(
+        now_ms=1460.0, star_speaking=False,
+        expected_turn_id=TURN, prediction=_prediction(),
+        expected_audio_end_ms=900.0,
+    )
+    assert advice.action == "hold"
+    assert advice.reason == "semantic_audio_end_mismatch"
+
+
 def test_low_confidence_prediction_is_held():
     advice = SemanticTurnGate(_quiet_gate(), minimum_confidence=0.6).advise(
         now_ms=1460.0, star_speaking=False,
