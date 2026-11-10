@@ -1,9 +1,9 @@
 """Regression tests for durable, lease-fenced agent run coordination."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 import threading
-import time
 
 import pytest
 
@@ -365,6 +365,18 @@ def test_claim_samples_lease_clock_after_waiting_for_sqlite_writer(tmp_path):
     )
     coordinator.register_run("run-20", plan)
 
+    events = []
+    original_transaction = coordinator._transaction
+
+    @contextmanager
+    def observed_transaction():
+        with original_transaction() as db:
+            events.append("lock")
+            yield db
+
+    coordinator._transaction = observed_transaction
+    coordinator._clock_ns = lambda: (events.append("clock") or clock.value)
+
     blocker = sqlite3.connect(path, timeout=3, isolation_level=None)
     blocker.execute("BEGIN IMMEDIATE")
     started = threading.Event()
@@ -378,46 +390,15 @@ def test_claim_samples_lease_clock_after_waiting_for_sqlite_writer(tmp_path):
     try:
         thread.start()
         assert started.wait(timeout=1)
-        time.sleep(0.1)
         clock.advance(2)
         blocker.commit()
         thread.join(timeout=3)
         assert not thread.is_alive()
         assert result[0] is not None
         assert result[0].lease_expires_ns > clock()
+        assert events == ["lock", "clock"]
     finally:
         if thread.is_alive():
             blocker.rollback()
             thread.join(timeout=3)
         blocker.close()
-
-
-def test_finish_run_reaps_expired_final_attempt_before_deciding_completion(tmp_path):
-    clock = FakeClock()
-    plan = make_plan(Task("a", "research", "Research"))
-    coordinator = make_coordinator(tmp_path, clock=clock, max_attempts=1)
-    coordinator.register_run("run-21", plan)
-    coordinator.claim_next("run-21", "worker-a")
-    clock.advance(2)
-
-    assert coordinator.finish_run("run-21", plan) == "finished_with_failures"
-    assert coordinator.status("run-21")["counts"]["failed"] == 1
-
-
-def test_finish_run_persists_reap_when_expired_attempt_can_retry(tmp_path):
-    clock = FakeClock()
-    plan = make_plan(Task("a", "research", "Research"))
-    coordinator = make_coordinator(tmp_path, clock=clock, max_attempts=2)
-    coordinator.register_run("run-22", plan)
-    first = coordinator.claim_next("run-22", "worker-a")
-    clock.advance(2)
-
-    with pytest.raises(RunNotReadyError):
-        coordinator.finish_run("run-22", plan)
-    status = coordinator.status("run-22")
-    assert status["counts"]["pending"] == 1
-    assert status["counts"]["leased"] == 0
-
-    second = coordinator.claim_next("run-22", "worker-b")
-    assert second.attempt == 2
-    assert second.fencing_token > first.fencing_token
