@@ -257,3 +257,41 @@ def test_invalid_clock_is_rejected_before_claiming(tmp_path):
     coordinator = AgentRunCoordinator(private_database(tmp_path), clock_ns=lambda: 1.5)
     with pytest.raises(RuntimeError, match="invalid timestamp"):
         coordinator.register_run("run-14", plan)
+
+
+def test_restart_re_registers_exact_plan_and_reuses_only_durable_completed_dependencies(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(
+        Task("a", "research", "Research the API"),
+        Task("b", "review", "Review the API", dependencies=("a",)),
+    )
+    path = private_database(tmp_path)
+    first = AgentRunCoordinator(path, clock_ns=clock, lease_seconds=1)
+    first.register_run("run-15", plan)
+    lease_a = first.claim_next("run-15", "worker-a")
+    first.complete(lease_a, answer="durable API result", evidence=("docs/api.md",))
+
+    restarted = AgentRunCoordinator(path, clock_ns=clock, lease_seconds=1)
+    assert restarted.register_run("run-15", plan) is False
+    lease_b = restarted.claim_next("run-15", "worker-b")
+    assert lease_b.task.id == "b"
+    assert lease_b.dependency_results[0].answer == "durable API result"
+
+
+def test_restart_reclaims_expired_lease_with_new_fence(tmp_path):
+    clock = FakeClock()
+    plan = make_plan(Task("a", "research", "Research"))
+    path = private_database(tmp_path)
+    first = AgentRunCoordinator(path, clock_ns=clock, lease_seconds=1)
+    first.register_run("run-16", plan)
+    old = first.claim_next("run-16", "worker-old")
+
+    clock.advance(2)
+    restarted = AgentRunCoordinator(path, clock_ns=clock, lease_seconds=1)
+    restarted.register_run("run-16", plan)
+    new = restarted.claim_next("run-16", "worker-new")
+
+    assert new.fencing_token > old.fencing_token
+    with pytest.raises(StaleLeaseError):
+        first.complete(old, answer="late old process result")
+    assert restarted.complete(new, answer="recovered result") == "completed"
