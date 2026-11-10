@@ -100,6 +100,24 @@ def _plan_hash(plan: TaskPlan) -> str:
     return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
 
 
+def _snapshot_plan(plan: TaskPlan) -> TaskPlan:
+    """Detach the coordinator from the caller's mutable TaskPlan dictionary."""
+    tasks = [
+        Task(
+            task.id,
+            task.role,
+            task.goal,
+            tuple(task.dependencies),
+            tuple(task.reads),
+            tuple(task.writes),
+            tuple(task.references),
+            tuple(task.evidence),
+        )
+        for task in plan.tasks.values()
+    ]
+    return TaskPlan(tasks, max_parallel=plan.max_parallel)
+
+
 def _result_payload(answer: str, evidence: tuple[str, ...], elapsed_ms: int) -> str:
     if type(answer) is not str or not answer.strip() or len(answer) > 12000:
         raise ValueError("Answer must be nonempty text of at most 12,000 characters")
@@ -265,6 +283,7 @@ class AgentRunCoordinator:
         self._validate_identifier(run_id, "run_id")
         if not isinstance(plan, TaskPlan) or not plan.tasks or len(plan.tasks) > 64:
             raise ValueError("Expected a nonempty TaskPlan containing at most 64 tasks")
+        plan = _snapshot_plan(plan)
         if any(task.writes for task in plan.tasks.values()):
             raise PermissionError(
                 "Durable coordinator v1 accepts read-only tasks only; "
@@ -537,16 +556,20 @@ class AgentRunCoordinator:
     def reap_expired(self, run_id: str, plan: TaskPlan) -> int:
         """Expire old leases and block descendants whose dependencies failed."""
         self._validate_identifier(run_id, "run_id")
-        self._verify_plan(run_id, plan)
+        plan = self._verified_plan(run_id, plan)
         now = self._now()
         with self._transaction() as db:
             count = self._expire_leases(db, run_id, now)
             self._block_failed_dependents(db, run_id, plan)
             return count
 
-    def _verify_plan(self, run_id: str, plan: TaskPlan) -> None:
-        if not isinstance(plan, TaskPlan) or _plan_hash(plan) != self._registered_plan_hash(run_id):
+    def _verified_plan(self, run_id: str, plan: TaskPlan) -> TaskPlan:
+        if not isinstance(plan, TaskPlan):
             raise PlanMismatchError("Caller plan does not match the registered run")
+        snapshot = _snapshot_plan(plan)
+        if _plan_hash(snapshot) != self._registered_plan_hash(run_id):
+            raise PlanMismatchError("Caller plan does not match the registered run")
+        return snapshot
 
     def _registered_plan_hash(self, run_id: str) -> str:
         with closing(self._connect()) as db:
@@ -585,7 +608,7 @@ class AgentRunCoordinator:
     def finish_run(self, run_id: str, plan: TaskPlan) -> str:
         """Finalize only after every task is completed or terminally blocked/failed."""
         self._validate_identifier(run_id, "run_id")
-        self._verify_plan(run_id, plan)
+        plan = self._verified_plan(run_id, plan)
         with self._transaction() as db:
             run = db.execute("SELECT state FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if run is None:
