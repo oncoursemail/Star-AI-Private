@@ -17,7 +17,7 @@ import math
 from pathlib import Path
 import re
 import statistics
-from typing import Any
+from typing import Any, NoReturn
 
 SCHEMA_VERSION = 1
 MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -45,7 +45,7 @@ _FIELDS = frozenset({
 })
 
 
-def _reject(message: str) -> None:
+def _reject(message: str) -> NoReturn:
     raise ValueError(message)
 
 
