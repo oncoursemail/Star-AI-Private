@@ -93,7 +93,7 @@ Implemented behavior:
 - Duplicate/replayed job IDs are rejected for the dispatcher's lifetime.
 - Stale/expired work is removed before admission.
 - Up to four admission attempts per tick; a transiently blocked high-priority item does not prevent a lower-priority admissible item from using a safe route.
-- Permanent governor rejections are dropped; transient resource/telemetry denials remain queued until their deadline.
+- Permanent governor rejections are dropped; transient resource/telemetry denials remain queued until their deadline, with bounded exponential retry backoff so a blocked high-priority head cannot starve later eligible work.
 - One admission callback is in flight at a time. Pending work may be cancelled; in-flight admission cannot be falsely reported as stopped.
 - Aggregate-only status omits job IDs, coalescing keys, prompts, chat, audio, frames, and model outputs.
 - Every admitted result must carry the actual BrainLease returned by the governor.
@@ -188,7 +188,7 @@ Compare the current direct-admission path against the dispatcher with identical 
 - This module is an opt-in control-plane queue; it is not wired into the Windows worker launch loop yet.
 - No model weights, prompts, memory databases, routes, settings, GPU processes, audio devices, OBS sessions, games or Roblox places were changed.
 - No model speedup, intelligence gain, game mastery gain or human-equivalence claim is made.
-- Local isolated verification: 18 focused tests passed and Python compilation passed.
+- Local isolated verification: 20 focused tests passed and Python compilation passed.
 - Ruff is not installed in this scratch environment.
 - Full repository tests, Pyright, GitHub Actions, Windows GPU measurements and the private streaming rehearsal remain outstanding.
 - The connected Remote Desktop Commander account had no remaining remote-call quota in this run, so the actual owner machines were not inspected or modified.
