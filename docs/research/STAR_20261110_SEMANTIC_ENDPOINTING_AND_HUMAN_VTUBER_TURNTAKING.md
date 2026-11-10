@@ -130,6 +130,15 @@ The new tests cover:
 
 Before enabling a LiveKit adapter in the desktop app, run a private 30–60 minute rehearsal with actual microphone capture, speaker playback, OBS, VTube Studio, a live game and viewer chat. The adapter is opt-in and no model is downloaded by this change.
 
+## 7. Verification and limitations
+
+- The new module compiled in a clean scratch package.
+- 12 focused scratch smoke checks passed using a minimal TurnTakingGate test double, covering completion, mid-turn continuation, owner-yield priority, guest hold, stale/future predictions, replay rejection, audio-end mismatch and both timeout paths.
+- 17 repository pytest tests were added for the actual TurnTakingGate/TurnAdvice integration; they have not yet run in a full repository environment.
+- Ruff, Pyright, full offline regression and Windows desktop tests are pending GitHub Actions.
+- No LiveKit SDK, model weights, microphone capture or new runtime dependency was added.
+- No real CPU latency, false-cutoff reduction, inference speedup or live-stream acceptance is claimed. The published v1-mini memory estimate is research input, not a measurement on Star's machines.
+
 ## Sources
 
 1. LiveKit, [End-of-turn benchmark](https://github.com/livekit/agents/tree/main/tests/benchmarks/eou) — 14-language pause benchmark and latency/false-cutoff tradeoff.
