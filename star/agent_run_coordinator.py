@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -143,7 +144,7 @@ class AgentRunCoordinator:
             raise PermissionError("Coordinator database must be an ordinary file")
         if not database.parent.is_dir():
             raise FileNotFoundError("Create the private coordinator directory first")
-        if __import__("os").name == "posix" and stat.S_IMODE(database.parent.stat().st_mode) & 0o077:
+        if os.name == "posix" and stat.S_IMODE(database.parent.stat().st_mode) & 0o077:
             raise PermissionError("Coordinator directory must be private (mode 0700 on POSIX)")
         if (type(lease_seconds) not in (int, float) or not math.isfinite(lease_seconds)
                 or not 1.0 <= lease_seconds <= 3600.0):
@@ -453,9 +454,9 @@ class AgentRunCoordinator:
         if not isinstance(lease, AgentLease):
             raise TypeError("Expected an AgentLease")
         now = self._now()
-        expires = now + self.lease_ns
         with self._transaction() as db:
-            self._current_row(db, lease, now)
+            current = self._current_row(db, lease, now)
+            expires = max(now + self.lease_ns, current["lease_expires_ns"])
             db.execute(
                 "UPDATE tasks SET lease_expires_ns=? WHERE run_id=? AND task_id=? "
                 "AND lease_id=? AND fence_token=?",
