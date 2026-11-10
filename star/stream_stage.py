@@ -311,12 +311,25 @@ class StarStage:
                 return False
             return self._director.offer(event, now=current)
 
-    def enable_listener_backchannels(self, *, owner_approved: bool = False) -> None:
-        """Opt into subtle nonverbal active-listening cues for viewer speech."""
+    def enable_listener_backchannels(self, *, owner_approved: bool = False) -> str:
+        """Opt in and return the session ID required on every host event.
+
+        The ID is a replay fence, not an authentication credential. The trusted
+        host must still attest that its incremental semantic event is genuine.
+        """
         with self._lock:
             if not self._enabled or self._plan is not None:
                 raise RuntimeError("enable listener cues only between active stage turns")
-            self._listener_backchannel.enable(owner_approved=owner_approved)
+            return self._listener_backchannel.enable(owner_approved=owner_approved)
+
+    @property
+    def listener_backchannel_session_id(self) -> str:
+        """Return the current replay-fence ID for the trusted local host.
+
+        Re-read it after every stage enable/restart; old queued events are invalid.
+        """
+        with self._lock:
+            return self._listener_backchannel.session_id
 
     def disable_listener_backchannels(self) -> None:
         """Immediately revoke pending listener cues; no audio action is taken."""
@@ -344,6 +357,9 @@ class StarStage:
         viewer_speaking: bool = False, game_active: bool = False,
         gameplay_critical: bool = False, owner_speaking: bool = False,
         stream_pressure: bool = False, listener_context_verified: bool = False,
+        listener_context_session_id: str = "",
+        listener_addressing: str = "unknown",
+        listener_resolved_by_other: bool = False,
     ) -> QuietStageFrame | None:
         """Suggest nonverbal attention only when no utterance owns the rig.
 
@@ -369,6 +385,9 @@ class StarStage:
                     gameplay_critical=gameplay_critical,
                     stream_pressure=stream_pressure,
                     reduced_motion=self._reduced_motion,
+                    listener_context_session_id=listener_context_session_id,
+                    listener_addressing=listener_addressing,
+                    listener_resolved_by_other=listener_resolved_by_other,
                 )
             except ValueError:
                 # A clock reversal or invalid host flag cannot leave a stale

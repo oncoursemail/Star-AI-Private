@@ -1,5 +1,6 @@
 """Regression tests for content-free, host-verified listener micro-cues."""
 import unittest
+from unittest.mock import patch
 
 from star.stream_listener_backchannel import (
     ListenerIntentSignal,
@@ -11,10 +12,13 @@ from star.stream_stage import StarStage
 
 def signal(event_id=1, **overrides):
     values = dict(
+        session_id="a" * 32,
         event_id=event_id,
         kind="acknowledge",
         observed_at_s=1.0,
         confidence=0.95,
+        addressing="star",
+        resolved_by_other=False,
         guest_speaking=True,
         owner_speaking=False,
         star_speaking=False,
@@ -29,7 +33,8 @@ def signal(event_id=1, **overrides):
 class StreamListenerBackchannelTests(unittest.TestCase):
     def make_gate(self):
         gate = StreamListenerBackchannel()
-        gate.enable(owner_approved=True)
+        with patch("star.stream_listener_backchannel.secrets.token_hex", return_value="a" * 32):
+            gate.enable(owner_approved=True)
         return gate
 
     def overlay(self, gate, now=1.2, **overrides):
@@ -41,6 +46,9 @@ class StreamListenerBackchannelTests(unittest.TestCase):
             gameplay_critical=False,
             stream_pressure=False,
             reduced_motion=False,
+            listener_context_session_id=gate.session_id,
+            listener_addressing="star",
+            listener_resolved_by_other=False,
         )
         values.update(overrides)
         return gate.overlay(neutral_frame(), **values)
@@ -89,6 +97,9 @@ class StreamListenerBackchannelTests(unittest.TestCase):
             {"gameplay_critical": True},
             {"stream_pressure": True},
             {"confidence": 0.81},
+            {"addressing": "other"},
+            {"addressing": "unknown"},
+            {"resolved_by_other": True},
         )
         for changes in cases:
             with self.subTest(changes=changes):
@@ -134,6 +145,11 @@ class StreamListenerBackchannelTests(unittest.TestCase):
             {"gameplay_critical": True},
             {"stream_pressure": True},
             {"reduced_motion": True},
+            {"listener_context_session_id": "b" * 32},
+            {"listener_context_session_id": ""},
+            {"listener_addressing": "other"},
+            {"listener_addressing": "unknown"},
+            {"listener_resolved_by_other": True},
         )
         for changes in cases:
             with self.subTest(changes=changes):
@@ -151,32 +167,70 @@ class StreamListenerBackchannelTests(unittest.TestCase):
     def test_disable_and_reset_revoke_pending_cues(self):
         gate = self.make_gate()
         self.assertTrue(gate.observe(signal(), now_s=1.0))
+        old_session = gate.session_id
         gate.reset()
+        self.assertNotEqual(gate.session_id, old_session)
         self.assertEqual(self.overlay(gate), neutral_frame())
+        self.assertFalse(gate.observe(
+            signal(session_id=old_session, event_id=1, observed_at_s=1.3), now_s=1.3,
+        ))
+        self.assertEqual(gate.metrics()["session_mismatch"], 1)
         self.assertTrue(gate.observe(
-            signal(event_id=1, observed_at_s=1.3), now_s=1.3,
+            signal(session_id=gate.session_id, event_id=1, observed_at_s=1.3), now_s=1.3,
         ))
         gate.disable()
+        self.assertEqual(gate.session_id, "")
         self.assertEqual(self.overlay(gate, now=1.4), neutral_frame())
         self.assertFalse(gate.metrics()["enabled"])
+
+    def test_old_session_events_are_rejected_without_consuming_current_sequence(self):
+        gate = StreamListenerBackchannel()
+        with patch(
+            "star.stream_listener_backchannel.secrets.token_hex",
+            side_effect=["a" * 32, "b" * 32],
+        ):
+            gate.enable(owner_approved=True)
+            old_session = gate.session_id
+            gate.reset()
+            new_session = gate.session_id
+        self.assertFalse(gate.observe(
+            signal(session_id=old_session, event_id=1), now_s=1.0,
+        ))
+        self.assertTrue(gate.observe(
+            signal(session_id=new_session, event_id=1), now_s=1.0,
+        ))
+        self.assertEqual(gate.metrics()["session_mismatch"], 1)
+
+    def test_session_id_and_addressing_schema_are_strict(self):
+        with self.assertRaises(ValueError):
+            signal(session_id="not-a-session")
+        with self.assertRaises(ValueError):
+            signal(addressing="maybe-star")
+        with self.assertRaises(ValueError):
+            signal(resolved_by_other=1)
 
     def test_stage_exposes_opt_in_content_free_listener_cues(self):
         stage = StarStage(clock=lambda: 1.0)
         stage.enable(owner_approved=True)
         with self.assertRaises(PermissionError):
             stage.enable_listener_backchannels()
-        stage.enable_listener_backchannels(owner_approved=True)
-        self.assertTrue(stage.observe_listener_intent(signal(), now=1.0))
+        session_id = stage.enable_listener_backchannels(owner_approved=True)
+        self.assertEqual(stage.listener_backchannel_session_id, session_id)
+        self.assertTrue(stage.observe_listener_intent(
+            signal(session_id=session_id), now=1.0,
+        ))
         frame = stage.idle_motion(
             now=1.2, viewer_speaking=True, listener_context_verified=True,
+            listener_context_session_id=session_id, listener_addressing="star",
         )
         self.assertIsNotNone(frame)
         self.assertLess(frame.motion.head_y, 0)
         self.assertTrue(stage.current_idle(frame, now=1.2))
         stage.disable_listener_backchannels()
         self.assertFalse(stage.observe_listener_intent(
-            signal(event_id=2, observed_at_s=1.3), now=1.3,
+            signal(session_id=session_id, event_id=2, observed_at_s=1.3), now=1.3,
         ))
+        self.assertEqual(stage.listener_backchannel_session_id, "")
         stage.disable()
         self.assertFalse(stage.metrics()["listener_backchannel"]["enabled"])
 

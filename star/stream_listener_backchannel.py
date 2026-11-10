@@ -15,12 +15,16 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, replace
 import math
+import re
+import secrets
 from threading import RLock
 from typing import cast
 
 from .stream_motion import MotionFrame
 
 _INTENTS = {"acknowledge", "considering", "clarifying"}
+_ADDRESSING = frozenset({"star", "group", "other", "unknown"})
+_SESSION_ID = re.compile(r"^[a-f0-9]{32}$")
 _MAX_CLOCK_S = 1e12
 _MIN_CONFIDENCE = 0.82
 _MAX_EVENT_AGE_S = 0.25
@@ -64,13 +68,16 @@ class ListenerIntentSignal:
 
     event_id is monotonic within one stage session. "acknowledge" means only
     that the utterance was received; it must not be used to imply agreement.
-    The host must derive every flag and confidence value independently.
+    The host must derive every flag and confidence value independently. Both the event and each rendered idle context must carry the current stage-session ID.
     """
 
+    session_id: str
     event_id: int
     kind: str
     observed_at_s: float
     confidence: float
+    addressing: str
+    resolved_by_other: bool
     guest_speaking: bool
     owner_speaking: bool
     star_speaking: bool
@@ -79,12 +86,18 @@ class ListenerIntentSignal:
     host_verified: bool
 
     def __post_init__(self) -> None:
+        if type(self.session_id) is not str or _SESSION_ID.fullmatch(self.session_id) is None:
+            raise ValueError("session_id must be a 128-bit lowercase hex session token")
         if type(self.event_id) is not int or not 1 <= self.event_id <= 2**63 - 1:
             raise ValueError("event_id must be a positive signed 64-bit integer")
         if type(self.kind) is not str or self.kind not in _INTENTS:
             raise ValueError("unsupported listener intent")
         _clock(self.observed_at_s, "observed_at_s")
         _unit(self.confidence, "confidence")
+        if type(self.addressing) is not str or self.addressing not in _ADDRESSING:
+            raise ValueError("addressing must be star, group, other, or unknown")
+        if type(self.resolved_by_other) is not bool:
+            raise ValueError("resolved_by_other must be an explicit boolean")
         for name in (
             "guest_speaking", "owner_speaking", "star_speaking",
             "gameplay_critical", "stream_pressure", "host_verified",
@@ -99,6 +112,7 @@ class StreamListenerBackchannel:
     def __init__(self) -> None:
         self._lock = RLock()
         self._enabled = False
+        self._session_id = ""
         self._last_event_id = 0
         self._last_clock = -1.0
         self._event_times: deque[float] = deque(maxlen=_MAX_PER_WINDOW)
@@ -112,9 +126,10 @@ class StreamListenerBackchannel:
             "rate_limited": 0,
             "expired": 0,
             "clock_reversed": 0,
+            "session_mismatch": 0,
         }
 
-    def enable(self, *, owner_approved: bool = False) -> None:
+    def enable(self, *, owner_approved: bool = False) -> str:
         if owner_approved is not True:
             raise PermissionError("listener backchannels require owner approval")
         with self._lock:
@@ -122,16 +137,27 @@ class StreamListenerBackchannel:
                 raise RuntimeError("listener backchannels are already enabled")
             self._reset_locked()
             self._enabled = True
+            self._session_id = secrets.token_hex(16)
+            return self._session_id
 
     def disable(self) -> None:
         with self._lock:
             self._enabled = False
             self._reset_locked()
+            self._session_id = ""
 
     def reset(self) -> None:
-        """Clear session-local evidence and cooldowns without changing opt-in."""
+        """Clear session evidence and rotate the replay fence without changing opt-in."""
         with self._lock:
             self._reset_locked()
+            if self._enabled:
+                self._session_id = secrets.token_hex(16)
+
+    @property
+    def session_id(self) -> str:
+        """Current stage-session replay fence; empty while the feature is disabled."""
+        with self._lock:
+            return self._session_id if self._enabled else ""
 
     def clear(self) -> None:
         """Cancel the current micro-cue without resetting replay protection."""
@@ -153,6 +179,9 @@ class StreamListenerBackchannel:
             if not self._enabled:
                 self._counts["rejected"] += 1
                 return False
+            if signal.session_id != self._session_id:
+                self._counts["session_mismatch"] += 1
+                return False
             if now < self._last_clock:
                 self._cue = None
                 self._counts["clock_reversed"] += 1
@@ -173,6 +202,8 @@ class StreamListenerBackchannel:
                 return False
             if (
                 signal.confidence < _MIN_CONFIDENCE
+                or signal.addressing not in {"star", "group"}
+                or signal.resolved_by_other
                 or not signal.guest_speaking
                 or signal.owner_speaking
                 or signal.star_speaking
@@ -205,6 +236,9 @@ class StreamListenerBackchannel:
         gameplay_critical: bool = False,
         stream_pressure: bool = False,
         reduced_motion: bool = False,
+        listener_context_session_id: str = "",
+        listener_addressing: str = "unknown",
+        listener_resolved_by_other: bool = False,
     ) -> MotionFrame:
         """Overlay a subtle cue only while the same safe context remains fresh."""
         if not isinstance(frame, MotionFrame):
@@ -216,6 +250,12 @@ class StreamListenerBackchannel:
         )
         if any(type(flag) is not bool for flag in flags):
             raise ValueError("listener overlay context flags must be booleans")
+        if type(listener_context_session_id) is not str:
+            raise ValueError("listener_context_session_id must be a string")
+        if type(listener_addressing) is not str or listener_addressing not in _ADDRESSING:
+            raise ValueError("listener_addressing must be star, group, other, or unknown")
+        if type(listener_resolved_by_other) is not bool:
+            raise ValueError("listener_resolved_by_other must be an explicit boolean")
         with self._lock:
             if not self._enabled:
                 return frame
@@ -231,6 +271,9 @@ class StreamListenerBackchannel:
                 or gameplay_critical
                 or stream_pressure
                 or reduced_motion
+                or listener_context_session_id != self._session_id
+                or listener_addressing not in {"star", "group"}
+                or listener_resolved_by_other
             ):
                 # A pause, safety change, or lost host witness cancels the cue;
                 # it must never resume later as a stale gesture.

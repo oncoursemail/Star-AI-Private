@@ -1,7 +1,7 @@
 # STAR — Active listening, generalist intelligence, game mastery, and VTuber runtime roadmap
 
-**Research date:** 2026-11-09  
-**Implementation branch:** `feat/star-intelligence-listener-backchannels-20261109-auto189`  
+**Research date:** 2026-11-09; follow-up review: 2026-11-10
+**Implementation branch:** `feat/star-active-listening-backchannels-20261109-auto189`
 **Scope:** optional content-free nonverbal listener cues, conversational naturalness, generalist memory, real-time gaming, game creation, local inference, and native streaming acceptance.
 
 ## Executive summary
@@ -12,7 +12,8 @@ This branch adds an owner-opted `StreamListenerBackchannel` and exposes it throu
 
 The new path is deliberately conservative:
 - explicit owner opt-in, disabled by default;
-- host-verified, monotonic event IDs and timestamps;
+- host-verified, monotonic event IDs and timestamps, bound to a 128-bit stage-session replay fence;
+- explicit addressee classification (star, group, other, unknown) and a resolved_by_other flag; only star/group events may cue;
 - 250 ms maximum event age and 0.82 minimum confidence;
 - viewer must still be speaking; owner/Star speech, critical gameplay, stream pressure, stale host context, or reduced-motion mode cancels the cue;
 - 1.15 s cooldown and at most 10 cues per rolling minute;
@@ -35,6 +36,16 @@ Star should not speak over a viewer just to appear lively. Backchannels should b
 ### Intent-aware nonverbal feedback
 
 The MuC 2026 paper *Intent-Aware Backchanneling for Active Listening in Human-Robot Interaction* describes a dual-stage separation between speaker intent and listener intent, with chunk-level nonverbal feedback running in parallel with a turn-level verbal response. This is a useful design pattern for Star's Live2D/VTuber rig: semantic analysis can propose a tiny listening cue without forcing a verbal interruption. It is not evidence that any particular cue is universally natural; visual review with the actual avatar remains necessary. [MuC 2026 paper](https://doi.org/10.1145/3820253.3831400).
+
+### Multi-party addressing and conversational resolution
+
+MP-Bench (Findings of EMNLP 2026) evaluates voice agents as participants in shared conversations, not merely dyadic user-assistant exchanges. Across 12 evaluated agents, real-time systems remained at or below 22% on multi-party comprehension and near chance on multi-party turn-taking. The lesson for a livestream is that detecting a voice is not enough: the system must decide whether a remark is directed at Star, the group, or another viewer. [MP-Bench, Findings of EMNLP 2026](https://aclanthology.org/2026.findings-emnlp.1437/).
+
+Duplex-MPE evaluates 2,000 scenarios with three or four human speakers and an assistant, including explicit versus implicit addressing. It separately scores fresh response initiation, answer accuracy, silence preservation, and stopping when a human resolves the request. This supports an explicit resolved_by_other signal rather than assuming every addressed question still needs Star to respond. [Duplex-MPE](https://arxiv.org/abs/2609.31948).
+
+MultiPartyTurnBench separates end-of-turn detection from interruption detection and evaluates event-conditioned recall under false-positive constraints. This is useful because a false backchannel or premature floor claim is a social error, not merely a latency miss. [MultiPartyTurnBench](https://arxiv.org/abs/2610.20172).
+
+**Design consequence:** only explicit star or group addressing can trigger a micro-cue. other and unknown are silent by default, and resolved_by_other=True cancels a pending cue. Every event and every rendered idle-context receipt is also bound to a fresh stage-session ID so queued events or stale render context from a prior stream cannot replay after a reset. The ID is a replay fence, not cryptographic authentication; the local host remains trusted and must still verify its own observations.
 
 ### Proactive video companions
 
@@ -193,7 +204,7 @@ Privacy design:
 
 | Area | Measurements | Promotion rule |
 |---|---|---|
-| Listener cues | Freshness, confidence, duplicate IDs, cues/minute, suppressions, stale replay | Private visual review; no cues during owner speech, critical gameplay, or reduced motion |
+| Listener cues | Freshness, confidence, duplicate IDs, session mismatch, addressing precision, resolved-by-other suppression, cues/minute | Private visual review; no cues for other/unknown addressees, resolved requests, owner speech, critical gameplay, or reduced motion |
 | Natural conversation | First-audible p50/p95, overlap, barge-in stop p95, unplanned gaps, groundedness | Paired baseline/candidate with reviewed cases across every scenario |
 | Inference | TTFT, decode tok/s, p50/p95 turn latency, answer quality, VRAM/RAM/CPU | Randomized paired A/B; no quality, game-FPS, or OBS regression |
 | Gaming | Held-out win/progress, observation age, action p95, deadline misses, recovery | Gains across balanced scenario families and unseen variants |
@@ -209,6 +220,7 @@ Run warm and cold starts, A/B/A or randomized paired sessions, route/device chan
 - Connect the trusted incremental ASR/dialogue host to `observe_listener_intent()`.
 - Supply a fresh `listener_context_verified` flag on every idle render sample.
 - Keep feature OFF until owner opts in and the Windows/VTube Studio path is privately rehearsed.
+- Feed explicit addressing and request-resolution state; do not infer addressee from VAD alone.
 - Test owner barge-in, guest pauses, critical gameplay, stream pressure, reduced motion, and device changes.
 
 **P1 — Generalist memory evaluation**
@@ -234,4 +246,4 @@ Run warm and cold starts, A/B/A or randomized paired sessions, route/device chan
 
 ## Evidence boundary
 
-This document is a source-linked engineering roadmap. The new listener cue code is deterministic and offline-testable, but it does not itself perform ASR, capture WASAPI audio, render VTube Studio parameters, operate OBS, control a game, train a model, or broadcast. No neural inference speedup, game win-rate improvement, model-intelligence gain, or public-stream readiness is claimed.
+This document is a source-linked engineering roadmap. The listener cue code is deterministic and offline-testable, but it does not itself perform ASR, diarization, addressee classification, request-resolution detection, capture WASAPI audio, render VTube Studio parameters, operate OBS, control a game, train a model, or broadcast. The session ID prevents stale cross-session event/render replay but is not cryptographic authentication. No neural inference speedup, game win-rate improvement, model-intelligence gain, or public-stream readiness is claimed.
