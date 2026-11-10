@@ -200,7 +200,7 @@ class StreamWorkDispatcher:
             if key is not None:
                 old_id = self._coalesce_index.get(key)
                 old = self._queue.get(old_id) if old_id is not None else None
-                if old is not None:
+                if old_id is not None and old is not None:
                     if job.created_ms <= old.job.created_ms:
                         self._seen_ids.add(job.job_id)
                         self._counts["stale_coalesced"] += 1
