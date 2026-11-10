@@ -388,7 +388,19 @@ class AgentRunCoordinator:
             if (not isinstance(payload, str) or not isinstance(digest, str)
                     or hashlib.sha256(payload.encode("utf-8")).hexdigest() != digest):
                 raise CoordinatorError("Stored dependency result failed integrity validation")
-            data = json.loads(payload)
+            try:
+                data = json.loads(payload)
+                if type(data) is not dict or set(data) != {"answer", "evidence", "elapsed_ms"}:
+                    raise ValueError("Unexpected dependency result fields")
+                if type(data["evidence"]) is not list:
+                    raise ValueError("Invalid dependency evidence")
+                normalized = _result_payload(
+                    data["answer"], tuple(data["evidence"]), data["elapsed_ms"]
+                )
+                if normalized != payload:
+                    raise ValueError("Noncanonical dependency result")
+            except (TypeError, KeyError, ValueError) as exc:
+                raise CoordinatorError("Stored dependency result is invalid") from exc
             output.append(DependencyResult(
                 dependency, row["role"], data["answer"],
                 tuple(data["evidence"]), data["elapsed_ms"], digest,
