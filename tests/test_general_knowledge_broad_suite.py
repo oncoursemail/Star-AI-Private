@@ -124,8 +124,8 @@ def test_preparation_exposes_no_oracle_sidecar(monkeypatch):
     plan = bench.prepare(suite)
     assert len(plan["requests"]) == 24
     assert plan["category_counts"]["astronomy"] == 2
-    assert all(request["category"] for request in plan["requests"])
     assert all("messages" in request for request in plan["requests"])
+    assert all("category" not in request for request in plan["requests"])
 
 
 def test_category_metadata_is_pinned_into_request_identity(tmp_path):
