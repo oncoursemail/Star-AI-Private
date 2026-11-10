@@ -14,7 +14,7 @@ STAR should not select a model because it is larger, newer, or faster in one iso
 
 This update implements the first two constraints as an offline review gate. It deliberately does not modify STAR's router. A passing report means *human review is justified*, not that the candidate is approved for production or livestream use.
 
-## 1. New implementation: \`star/model_quality_speed_gate.py\`
+## 1. New implementation: `star/model_quality_speed_gate.py`
 
 ### Why it is needed
 
@@ -29,9 +29,9 @@ The new gate joins the reports without loading a model, making a network request
 
 ### Inputs
 
-1. **Paired inference report** from \`star.inference_paired_benchmark\`.
-2. **Model-axis general-foundation comparison** from \`star.general_knowledge_benchmark\`.
-3. Optional **baseline and candidate llama.cpp server-metrics windows** from \`star.llama_server_metrics\`.
+1. **Paired inference report** from `star.inference_paired_benchmark`.
+2. **Model-axis general-foundation comparison** from `star.general_knowledge_benchmark`.
+3. Optional **baseline and candidate llama.cpp server-metrics windows** from `star.llama_server_metrics`.
 
 The quality report must identify both models with revision, weights SHA-256, tokenizer SHA-256 and quantization. The app commit, source, request builder, adapter, backend, mode and generation options must match. This prevents an apparent model comparison from also changing the client or sampling configuration.
 
@@ -44,9 +44,9 @@ The current policy is intentionally fixed in code rather than exposed as an easy
 | Paired workload coverage | At least 16 complete pairs |
 | Workload breadth | At least 2 pairs in each of 8 categories |
 | Request failures | Zero failed or incomplete paired requests |
-| First-content median | At least \`max(5 ms, 5% of baseline p50)\` faster |
-| First-content p95 delta | No more than \`max(5 ms, 2% of baseline p50)\` worse |
-| End-to-end p50 delta | No more than \`max(10 ms, 2% of baseline p50)\` worse |
+| First-content median | At least `max(5 ms, 5% of baseline p50)` faster |
+| First-content p95 delta | No more than `max(5 ms, 2% of baseline p50)` worse |
+| End-to-end p50 delta | No more than `max(10 ms, 2% of baseline p50)` worse |
 | Pair direction | Candidate must be faster in more matched pairs than it is slower |
 | Knowledge breadth | At least 24 tasks across at least 8 domains |
 | Knowledge quality | No overall pass-count loss and no domain pass-count loss |
@@ -69,10 +69,10 @@ The JSON report contains:
 - stable reason codes.
 
 The report always sets:
-- \`automatic_route_change_authorized = false\`;
-- \`live_vtuber_rollout_authorized = false\`;
-- \`holdout_evaluation_required = true\`;
-- \`private_windows_game_obs_audio_avatar_rehearsal_required = true\`.
+- `automatic_route_change_authorized = false`;
+- `live_vtuber_rollout_authorized = false`;
+- `holdout_evaluation_required = true`;
+- `private_windows_game_obs_audio_avatar_rehearsal_required = true`.
 
 Malformed, duplicate-key, non-finite, oversized or internally inconsistent JSON is rejected. The parser has byte, depth and node-count bounds. Reports contain aggregate evidence only; no prompts, generated responses, transcripts, audio or viewer identifiers are added.
 
@@ -80,23 +80,23 @@ Malformed, duplicate-key, non-finite, oversized or internally inconsistent JSON 
 
 After creating the paired and quality comparison artifacts:
 
-\`\`\`powershell
-python -m star.model_quality_speed_gate \`
-  --paired artifacts/paired-inference.json \`
-  --quality artifacts/general-knowledge-comparison.json \`
+```powershell
+python -m star.model_quality_speed_gate `
+  --paired artifacts/paired-inference.json `
+  --quality artifacts/general-knowledge-comparison.json `
   --output artifacts/model-quality-speed-gate.json
-\`\`\`
+```
 
 To add optional per-model llama.cpp server counter windows:
 
-\`\`\`powershell
-python -m star.model_quality_speed_gate \`
-  --paired artifacts/paired-inference.json \`
-  --quality artifacts/general-knowledge-comparison.json \`
-  --baseline-server-metrics artifacts/star-fast-metrics.json \`
-  --candidate-server-metrics artifacts/star-deep-metrics.json \`
+```powershell
+python -m star.model_quality_speed_gate `
+  --paired artifacts/paired-inference.json `
+  --quality artifacts/general-knowledge-comparison.json `
+  --baseline-server-metrics artifacts/star-fast-metrics.json `
+  --candidate-server-metrics artifacts/star-deep-metrics.json `
   --output artifacts/model-quality-speed-gate.json
-\`\`\`
+```
 
 The output path is created exclusively; an existing report is never overwritten.
 
@@ -110,11 +110,11 @@ STAR's existing first nonempty text-chunk measurement is correctly called **firs
 
 ### Server counters
 
-The llama.cpp server exposes \`/metrics\` only when the operator starts it with \`--metrics\`. In router mode, the \`model\` query parameter is required. The endpoint exposes prompt/generation counters, throughput gauges, processing/deferred request gauges, context high-water marks and speculative-decoding counters.
+The llama.cpp server exposes `/metrics` only when the operator starts it with `--metrics`. In router mode, the `model` query parameter is required. The endpoint exposes prompt/generation counters, throughput gauges, processing/deferred request gauges, context high-water marks and speculative-decoding counters.
 
 Use the existing read-only adapter:
-- GET \`/metrics\` only;
-- no \`/slots\`, which may expose request and prompt-related fields;
+- GET `/metrics` only;
+- no `/slots`, which may expose request and prompt-related fields;
 - no credentials, proxy, redirects or non-loopback host;
 - only an allowlist of numeric series;
 - counter resets and missing metrics invalidate derived rates.
@@ -193,7 +193,7 @@ OpenGameEval is relevant because it evaluates agents inside reproducible, statef
 
 STAR Creator should use a closed verification loop:
 
-\`\`\`text
+```text
 Inspect project hierarchy and references
   -> state requirements and acceptance checks
   -> edit an isolated test place
@@ -205,7 +205,7 @@ Inspect project hierarchy and references
   -> rerun the same test
   -> run a held-out scenario
   -> preserve evidence and rollback point
-\`\`\`
+```
 
 A successful compile is not a successful game. Validate actual playability, multiplayer ownership, mobile UI, animation rigs, collision, audio, visual consistency, frame-time and memory budgets. Keep public publishing, purchases, account changes and destructive edits behind owner approval.
 
@@ -306,7 +306,7 @@ Before any candidate is used for live VTubing, require:
 ## Primary sources (checked 2026-11-10)
 
 - NVIDIA AIPerf, [metrics reference](https://docs.nvidia.com/aiperf/dev/reference/ai-perf-metrics-reference) — request, TTFT, TTST, ITL, latency distributions and throughput semantics.
-- llama.cpp, [server metrics documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#-metrics-prometheus-compatible-metrics-exporter) — \`/metrics\`, \`--metrics\`, router model scoping and metric types.
+- llama.cpp, [server metrics documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#-metrics-prometheus-compatible-metrics-exporter) — `/metrics`, `--metrics`, router model scoping and metric types.
 - vLLM, [Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/) — shared-prefix KV reuse and prefill/decode limits.
 - Roblox, [OpenGameEval](https://github.com/Roblox/open-game-eval) and [paper](https://arxiv.org/abs/2610.02563) — stateful Studio evaluation, exploration and simulated play.
 - Aggarwal & Welleck, [Gym-Anything-RT](https://arxiv.org/abs/2610.37567), submitted 2026-10-27 — real-time visual-agent evaluation.
@@ -315,7 +315,7 @@ Before any candidate is used for live VTubing, require:
 
 ## Implemented in this PR
 
-- \`star/model_quality_speed_gate.py\`
-- \`tests/test_model_quality_speed_gate.py\`
+- `star/model_quality_speed_gate.py`
+- `tests/test_model_quality_speed_gate.py`
 
 No production model route, runtime setting, OBS session, game input, microphone, avatar, broadcast or model weights are changed.
