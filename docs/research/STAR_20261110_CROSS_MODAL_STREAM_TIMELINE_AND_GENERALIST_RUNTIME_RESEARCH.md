@@ -142,7 +142,7 @@ Its published Full-Duplex-Bench v1.5 results report 97% continuation through use
 
 ### Live-clock evaluation matters
 
-Gym-Anything-RT (October 27, 2026) introduces 100 real-time minigames and controlled paused/slowed counterparts. Its abstract reports a large capability gap between acting while the world evolves and acting when the environment is paused. It also warns that code-writing agents can bypass the intended perception/action loop if the benchmark does not constrain the interaction channel. [Gym-Anything-RT](https://arxiv.org/abs/2610.37567)
+Gym-Anything-RT (October 27, 2026) introduces 100 real-time minigames and controlled paused/slowed counterparts. One reported GPT-6 Astra xHigh configuration passed 9.0% in real time versus 75.0% when paused; this is a benchmark-specific result, not a prediction of Star's score. It demonstrates how strongly action deadlines and evolving state can change outcomes. It also warns that code-writing agents can bypass the intended perception/action loop if the benchmark does not constrain the interaction channel. [Gym-Anything-RT](https://arxiv.org/abs/2610.37567)
 
 **Star implication:** use the real game clock for gameplay acceptance. Score objective completion, valid actions, reaction deadlines, survival, recovery and transfer to unseen scenarios. A paused-game score or keypress acknowledgement is not proof of real-time game mastery.
 
