@@ -47,6 +47,7 @@ The module defines:
 - SemanticTurnGate: wraps the existing TurnTakingGate and returns the existing TurnAdvice type.
 
 The adapter has no dependency on LiveKit and does not receive PCM, transcripts, speaker names or chat text. A Windows host can later translate a LiveKit or other semantic endpointing result into the receipt.
+The resulting TurnAdvice can be passed to the existing StreamContextHost.prepare(turn=advice) path; this PR does not wire a detector SDK or microphone capture into the desktop.
 
 ### Decision order
 
