@@ -621,6 +621,8 @@ class AgentRunCoordinator:
         """Finalize only after every task is completed or terminally blocked/failed."""
         self._validate_identifier(run_id, "run_id")
         plan = self._verified_plan(run_id, plan)
+        not_ready = False
+        final: str | None = None
         with self._transaction() as db:
             now = self._now()
             run = db.execute("SELECT state FROM runs WHERE run_id=?", (run_id,)).fetchone()
@@ -634,10 +636,15 @@ class AgentRunCoordinator:
                 "SELECT state FROM tasks WHERE run_id=?", (run_id,)
             ).fetchall()]
             if any(state in {"pending", "leased"} for state in states):
-                raise RunNotReadyError("Pending or leased tasks remain")
-            final = "completed" if all(state == "completed" for state in states) else "finished_with_failures"
-            db.execute("UPDATE runs SET state=? WHERE run_id=?", (final, run_id))
-            return final
+                not_ready = True
+            else:
+                final = "completed" if all(state == "completed" for state in states) else "finished_with_failures"
+                db.execute("UPDATE runs SET state=? WHERE run_id=?", (final, run_id))
+        if not_ready:
+            raise RunNotReadyError("Pending or leased tasks remain")
+        if final is None:
+            raise CoordinatorError("Run finalization did not produce a state")
+        return final
 
     def abort_run(self, run_id: str) -> bool:
         """Invalidate all leases and stop further claims; does not kill worker processes."""
