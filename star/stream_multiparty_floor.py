@@ -37,7 +37,10 @@ _REASONS = frozenset({
 def _finite(value: object, name: str, *, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a finite number")
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{name} is outside its supported range") from exc
     if not math.isfinite(number) or not 0 <= number <= maximum:
         raise ValueError(f"{name} is outside its supported range")
     return number
@@ -109,7 +112,11 @@ class FloorPolicy:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{name} must be numeric")
-            if not math.isfinite(float(value)) or not lo <= value <= hi:
+            try:
+                number = float(value)
+            except (OverflowError, ValueError) as exc:
+                raise ValueError(f"{name} is outside its supported range") from exc
+            if not math.isfinite(number) or not lo <= number <= hi:
                 raise ValueError(f"{name} is outside its supported range")
         if type(self.max_active_speakers) is not int or not 1 <= self.max_active_speakers <= 8:
             raise ValueError("max_active_speakers must be in 1..8")
@@ -133,7 +140,8 @@ class FloorDecision:
     age_ms: float
 
     def __post_init__(self) -> None:
-        if self.action not in _ACTIONS or self.reason not in _REASONS:
+        if (type(self.action) is not str or self.action not in _ACTIONS
+                or type(self.reason) is not str or self.reason not in _REASONS):
             raise ValueError("invalid floor decision")
         if type(self.turn_id) is not str or _ID.fullmatch(self.turn_id) is None:
             raise ValueError("invalid decision turn_id")
@@ -143,7 +151,11 @@ class FloorDecision:
             raise ValueError("invalid decision sequence")
         if isinstance(self.age_ms, bool) or not isinstance(self.age_ms, (int, float)):
             raise ValueError("invalid decision age")
-        if not math.isfinite(float(self.age_ms)):
+        try:
+            age = float(self.age_ms)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError("invalid decision age") from exc
+        if not math.isfinite(age) or abs(age) > 1e13:
             raise ValueError("invalid decision age")
 
     @property
