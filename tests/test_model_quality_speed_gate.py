@@ -4,6 +4,7 @@ import copy
 import json
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,7 +25,7 @@ WORKLOADS = [
 ]
 
 
-def model(alias: str, weight: str) -> dict:
+def model(alias: str, weight: str) -> dict[str, Any]:
     return {
         "model_id": alias,
         "revision": "rev-1",
@@ -34,7 +35,7 @@ def model(alias: str, weight: str) -> dict:
     }
 
 
-def identity(alias: str, weight: str) -> dict:
+def identity(alias: str, weight: str) -> dict[str, Any]:
     return {
         "app_commit": "a" * 40,
         "source_sha256": "b" * 64,
@@ -54,9 +55,9 @@ def identity(alias: str, weight: str) -> dict:
     }
 
 
-def score(alias: str, weight: str, bad_domain: str | None = None) -> dict:
+def score(alias: str, weight: str, bad_domain: str | None = None) -> dict[str, Any]:
     rows = []
-    category_counts: dict[str, Counter] = {}
+    category_counts: dict[str, Counter[str]] = {}
     counts = Counter()
     for index, domain in enumerate(DOMAINS, start=1):
         for offset in range(2):
@@ -96,7 +97,7 @@ def score(alias: str, weight: str, bad_domain: str | None = None) -> dict:
     }
 
 
-def quality(bad_domain: str | None = None) -> dict:
+def quality(bad_domain: str | None = None) -> dict[str, Any]:
     before = score("star-fast", "4")
     after = score("star-deep", "5", bad_domain)
     changes = []
@@ -121,7 +122,7 @@ def quality(bad_domain: str | None = None) -> dict:
     }
 
 
-def summary(samples: int, *, delta: float = -10.0, incomplete: int = 0) -> dict:
+def summary(samples: int, *, delta: float = -10.0, incomplete: int = 0) -> dict[str, Any]:
     empty = samples == 0
     return {
         "paired_samples": samples,
@@ -142,8 +143,8 @@ def summary(samples: int, *, delta: float = -10.0, incomplete: int = 0) -> dict:
 
 def paired(
     *, slow: bool = False, incomplete: bool = False, all_incomplete: bool = False
-) -> dict:
-    schedule = []
+) -> dict[str, Any]:
+    schedule: list[dict[str, Any]] = []
     totals = Counter()
     for index in range(16):
         category = WORKLOADS[index % len(WORKLOADS)]
@@ -198,7 +199,7 @@ def paired(
     }
 
 
-def metrics(alias: str, prompt: float, generation: float) -> dict:
+def metrics(alias: str, prompt: float, generation: float) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "available": True,
