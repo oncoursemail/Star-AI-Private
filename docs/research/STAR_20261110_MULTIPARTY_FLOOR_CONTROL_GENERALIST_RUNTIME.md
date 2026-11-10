@@ -121,7 +121,8 @@ A clock regression latches the gate until the session is disabled and re-enabled
 2. it creates a session-local `FloorObservation` from its diarization and addressee classifier;
 3. it calls `offer(..., spoken_turn=True, floor_observation=..., moderated=True)`;
 4. the governor requires the exact same signal ID, current session epoch, monotonic sequence, fresh timestamp, <=250 ms signal/receipt skew, and an allowed `respond` decision;
-5. only then does the event enter the existing `StarStage` queue.
+5. only then does the event enter the existing `StarStage` queue;
+6. the host can consume the exact one-use `FloorDecision` through `take_floor_decision(signal_id)`. A `backchannel` result can be routed to the existing non-spoken listener/avatar cue path; it never authorizes TTS. A response decision is cleared if the stage itself rejects the event or the session changes.
 
 The floor gate is optional, so existing callers retain their previous behavior unless they explicitly mark a turn as spoken. If a spoken turn is requested without the configured gate or a receipt, the event is rejected.
 
