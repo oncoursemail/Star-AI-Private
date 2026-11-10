@@ -188,7 +188,7 @@ Compare the current direct-admission path against the dispatcher with identical 
 - This module is an opt-in control-plane queue; it is not wired into the Windows worker launch loop yet.
 - No model weights, prompts, memory databases, routes, settings, GPU processes, audio devices, OBS sessions, games or Roblox places were changed.
 - No model speedup, intelligence gain, game mastery gain or human-equivalence claim is made.
-- Local isolated verification: 17 focused tests passed and Python compilation passed.
+- Local isolated verification: 18 focused tests passed and Python compilation passed.
 - Ruff is not installed in this scratch environment.
 - Full repository tests, Pyright, GitHub Actions, Windows GPU measurements and the private streaming rehearsal remain outstanding.
 - The connected Remote Desktop Commander account had no remaining remote-call quota in this run, so the actual owner machines were not inspected or modified.
