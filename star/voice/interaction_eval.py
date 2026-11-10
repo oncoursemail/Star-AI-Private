@@ -98,10 +98,13 @@ def _number(
 ) -> float | None:
     if value is None and optional:
         return None
-    if type(value) not in (int, float):
-        _reject("invalid " + label)
     try:
-        result = float(value)
+        if type(value) is int:
+            result = float(value)
+        elif type(value) is float:
+            result = value
+        else:
+            _reject("invalid " + label)
     except (OverflowError, ValueError):
         _reject("invalid " + label)
     if not math.isfinite(result) or not minimum <= result <= maximum:
