@@ -88,7 +88,7 @@ def test_claim_respects_dependencies_and_exposes_only_direct_results(tmp_path):
     assert coordinator.finish_run("run-2", plan) == "completed"
 
 
-def test_two_process_style_coordinators_claim_distinct_tasks_atomically(tmp_path):
+def test_two_coordinator_instances_claim_distinct_tasks_atomically(tmp_path):
     plan = make_plan(
         Task("a", "research", "Task A"),
         Task("b", "research", "Task B"),
