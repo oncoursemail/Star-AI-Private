@@ -134,7 +134,6 @@ class IngestResult:
 @dataclass(frozen=True)
 class EventSummary:
     event_key: str
-    source_id: str
     modality: str
     kind: str
     sequence: int
@@ -375,7 +374,6 @@ class StreamEventTimeline:
             summaries = tuple(
                 EventSummary(
                     self._key(event),
-                    event.source_id,
                     event.modality,
                     event.kind,
                     event.sequence,
