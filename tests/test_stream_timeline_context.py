@@ -75,6 +75,29 @@ class TimelineContextTests(unittest.TestCase):
         altered = replace(snapshot, events=(changed, *snapshot.events[1:]))
         self.assertIsNone(build_timeline_context(altered, receipt.event_key))
 
+    def test_alignment_must_reference_exact_fresh_snapshot_summaries(self):
+        _, receipt, snapshot, _ = make_packet()
+        pair = snapshot.aligned_pairs[0]
+        forged_other = replace(pair.later, event_key="f" * 20)
+        forged_pair = replace(pair, later=forged_other)
+        forged_snapshot = replace(snapshot, aligned_pairs=(forged_pair,))
+        self.assertIsNone(build_timeline_context(forged_snapshot, receipt.event_key))
+
+        stale_other = replace(pair.later, age_ms=900.0)
+        stale_pair = replace(pair, later=stale_other)
+        stale_snapshot = replace(
+            snapshot,
+            events=(snapshot.events[0], stale_other),
+            aligned_pairs=(stale_pair,),
+        )
+        self.assertIsNone(build_timeline_context(stale_snapshot, receipt.event_key))
+
+        duplicate_snapshot = replace(
+            snapshot, events=(*snapshot.events, snapshot.events[0]),
+        )
+        self.assertIsNone(build_timeline_context(duplicate_snapshot, receipt.event_key))
+
+
     def test_caps_aligned_pairs(self):
         timeline = StreamEventTimeline()
         session = timeline.enable(owner_approved=True, now_ms=1000.0)
