@@ -1,19 +1,19 @@
 # STAR AI — Agent Runtime Deadline Integrity & Cancellation Quarantine
 
 **Research date:** 2026-11-10  
-**Implementation:** \`star/agent_runtime.py\`  
+**Implementation:** `star/agent_runtime.py`  
 **Status:** draft engineering change; host integration and full repository CI remain required.
 
 ## Executive finding
 
 STAR already has a useful multi-agent foundation:
 
-- \`star/orchestration.py\` validates task DAGs and read/write path conflicts.
-- \`star/agent_runtime.py\` runs trusted async workers with dependency snapshots, time budgets and bounded concurrency.
-- \`star/mission_checkpoint.py\` resumes completed read-only work only when task-plan and source revisions match.
+- `star/orchestration.py` validates task DAGs and read/write path conflicts.
+- `star/agent_runtime.py` runs trusted async workers with dependency snapshots, time budgets and bounded concurrency.
+- `star/mission_checkpoint.py` resumes completed read-only work only when task-plan and source revisions match.
 - The streaming control plane separately requires host acknowledgements before releasing inference/audio reservations.
 
-A concrete lifecycle gap remained: the agent runtime used \`asyncio.wait_for()\` for each worker and awaited \`asyncio.gather()\` for all workers during global cleanup. A timeout therefore did not guarantee that the call returned near its deadline. A cancellation-resistant coroutine could keep the run waiting, and an adapter that misunderstood cancellation could release task/resource ownership too early.
+A concrete lifecycle gap remained: the agent runtime used `asyncio.wait_for()` for each worker and awaited `asyncio.gather()` for all workers during global cleanup. A timeout therefore did not guarantee that the call returned near its deadline. A cancellation-resistant coroutine could keep the run waiting, and an adapter that misunderstood cancellation could release task/resource ownership too early.
 
 This update hardens that boundary. It does **not** add model intelligence or increase token throughput. It makes long-running research, coding, game-development and specialist tasks less likely to outlive their declared budget invisibly or be mistaken for completed work.
 
@@ -21,13 +21,13 @@ This update hardens that boundary. It does **not** add model intelligence or inc
 
 ### 1. Python's timeout primitive is not a hard wall-clock kill
 
-The Python 3.11 asyncio documentation states that \`asyncio.wait_for()\` cancels the awaited task on timeout, then waits until that task is actually cancelled. Total elapsed time can therefore exceed the requested timeout. The same documentation describes \`asyncio.wait()\` as returning \`done\` and \`pending\` sets at its timeout without cancelling pending tasks.
+The Python 3.11 asyncio documentation states that `asyncio.wait_for()` cancels the awaited task on timeout, then waits until that task is actually cancelled. Total elapsed time can therefore exceed the requested timeout. The same documentation describes `asyncio.wait()` as returning `done` and `pending` sets at its timeout without cancelling pending tasks.
 
 References:
 - [Python 3.11 — Coroutines and Tasks](https://docs.python.org/3.11/library/asyncio-task.html)
 - [Python 3.11 — Task cancellation](https://docs.python.org/3.11/library/asyncio-task.html#task-cancellation)
 
-**Design implication:** use \`asyncio.wait()\` to enforce the scheduler's own deadline, explicitly request cancellation, wait for a small bounded grace period, and preserve a strong reference to any task whose stop remains unconfirmed. Never describe a cancellation request as proof that a worker stopped.
+**Design implication:** use `asyncio.wait()` to enforce the scheduler's own deadline, explicitly request cancellation, wait for a small bounded grace period, and preserve a strong reference to any task whose stop remains unconfirmed. Never describe a cancellation request as proof that a worker stopped.
 
 Python also warns that the event loop keeps weak references to tasks. A supervisor must retain strong references to background tasks until they finish.
 
@@ -65,35 +65,35 @@ A per-task timeout callback is now evaluated exactly once per task at run admiss
 
 Each trusted async worker has a start time, pinned deadline, cancellation reason, cancellation-request timestamp and quarantine-registration state.
 
-The scheduler waits with \`asyncio.wait()\` and monotonic deadlines. It does not use \`wait_for()\` as a supposed hard process-kill primitive.
+The scheduler waits with `asyncio.wait()` and monotonic deadlines. It does not use `wait_for()` as a supposed hard process-kill primitive.
 
 ### C. Add bounded cancellation grace
 
 When a task or team deadline expires:
 
 1. STAR requests cancellation.
-2. STAR waits no longer than \`cancel_grace\` (default 150 ms; bounded to 0–5 seconds).
+2. STAR waits no longer than `cancel_grace` (default 150 ms; bounded to 0–5 seconds).
 3. If the task completes, its late result is discarded and the task is recorded as timed out, cancelled or incomplete.
-4. If it is still running, STAR records \`stop_unconfirmed\` and retains the task.
+4. If it is still running, STAR records `stop_unconfirmed` and retains the task.
 
 A worker that returns after its deadline is never accepted as successful, even if the scheduler notices its completion slightly later.
 
 ### D. Preserve resource ownership until the coroutine really finishes
 
-A cancellation-resistant task remains in the current plan's running set. \`TaskPlan.ready()\` therefore continues to see its read/write locks and concurrency slot. A conflicting task cannot start while the old coroutine is still alive; independent work may continue if a slot is available.
+A cancellation-resistant task remains in the current plan's running set. `TaskPlan.ready()` therefore continues to see its read/write locks and concurrency slot. A conflicting task cannot start while the old coroutine is still alive; independent work may continue if a slot is available.
 
-At the end of a run, \`AgentRuntimeState\` retains a strong reference to any unconfirmed task. A later plan using the same runtime state is rejected until the quarantine clears. The host can call \`wait_for_quarantine()\` to wait without cancelling the worker, then safely reuse the runtime.
+At the end of a run, `AgentRuntimeState` retains a strong reference to any unconfirmed task. A later plan using the same runtime state is rejected until the quarantine clears. The host can call `wait_for_quarantine()` to wait without cancelling the worker, then safely reuse the runtime.
 
 ### E. Keep partial work separate from verified completion
 
 The runtime distinguishes:
-- \`completed\`
-- \`failed\`
-- \`blocked\`
-- \`timed_out\`
-- \`cancelled\`
-- \`incomplete\`
-- \`stop_unconfirmed\`
+- `completed`
+- `failed`
+- `blocked`
+- `timed_out`
+- `cancelled`
+- `incomplete`
+- `stop_unconfirmed`
 
 Partial text remains visibly marked incomplete. It cannot satisfy a dependency, be checkpointed as a completed node or be synthesized as a verified result.
 
@@ -105,9 +105,9 @@ If the caller cancels the whole plan, the runtime requests cancellation for acti
 
 This is an **async coroutine supervisor**, not an operating-system process supervisor.
 
-A trusted worker adapter that wraps \`asyncio.to_thread\`, a subprocess, a model server, GPU work, a game process or a device operation must not report completion merely because its awaiting coroutine was cancelled. It must wait for the external operation's real stop acknowledgement, or use a separate host-owned process supervisor with its own PID/job-object/lease and termination receipt.
+A trusted worker adapter that wraps `asyncio.to_thread`, a subprocess, a model server, GPU work, a game process or a device operation must not report completion merely because its awaiting coroutine was cancelled. It must wait for the external operation's real stop acknowledgement, or use a separate host-owned process supervisor with its own PID/job-object/lease and termination receipt.
 
-\`asyncio\` cannot forcibly terminate an OS thread or guarantee that an external process has stopped. The runtime documents this contract and does not claim otherwise.
+`asyncio` cannot forcibly terminate an OS thread or guarantee that an external process has stopped. The runtime documents this contract and does not claim otherwise.
 
 No model-generated Python is executed. No worker receives another worker's credentials. No tool permissions are inherited. Write-capable plans remain opt-in and automatic checkpoint replay remains read-only.
 
@@ -148,7 +148,7 @@ Focused offline tests cover:
 - holding a conflicting resource lock until the worker actually stops;
 - caller cancellation.
 
-The isolated focused suite passed **14 tests** under Python 3.13.5. \`compileall\` passed. Ruff is not installed in the scratch environment. The full repository test suite, Pyright, GitHub Actions and Windows host acceptance have not yet run.
+The isolated focused suite passed **14 tests** under Python 3.13.5. `compileall` passed. Ruff is not installed in the scratch environment. The full repository test suite, Pyright, GitHub Actions and Windows host acceptance have not yet run.
 
 ## Next engineering priorities
 
