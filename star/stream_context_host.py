@@ -25,6 +25,7 @@ from .stream_episode import StreamEpisode
 from .stream_knowledge import public_knowledge_packet
 from .stream_stage import StagePlan
 from .stream_turntaking import TurnAdvice
+from .stream_timeline_context import TimelineContextPacket
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 
@@ -99,6 +100,7 @@ class StreamContextHost:
         viewer_speaking: bool = False,
         gameplay_critical: bool = False,
         turn: TurnAdvice | None = None,
+        timeline_context: TimelineContextPacket | None = None,
     ) -> StagePlan | None:
         """Prepare a hardware-governed response with approved context only.
 
@@ -112,6 +114,8 @@ class StreamContextHost:
                 type(moderated_question) is not str
                 or not 1 <= len(moderated_question.strip()) <= 300):
             raise ValueError("moderated_question must contain 1..300 characters")
+        if timeline_context is not None and not isinstance(timeline_context, TimelineContextPacket):
+            raise TypeError("timeline_context must be a validated TimelineContextPacket")
         if get_ident() != self._owner_thread:
             raise RuntimeError("marshal context retrieval to the SQLite owner thread")
         with self._lock:
@@ -150,6 +154,7 @@ class StreamContextHost:
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical, turn=turn,
                 knowledge=public_facts, episode=public_episode,
+                timeline_context=timeline_context,
             )
             if result is None:
                 self._counts["silence"] += 1
