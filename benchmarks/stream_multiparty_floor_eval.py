@@ -7,6 +7,7 @@ conversation groups disjoint between calibration and holdout splits.
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_right
 from dataclasses import dataclass
 import json
 import math
@@ -331,27 +332,20 @@ _MIN_CALIBRATION_EVENTS = 20
 _MIN_CALIBRATION_PER_CLASS = 5
 
 
-def _response_threshold_metrics(
-    cases: Sequence[FloorEvalCase], threshold: float,
+def _threshold_metrics_from_counts(
+    threshold: float,
+    *,
+    event_count: int,
+    tp: int,
+    fp: int,
+    fn: int,
+    tn: int,
 ) -> dict[str, float | int]:
-    """Score a scalar response threshold; strict > makes 1.0 a no-speech cutoff."""
-    tp = fp = fn = tn = 0
-    for case in cases:
-        predicted = case.response_probability > threshold
-        actual = case.gold_action == "respond"
-        if predicted and actual:
-            tp += 1
-        elif predicted and not actual:
-            fp += 1
-        elif not predicted and actual:
-            fn += 1
-        else:
-            tn += 1
-    non_response = fp + tn
     response = _prf(tp, fp, fn)
+    non_response = fp + tn
     return {
         "threshold": threshold,
-        "event_count": len(cases),
+        "event_count": event_count,
         "gold_response_count": tp + fn,
         "gold_non_response_count": non_response,
         "predicted_response_count": tp + fp,
@@ -364,6 +358,27 @@ def _response_threshold_metrics(
         "f1": response["f1"],
         "false_response_rate": round(fp / non_response, 6) if non_response else 0.0,
     }
+
+
+def _response_threshold_metrics(
+    cases: Sequence[FloorEvalCase], threshold: float,
+) -> dict[str, float | int]:
+    """Score one strict p > threshold decision in a single pass."""
+    tp = fp = fn = tn = 0
+    for case in cases:
+        predicted = case.response_probability > threshold
+        actual = case.gold_action == "respond"
+        if predicted and actual:
+            tp += 1
+        elif predicted and not actual:
+            fp += 1
+        elif not predicted and actual:
+            fn += 1
+        else:
+            tn += 1
+    return _threshold_metrics_from_counts(
+        threshold, event_count=len(cases), tp=tp, fp=fp, fn=fn, tn=tn,
+    )
 
 
 def _select_response_threshold(
@@ -392,16 +407,37 @@ def _select_response_threshold(
             "holdout_metrics": None,
         }
 
-    # For the strict p > threshold rule, every observed score and the two
-    # endpoints cover every distinct classification that this dataset permits.
-    candidates = sorted({
-        0.0, 1.0, *(case.response_probability for case in calibration),
-    })
-    feasible = []
+    # Prefix counts let each candidate be scored with one binary search instead
+    # of rescanning the full calibration set (O(n log n), not O(n squared)).
+    ordered = sorted(
+        (case.response_probability, case.gold_action == "respond")
+        for case in calibration
+    )
+    scores = [score for score, _ in ordered]
+    prefix_positive = [0]
+    prefix_negative = [0]
+    for _, is_positive in ordered:
+        prefix_positive.append(prefix_positive[-1] + int(is_positive))
+        prefix_negative.append(prefix_negative[-1] + int(not is_positive))
+
+    candidates = sorted({0.0, 1.0, *scores})
+    feasible: list[dict[str, float | int]] = []
     for threshold in candidates:
-        metrics = _response_threshold_metrics(calibration, threshold)
+        # Strict p > threshold means values equal to the cutoff are negative.
+        cutoff = bisect_right(scores, threshold)
+        fn = prefix_positive[cutoff]
+        tn = prefix_negative[cutoff]
+        metrics = _threshold_metrics_from_counts(
+            threshold,
+            event_count=len(calibration),
+            tp=positives - fn,
+            fp=negatives - tn,
+            fn=fn,
+            tn=tn,
+        )
         if metrics["false_response_rate"] <= max_false_response_rate:
             feasible.append(metrics)
+
     # Threshold 1.0 always predicts silence, so a feasible point exists.
     selected = max(
         feasible,
