@@ -72,7 +72,7 @@ The evaluator now adds \`response_threshold_selection\` to schema version 2.
 - The host supplies a response probability for each annotated event.
 - Calibration and holdout remain conversation-disjoint.
 - At least 20 calibration events and at least five examples in each class (respond / non-respond) are required.
-- Candidate thresholds are evaluated only on calibration data.
+- Candidate thresholds are evaluated only on calibration data. A sorted score array, prefix class counts, and binary search make the sweep O(n log n) rather than rescanning every event for every candidate.
 - The selected cutoff maximizes calibration recall, then F1 and precision, subject to a configurable maximum calibration false-response rate (default 5%).
 - The prediction rule is explicitly \`p > threshold\`; a threshold of 1.0 is the conservative no-speech endpoint.
 - The chosen threshold is frozen and evaluated once on holdout data.
