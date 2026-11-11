@@ -290,8 +290,12 @@ class AdaptiveQoS:
                 return self._reason("protect_live_stream_from_background_work")
             under_pressure = ((stream.game_active and stream.game_fps < 50)
                               or stream.speech_backlog_ms > 250)
+            priority_exempt = (
+                job.kind == "speech"
+                or (job.kind == "game_control" and stream.game_active)
+            )
             if (under_pressure and (stream.live or stream.game_active)
-                    and job.kind not in {"speech", "game_control"}):
+                    and not priority_exempt):
                 return self._reason("game_or_voice_backpressure")
             if (stream.live and job.kind == "vision" and
                     self._last_vision_ms is not None and
