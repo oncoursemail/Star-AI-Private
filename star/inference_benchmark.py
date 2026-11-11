@@ -133,7 +133,8 @@ def summarize_stream_probes(
              if sample.first_content_ms is not None]
     second = [
         float(sample.first_content_ms) + float(sample.inter_chunk_gaps_ms[0])
-        for sample in succeeded if sample.content_chunks >= 2
+        for sample in succeeded
+        if sample.content_chunks >= 2 and sample.first_content_ms is not None
     ]
     latency = [float(sample.elapsed_ms) for sample in succeeded]
     gaps = [float(gap) for sample in succeeded for gap in sample.inter_chunk_gaps_ms]
