@@ -148,6 +148,7 @@ async def terminate_managed_async(
         return await wait_for_empty(kill_wait_s)
     except asyncio.CancelledError:
         tree.terminate()
+        tree.close()
         try:
             await asyncio.wait_for(asyncio.shield(wait_task), timeout=kill_wait_s)
         except TimeoutError:
