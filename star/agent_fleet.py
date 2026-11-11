@@ -153,29 +153,36 @@ def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> 
     try:
         while proc.poll() is None:
             if cancel.is_set() or time.monotonic() > end:
-                terminate_managed(managed, grace_period_s=0.35)
+                empty = terminate_managed(managed, grace_period_s=0.35)
+                if not empty:
+                    managed.close()
+                    reader.join(2)
+                    return None, "cleanup_unconfirmed"
                 try:
                     proc.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     managed.close()
-                    try:
-                        proc.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        reader.join(2)
-                        return None, "cleanup_timeout"
+                    reader.join(2)
+                    return None, "cleanup_unconfirmed"
                 reader.join(2)
                 return None, "cancelled" if cancel.is_set() else "timeout"
             time.sleep(0.05)
         rc = proc.wait()
         # The root may exit while a compiler/browser/model child still holds stdout open.
         # Closing the group/job before joining the reader prevents orphaned workers and pipe hangs.
-        terminate_managed(managed, grace_period_s=0.35)
+        empty = terminate_managed(managed, grace_period_s=0.35)
+        if not empty:
+            managed.close()
+            reader.join(5)
+            return None, "cleanup_unconfirmed"
         managed.close()
         reader.join(5)
         return rc, "".join(out)
     finally:
         if proc.poll() is None:
-            terminate_managed(managed, grace_period_s=0.35)
+            empty = terminate_managed(managed, grace_period_s=0.35)
+            if not empty:
+                managed.close()
             if proc.poll() is None:
                 managed.close()
                 try:
