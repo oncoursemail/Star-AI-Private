@@ -87,6 +87,22 @@ class StreamingProbe:
             raise ValueError("an empty stream cannot be successful")
 
 
+def _exception_status_code(error: BaseException) -> int | None:
+    """Read common direct or response-nested HTTP status fields defensively."""
+    try:
+        direct = getattr(error, "status_code", None)
+    except Exception:
+        direct = None
+    if type(direct) is int:
+        return direct
+    try:
+        response = getattr(error, "response", None)
+        nested = getattr(response, "status_code", None)
+    except Exception:
+        nested = None
+    return nested if type(nested) is int else None
+
+
 def _classify_stream_failure(error: BaseException | None) -> str:
     """Return a bounded, content-free failure label; never persist exception text."""
     if error is None:
@@ -94,8 +110,8 @@ def _classify_stream_failure(error: BaseException | None) -> str:
     name = type(error).__name__.lower()
     if isinstance(error, TimeoutError) or "timeout" in name:
         return "timeout"
-    status_code = getattr(error, "status_code", None)
-    if type(status_code) is int:
+    status_code = _exception_status_code(error)
+    if status_code is not None:
         if status_code == 429:
             return "rate_limited"
         if status_code in {408, 504}:
