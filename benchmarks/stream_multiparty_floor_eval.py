@@ -326,8 +326,116 @@ def _metrics(cases: list[FloorEvalCase]) -> dict[str, object]:
     }
 
 
-def evaluate_cases(cases: Sequence[FloorEvalCase]) -> dict[str, object]:
-    """Report calibration and conversation-disjoint holdout metrics."""
+
+_MIN_CALIBRATION_EVENTS = 20
+_MIN_CALIBRATION_PER_CLASS = 5
+
+
+def _response_threshold_metrics(
+    cases: Sequence[FloorEvalCase], threshold: float,
+) -> dict[str, float | int]:
+    """Score a scalar response threshold; strict > makes 1.0 a no-speech cutoff."""
+    tp = fp = fn = tn = 0
+    for case in cases:
+        predicted = case.response_probability > threshold
+        actual = case.gold_action == "respond"
+        if predicted and actual:
+            tp += 1
+        elif predicted and not actual:
+            fp += 1
+        elif not predicted and actual:
+            fn += 1
+        else:
+            tn += 1
+    non_response = fp + tn
+    response = _prf(tp, fp, fn)
+    return {
+        "threshold": threshold,
+        "event_count": len(cases),
+        "gold_response_count": tp + fn,
+        "gold_non_response_count": non_response,
+        "predicted_response_count": tp + fp,
+        "true_positive": tp,
+        "false_positive": fp,
+        "false_negative": fn,
+        "true_negative": tn,
+        "precision": response["precision"],
+        "recall": response["recall"],
+        "f1": response["f1"],
+        "false_response_rate": round(fp / non_response, 6) if non_response else 0.0,
+    }
+
+
+def _select_response_threshold(
+    calibration: list[FloorEvalCase],
+    holdout: list[FloorEvalCase],
+    *,
+    max_false_response_rate: float,
+) -> dict[str, object]:
+    """Choose on calibration only, then evaluate the frozen cutoff once on holdout."""
+    positives = sum(case.gold_action == "respond" for case in calibration)
+    negatives = len(calibration) - positives
+    if (len(calibration) < _MIN_CALIBRATION_EVENTS
+            or positives < _MIN_CALIBRATION_PER_CLASS
+            or negatives < _MIN_CALIBRATION_PER_CLASS):
+        return {
+            "status": "insufficient_calibration",
+            "reason": "requires_20_events_and_at_least_5_per_class",
+            "minimum_calibration_events": _MIN_CALIBRATION_EVENTS,
+            "minimum_per_class": _MIN_CALIBRATION_PER_CLASS,
+            "observed_events": len(calibration),
+            "observed_responses": positives,
+            "observed_non_responses": negatives,
+            "max_calibration_false_response_rate": max_false_response_rate,
+            "selected_threshold": None,
+            "calibration_metrics": None,
+            "holdout_metrics": None,
+        }
+
+    # For the strict p > threshold rule, every observed score and the two
+    # endpoints cover every distinct classification that this dataset permits.
+    candidates = sorted({
+        0.0, 1.0, *(case.response_probability for case in calibration),
+    })
+    feasible = []
+    for threshold in candidates:
+        metrics = _response_threshold_metrics(calibration, threshold)
+        if metrics["false_response_rate"] <= max_false_response_rate:
+            feasible.append(metrics)
+    # Threshold 1.0 always predicts silence, so a feasible point exists.
+    selected = max(
+        feasible,
+        key=lambda item: (
+            float(item["recall"]),
+            float(item["f1"]),
+            float(item["precision"]),
+            float(item["threshold"]),
+        ),
+    )
+    threshold = float(selected["threshold"])
+    return {
+        "status": "selected",
+        "selection_policy": (
+            "maximize calibration recall, then F1 and precision, subject to the "
+            "calibration false-response-rate ceiling; predict respond only when p > threshold"
+        ),
+        "minimum_calibration_events": _MIN_CALIBRATION_EVENTS,
+        "minimum_per_class": _MIN_CALIBRATION_PER_CLASS,
+        "observed_events": len(calibration),
+        "observed_responses": positives,
+        "observed_non_responses": negatives,
+        "max_calibration_false_response_rate": max_false_response_rate,
+        "selected_threshold": threshold,
+        "calibration_metrics": selected,
+        "holdout_metrics": _response_threshold_metrics(holdout, threshold),
+    }
+
+
+def evaluate_cases(
+    cases: Sequence[FloorEvalCase], *,
+    max_calibration_false_response_rate: float = 0.05,
+) -> dict[str, object]:
+    """Report metrics and select a frozen response cutoff without holdout tuning."""
     if not isinstance(cases, (list, tuple)) or not cases:
         raise ValueError("provide a non-empty sequence of FloorEvalCase records")
     if any(type(case) is not FloorEvalCase for case in cases):
@@ -344,11 +452,19 @@ def evaluate_cases(cases: Sequence[FloorEvalCase]) -> dict[str, object]:
     holdout = [case for case in cases if case.split == "holdout"]
     if not calibration or not holdout:
         raise ValueError("both calibration and holdout conversations are required")
+    max_false_rate = _number(
+        max_calibration_false_response_rate,
+        "max_calibration_false_response_rate",
+        maximum=1.0,
+    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "split_policy": "conversation-disjoint",
         "calibration": _metrics(calibration),
         "holdout": _metrics(holdout),
+        "response_threshold_selection": _select_response_threshold(
+            calibration, holdout, max_false_response_rate=max_false_rate,
+        ),
         "privacy": "aggregate metrics only; no event or conversation identifiers",
     }
 
@@ -357,9 +473,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", required=True, type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--max-calibration-false-response-rate", type=float, default=0.05,
+        help="maximum false-response rate allowed when selecting a calibration cutoff",
+    )
     args = parser.parse_args(argv)
     try:
-        report = evaluate_cases(load_cases(args.cases))
+        report = evaluate_cases(
+            load_cases(args.cases),
+            max_calibration_false_response_rate=args.max_calibration_false_response_rate,
+        )
         output = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
         if args.out is None:
             sys.stdout.write(output)
