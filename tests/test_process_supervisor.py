@@ -41,6 +41,7 @@ class FakeJobApi:
         self.calls: list[tuple] = []
         self.active = 1
         self.fail_assign = False
+        self.fail_resume = False
 
     def create_job(self):
         self.calls.append(("create",))
@@ -64,6 +65,11 @@ class FakeJobApi:
     def close(self, job):
         self.calls.append(("close", job))
         self.active = 0
+
+    def resume_primary_thread(self, pid):
+        self.calls.append(("resume", pid))
+        if self.fail_resume:
+            raise OSError("resume refused")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -116,6 +122,65 @@ def test_windows_assignment_failure_is_reported_and_root_fallback_works():
     assert tree.mode == "root_only" and "assignment refused" in tree.error
     tree.terminate()
     assert process.killed
+
+
+def test_managed_windows_worker_is_suspended_until_job_assignment():
+    api = FakeJobApi()
+    process = FakeProcess()
+    captured = {}
+
+    def factory(args, **kwargs):
+        captured.update(kwargs)
+        return process
+
+    tree = start_managed_process(
+        ["worker"], platform="nt", job_api=api, popen_factory=factory, require_tree=True
+    )
+    flags = captured["creationflags"]
+    assert flags & 0x00000200  # CREATE_NEW_PROCESS_GROUP
+    assert flags & 0x00000004  # CREATE_SUSPENDED
+    assign_index = api.calls.index(("assign", "job-1", process.pid))
+    resume_index = api.calls.index(("resume", process.pid))
+    assert assign_index < resume_index
+    assert tree.mode == "windows_job"
+
+
+def test_assignment_failure_resumes_only_explicit_root_fallback():
+    api = FakeJobApi()
+    api.fail_assign = True
+    process = FakeProcess()
+    tree = start_managed_process(
+        ["worker"], platform="nt", job_api=api, popen_factory=lambda *a, **k: process
+    )
+    assert tree.mode == "root_only"
+    assert ("resume", process.pid) in api.calls
+    assert not process.killed
+
+
+def test_required_tree_assignment_failure_kills_suspended_worker_without_resuming():
+    api = FakeJobApi()
+    api.fail_assign = True
+    process = FakeProcess()
+    with pytest.raises(ProcessTreeError):
+        start_managed_process(
+            ["worker"], platform="nt", job_api=api, popen_factory=lambda *a, **k: process,
+            require_tree=True,
+        )
+    assert process.killed
+    assert ("resume", process.pid) not in api.calls
+
+
+def test_resume_failure_after_assignment_fails_closed():
+    api = FakeJobApi()
+    api.fail_resume = True
+    process = FakeProcess()
+    with pytest.raises(ProcessTreeError):
+        start_managed_process(
+            ["worker"], platform="nt", job_api=api, popen_factory=lambda *a, **k: process,
+            require_tree=True,
+        )
+    assert process.killed
+    assert ("close", "job-1") in api.calls
 
 
 def test_required_windows_tree_fails_closed_when_assignment_fails():
