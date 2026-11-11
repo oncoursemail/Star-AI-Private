@@ -1,5 +1,6 @@
 """Offline tests for metadata-only Agent Skill retrieval and Tool Workshop integration."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -227,3 +228,14 @@ def test_removed_skill_is_not_returned_from_metadata_cache(tmp_path):
     skill_dir.rmdir()
 
     assert library.search("responsive menus accessible interface layouts") == []
+
+
+def test_concurrent_searches_share_cache_without_changing_rankings(tmp_path):
+    library = _library(tmp_path)
+    query = "Roblox RemoteEvent server validation"
+    expected = library.search(query)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(library.search, [query] * 32))
+
+    assert all(result == expected for result in results)
