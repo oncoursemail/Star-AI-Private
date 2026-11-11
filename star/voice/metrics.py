@@ -38,7 +38,7 @@ class TurnMetrics:
         return None if a is None or b is None else max(0.0, b - a)
 
     def stages(self) -> dict:
-        """The latency breakdown in seconds. `total` is what the user feels: stop talking -> hear Star."""
+        """Latency in seconds: `total` is legacy queue submission; `device_output_total` is the DAC estimate."""
         generation = self._gap(self.first_token_at, self.last_token_at)
         return {
             "endpoint": self._gap(self.speech_end, self.turn_end),
@@ -50,9 +50,12 @@ class TurnMetrics:
             "speech_end_to_device_output": self._gap(self.speech_end, self.first_device_output_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
             "device_output_total": self._gap(self.speech_end, self.first_device_output_at),
-            # what the user waits for until Star makes a sound: the acknowledgement clip when one played
-            "perceived": self._gap(self.speech_end, min((t for t in (self.first_ack_at, self.first_audio_at)
-                                                         if t is not None), default=None)),
+            # Prefer the device-output estimate; retain the old submission fallback for virtual speakers.
+            "perceived": self._gap(
+                self.speech_end,
+                self.first_device_output_at if self.first_device_output_at is not None else
+                min((t for t in (self.first_ack_at, self.first_audio_at) if t is not None), default=None),
+            ),
             "tokens_per_second": ((self.tokens - 1) / generation) if generation and self.tokens > 2 else None,
         }
 
