@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from star import resource_probes as probes
 from star.acp_adapter import AcpAdapter
+from star.process_shutdown import terminate_managed
 from star.process_supervisor import start_managed_process
 
 PROTECTED_MARKERS = ("paintball", os.path.join("appdata", "roaming", "star").lower())
@@ -152,7 +153,7 @@ def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> 
     try:
         while proc.poll() is None:
             if cancel.is_set() or time.monotonic() > end:
-                managed.terminate()
+                terminate_managed(managed, grace_period_s=0.35)
                 proc.wait()
                 reader.join(2)
                 return None, "cancelled" if cancel.is_set() else "timeout"
@@ -160,12 +161,13 @@ def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> 
         rc = proc.wait()
         # The root may exit while a compiler/browser/model child still holds stdout open.
         # Closing the group/job before joining the reader prevents orphaned workers and pipe hangs.
+        terminate_managed(managed, grace_period_s=0.35)
         managed.close()
         reader.join(5)
         return rc, "".join(out)
     finally:
         if proc.poll() is None:
-            managed.terminate()
+            terminate_managed(managed, grace_period_s=0.35)
             proc.wait()
         managed.close()
         reader.join(2)
