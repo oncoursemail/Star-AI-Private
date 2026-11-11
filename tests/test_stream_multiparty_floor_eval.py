@@ -88,6 +88,8 @@ def test_reports_conversation_disjoint_calibration_and_holdout_metrics():
     assert report["holdout"]["response_precision_recall_f1"] == {
         "precision": 0.5, "recall": 0.5, "f1": 0.5,
     }
+    assert report["calibration"]["conversation_response_scored_count"] == 1
+    assert report["holdout"]["conversation_response_scored_count"] == 3
 
 
 def test_reports_social_floor_failures_and_latency_separately():
