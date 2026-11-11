@@ -30,6 +30,8 @@ def test_stream_summary_reports_first_content_and_chunk_cadence_separately():
     assert report["failed"] == 1
     assert report["first_content_p50_ms"] == 20
     assert report["first_content_p95_ms"] == 50
+    assert report["time_to_second_content_p50_ms"] == 30
+    assert report["time_to_second_content_p95_ms"] == 70
     assert report["request_latency_p95_ms"] == 200
     assert report["inter_chunk_gap_p50_ms"] == 20
     assert report["inter_chunk_gap_p95_ms"] == 30
@@ -48,6 +50,8 @@ def test_stream_probe_rejects_inconsistent_or_nonfinite_measurements():
         StreamingProbe(10, None, (), 0, True)
     with pytest.raises(ValueError):
         StreamingProbe(10, 1, (float("inf"),), 2, True)
+    with pytest.raises(ValueError):
+        StreamingProbe(10, 8, (3,), 2, True)
     with pytest.raises(ValueError):
         StreamingProbe(True, 1, (), 1, True)
 
@@ -134,6 +138,33 @@ def test_empty_streams_are_failures_not_zero_latency_successes():
         assert fake.peak == 1
 
     asyncio.run(run())
+
+
+def test_streaming_benchmark_rejects_non_integer_and_ambiguous_workload_values():
+    async def run(**overrides):
+        client, _ = _client()
+        values = {
+            "endpoint": "http://127.0.0.1:8080/v1",
+            "model": "local-model",
+            "requests": 1,
+            "parallel": 1,
+            "client": client,
+        }
+        values.update(overrides)
+        return await benchmark_local_model_streaming(**values)
+
+    for overrides in (
+        {"requests": True},
+        {"requests": 1.5},
+        {"parallel": True},
+        {"parallel": 1.5},
+        {"model": ""},
+        {"model": 123},
+        {"endpoint": ""},
+        {"endpoint": 123},
+    ):
+        with pytest.raises(ValueError):
+            asyncio.run(run(**overrides))
 
 
 def test_streaming_benchmark_rejects_remote_hosts_and_unbounded_load():
