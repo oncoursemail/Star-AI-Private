@@ -267,7 +267,11 @@ def parse_llama_cpp_metrics(
 
     def floating(name: str) -> float | None:
         value = values.get(name)
-        return float(value) if type(value) in (int, float) else None
+        if type(value) is int:
+            return float(value)
+        if type(value) is float:
+            return value
+        return None
 
     return LlamaCppMetricsSnapshot(
         instance_id=instance_id,
