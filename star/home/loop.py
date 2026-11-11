@@ -65,13 +65,15 @@ def _life_tick(home: Path, chat, life) -> None:
         control.log_action(home, "life", "error", detail=str(exc)[:200])
 
 
-def _life_after(home: Path, interest: str, activity: str, outcome: dict, life) -> None:
+def _life_after(home: Path, interest: str, activity: str, outcome: dict, life) -> dict:
     """Scrapbook moment and goal practice from a finished session (star.life); never fails the loop."""
     try:
         from .. import life as life_extras
-        life_extras.after_session(home, interest, activity, outcome, life=life)
+        result = life_extras.after_session(home, interest, activity, outcome, life=life)
+        return result if isinstance(result, dict) else {}
     except Exception as exc:
         control.log_action(home, "life", "error", detail=str(exc)[:200])
+        return {}
 
 
 def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, probe=None, attention=None) -> dict:
@@ -180,8 +182,11 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
     if practice:
         curiosity.resolve([practice[0].key], "taught" if row["verified"] else "tried", by="star-home", path=queue)
     control.log_action(home, "session", "done", interest=interest, verified=row["verified"], summary=row["summary"])
-    _feel_outcome(interest, row["verified"], row["summary"])
-    _life_after(home, interest, activity.name, outcome, life)
+    # Goal completion already emits its own verified expression event. Do not emit a second
+    # generic success/failure event for the same completed session.
+    after = _life_after(home, interest, activity.name, outcome, life)
+    if not after.get("goal_done"):
+        _feel_outcome(interest, row["verified"], row["summary"])
     if attention is not None:
         attention.last_state = "worked"
     return {"state": "worked", "interest": interest, "activity": activity.name, "verified": row["verified"],
