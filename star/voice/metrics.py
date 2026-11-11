@@ -17,6 +17,7 @@ class TurnMetrics:
     first_token_at: float | None = None  # first text from the brain
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
     first_audio_at: float | None = None  # first audio handed to the speaker
+    first_device_output_at: float | None = None  # first non-empty buffer's estimated DAC time, same host clock
     first_ack_at: float | None = None    # acknowledgement clip handed to the speaker (star/voice/acks.py)
     ack_text: str = ""
     last_token_at: float | None = None   # last text from the brain
@@ -45,7 +46,10 @@ class TurnMetrics:
             "speech_end_to_transcript": self._gap(self.speech_end, self.transcript_at),
             "transcript_to_first_token": self._gap(self.transcript_at, self.first_token_at),
             "first_token_to_first_audio": self._gap(self.first_token_at, self.first_audio_at),
+            "audio_submit_to_device_output": self._gap(self.first_audio_at, self.first_device_output_at),
+            "speech_end_to_device_output": self._gap(self.speech_end, self.first_device_output_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
+            "device_output_total": self._gap(self.speech_end, self.first_device_output_at),
             # what the user waits for until Star makes a sound: the acknowledgement clip when one played
             "perceived": self._gap(self.speech_end, min((t for t in (self.first_ack_at, self.first_audio_at)
                                                          if t is not None), default=None)),
@@ -61,10 +65,12 @@ class TurnMetrics:
 def latency_summary(turns: list[TurnMetrics]) -> dict:
     """Report tail latency from real voice-clock stamps without capturing user text.
 
-    The first-audio stamp means a PCM chunk was *submitted* to the speaker; it
-    cannot prove when the user physically heard it. An errored, missing, or
-    clock-invalid turn must never silently improve p95. Nearest-rank percentiles
-    are descriptive and are not a quality or deployment promotion gate.
+    The first-audio stamp means a PCM chunk was *submitted* to the speaker.
+    first_device_output_at is a host-monotonic estimate of the first non-empty
+    PortAudio output buffer's scheduled DAC time; it is not acoustic loopback
+    or proof a person heard it. An errored, missing, or clock-invalid turn must
+    never silently improve p95. Nearest-rank percentiles are descriptive and
+    are not a quality or deployment promotion gate.
     """
     if len(turns) > 10000 or any(not isinstance(t, TurnMetrics) for t in turns):
         raise ValueError("Expected at most 10000 voice turns")
@@ -74,6 +80,8 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
         "transcription": ("turn_end", "transcript_at"),
         "brain_first_token": ("transcript_at", "first_token_at"),
         "tts_and_queue": ("first_token_at", "first_audio_at"),
+        "speech_end_to_device_output": ("speech_end", "first_device_output_at"),
+        "audio_submit_to_device_output": ("first_audio_at", "first_device_output_at"),
     }
     samples: dict[str, list[float]] = {key: [] for key in pairs}
     failed = invalid = incomplete = 0
@@ -89,10 +97,20 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
         if a is None or b is None:
             incomplete += 1
             continue
-        if not valid(a) or not valid(b) or b < a or (
+        device_output = turn.first_device_output_at
+        submitted = min(
+            (value for value in (turn.first_ack_at, turn.first_audio_at) if valid(value)),
+            default=None,
+        )
+        if (not valid(a) or not valid(b) or b < a or (
             turn.first_token_at is not None and
             (not valid(turn.first_token_at) or turn.first_token_at > b)
-        ):
+        ) or (
+            device_output is not None and (
+                not valid(device_output) or
+                submitted is not None and device_output < submitted
+            )
+        )):
             invalid += 1
             continue
         for key, (begin, end) in pairs.items():
