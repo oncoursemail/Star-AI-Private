@@ -268,9 +268,7 @@ def _metrics(cases: list[FloorEvalCase]) -> dict[str, object]:
             row.gold_action == "respond" and row.predicted_action != "respond"
             for row in rows
         )
-        if tp + fp + fn == 0:
-            conversation_scores.append(1.0)
-        else:
+        if tp + fp + fn > 0:
             conversation_scores.append(_prf(tp, fp, fn)["f1"])
 
     return {
@@ -307,9 +305,10 @@ def _metrics(cases: list[FloorEvalCase]) -> dict[str, object]:
             sum(case.gold_speech_act == case.predicted_speech_act for case in cases)
             / len(cases), 6
         ),
+        "conversation_response_scored_count": len(conversation_scores),
         "conversation_macro_response_f1": round(
             statistics.fmean(conversation_scores), 6
-        ),
+        ) if conversation_scores else 0.0,
         "response_probability_calibration": _calibration(cases),
         "decision_latency_ms": {
             "p50": _percentile(latencies, 0.50),
