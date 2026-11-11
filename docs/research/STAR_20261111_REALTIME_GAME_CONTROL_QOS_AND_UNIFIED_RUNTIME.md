@@ -32,7 +32,7 @@ This change adds that lane without turning an inference admission into permissio
 
 For both \`speech\` and \`game_control\`, automatic routing tries CPU before GPU while a game is active. This is a resource policy, not a claim that CPU is always faster.
 
-A calibrated GPU route remains a fallback if the CPU is saturated and the game is otherwise healthy.
+A calibrated GPU route remains a fallback if the CPU route is unavailable (for example, saturated, out of slots, or unable to meet the deadline) and the game is otherwise healthy.
 
 ### 3. GPU protection under pressure
 
@@ -71,7 +71,9 @@ Added \`tests/test_stream_qos_game_control.py\` for:
 - measured GPU fallback when CPU is saturated and the game is healthy;
 - deadline rejection against measured p95 plus margin;
 - advisory-only semantics; and
-- invalid workload/device rejection.
+- invalid workload/device rejection;
+- inactive-game backpressure; and
+- isolation of idle calibration from active-game calibration.
 
 All latency samples in these tests are deterministic synthetic fixtures. They are not hardware measurements.
 
@@ -268,7 +270,7 @@ Use paired runs with the same game scene, camera, OBS profile, prompt set, model
 
 - The new game-control lane passes focused deterministic unit tests.
 - The complete Python suite and type/lint gates pass on the branch.
-- A private, non-live game rehearsal collects five successful active-game samples per route before that route is used live.
+- A private, non-live game rehearsal collects five successful active-game samples for each game-control device route intended for live use.
 - Live game-control requests reject stale telemetry and uncalibrated routes.
 - Low-FPS or delayed-speech conditions prevent GPU game-control admission.
 - A host integration test proves that QoS admission alone cannot dispatch input.
