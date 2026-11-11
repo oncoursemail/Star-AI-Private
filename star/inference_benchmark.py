@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass
 from statistics import median
 from time import monotonic
+from typing import Any
 
 from .desktop_core import Settings
 
@@ -141,7 +142,7 @@ async def benchmark_local_model(
     *,
     requests: int = 4,
     parallel: int = 1,
-    client=None,
+    client: Any | None = None,
     server: bool = False,
 ) -> dict:
     """Measure real requests. `server=True` treats `endpoint` as the STAR Server address."""
@@ -154,16 +155,18 @@ async def benchmark_local_model(
     if not model.strip() or not 1 <= requests <= 12 or not 1 <= parallel <= 4:
         raise ValueError("Benchmark requires a model, 1..12 requests and 1..4 slots")
     own = client is None
-    if own:
+    if client is None:
         from .providers import open_client
-        client = open_client(config, request_timeout=None if server else 90.0)
+        active_client: Any = open_client(config, request_timeout=None if server else 90.0)
+    else:
+        active_client = client
     sem = asyncio.Semaphore(parallel)
 
     async def one() -> Probe:
         async with sem:
             began = monotonic()
             try:
-                result = await client.chat.completions.create(
+                result = await active_client.chat.completions.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "You are a local model benchmark. Reply briefly."},
@@ -189,7 +192,7 @@ async def benchmark_local_model(
         return summarize_probes(samples, wall, parallel=parallel)
     finally:
         if own:
-            await client.close()
+            await active_client.close()
 
 
 async def benchmark_local_model_streaming(
@@ -210,9 +213,11 @@ async def benchmark_local_model_streaming(
     if not model.strip() or not 1 <= requests <= 12 or not 1 <= parallel <= 4:
         raise ValueError("Streaming benchmark requires a model, 1..12 requests and 1..4 slots")
     own = client is None
-    if own:
+    if client is None:
         from .providers import open_client
-        client = open_client(config, request_timeout=None if server else 90.0)
+        active_client: Any = open_client(config, request_timeout=None if server else 90.0)
+    else:
+        active_client = client
     sem = asyncio.Semaphore(parallel)
 
     async def one() -> StreamingProbe:
@@ -225,7 +230,7 @@ async def benchmark_local_model_streaming(
             content_chunks = 0
             ok = False
             try:
-                stream = await client.chat.completions.create(
+                stream = await active_client.chat.completions.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "You are a local model benchmark. Reply briefly."},
@@ -275,4 +280,4 @@ async def benchmark_local_model_streaming(
         return summarize_stream_probes(samples, wall, parallel=parallel)
     finally:
         if own:
-            await client.close()
+            await active_client.close()
