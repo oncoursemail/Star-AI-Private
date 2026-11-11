@@ -9,7 +9,12 @@ import time
 
 import pytest
 
-from star.process_supervisor import ProcessTreeError, ProcessTreeSupervisor, start_managed_async_process, start_managed_process
+from star.process_supervisor import (
+    ProcessTreeError,
+    ProcessTreeSupervisor,
+    start_managed_async_process,
+    start_managed_process,
+)
 
 
 class FakeProcess:
