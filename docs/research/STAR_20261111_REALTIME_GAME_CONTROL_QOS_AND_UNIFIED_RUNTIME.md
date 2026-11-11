@@ -177,7 +177,7 @@ Source: https://arxiv.org/abs/2610.04838
 
 The following is the target integration, not a claim that every adapter is already connected:
 
-\`\`\`text
+~~~text
 Audio / chat / game / host telemetry
               |
               v
@@ -210,7 +210,7 @@ Audio / chat / game / host telemetry
 Asynchronous lane (only when capacity permits):
 research -> retrieval -> strategic planning -> memory consolidation
          -> game creation -> render -> night school
-\`\`\`
+~~~
 
 ### Scheduling tiers
 
