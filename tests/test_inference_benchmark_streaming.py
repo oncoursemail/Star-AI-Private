@@ -11,8 +11,10 @@ from star.inference_benchmark import (
 )
 
 
-def probe(elapsed=100.0, first=20.0, gaps=(15.0, 25.0), chunks=3, ok=True):
-    return StreamingProbe(elapsed, first, gaps, chunks, ok)
+def probe(
+    elapsed=100.0, first=20.0, gaps=(15.0, 25.0), chunks=3, ok=True, failure_category=None,
+):
+    return StreamingProbe(elapsed, first, gaps, chunks, ok, failure_category)
 
 
 def test_stream_summary_reports_first_content_and_chunk_cadence_separately():
@@ -20,7 +22,7 @@ def test_stream_summary_reports_first_content_and_chunk_cadence_separately():
         [
             probe(elapsed=100, first=20, gaps=(10, 30), chunks=3),
             probe(elapsed=200, first=50, gaps=(20,), chunks=2),
-            StreamingProbe(90, None, (), 0, False),
+            StreamingProbe(90, None, (), 0, False, "empty_stream"),
         ],
         wall_ms=300,
         parallel=2,
@@ -36,6 +38,9 @@ def test_stream_summary_reports_first_content_and_chunk_cadence_separately():
     assert report["inter_chunk_gap_p50_ms"] == 20
     assert report["inter_chunk_gap_p95_ms"] == 30
     assert report["content_chunks"] == 5
+    assert report["failure_categories"] == {"empty_stream": 1}
+    assert report["failed_requests_with_partial_content"] == 0
+    assert report["partial_content_chunks_discarded"] == 0
     assert "token-level ITL" in report["note"]
 
 
@@ -54,6 +59,10 @@ def test_stream_probe_rejects_inconsistent_or_nonfinite_measurements():
         StreamingProbe(10, 8, (3,), 2, True)
     with pytest.raises(ValueError):
         StreamingProbe(True, 1, (), 1, True)
+    with pytest.raises(ValueError):
+        StreamingProbe(10, 1, (), 1, True, "timeout")
+    with pytest.raises(ValueError):
+        StreamingProbe(10, 1, (), 1, False, "unknown")
 
 
 def test_stream_summary_rejects_unbounded_or_invalid_inputs():
@@ -68,8 +77,10 @@ def test_stream_summary_rejects_unbounded_or_invalid_inputs():
 
 
 class _FakeCompletions:
-    def __init__(self, *, empty=False):
+    def __init__(self, *, empty=False, failure=None, partial_before_failure=False):
         self.empty = empty
+        self.failure = failure
+        self.partial_before_failure = partial_before_failure
         self.active = 0
         self.peak = 0
         self.calls = []
@@ -82,6 +93,12 @@ class _FakeCompletions:
         async def events():
             try:
                 await asyncio.sleep(0.005)
+                if self.failure is not None:
+                    if self.partial_before_failure:
+                        yield SimpleNamespace(choices=[
+                            SimpleNamespace(delta=SimpleNamespace(content="partial output"))
+                        ])
+                    raise self.failure
                 if not self.empty:
                     yield SimpleNamespace(choices=[
                         SimpleNamespace(delta=SimpleNamespace(content="A square"))
@@ -98,8 +115,10 @@ class _FakeCompletions:
         return events()
 
 
-def _client(*, empty=False):
-    completions = _FakeCompletions(empty=empty)
+def _client(*, empty=False, failure=None, partial_before_failure=False):
+    completions = _FakeCompletions(
+        empty=empty, failure=failure, partial_before_failure=partial_before_failure,
+    )
     return SimpleNamespace(
         chat=SimpleNamespace(completions=completions),
     ), completions
@@ -135,7 +154,37 @@ def test_empty_streams_are_failures_not_zero_latency_successes():
         assert report["successful"] == 0
         assert report["failed"] == 2
         assert report["first_content_p50_ms"] is None
+        assert report["failure_categories"] == {"empty_stream": 2}
+        assert report["failed_requests_with_partial_content"] == 0
         assert fake.peak == 1
+
+    asyncio.run(run())
+
+
+def test_streaming_benchmark_reports_sanitized_failure_categories_and_partial_output():
+    class RateLimitError(Exception):
+        status_code = 429
+
+    async def run():
+        client, _ = _client(
+            failure=TimeoutError("sensitive server detail must not be returned"),
+            partial_before_failure=True,
+        )
+        timeout_report = await benchmark_local_model_streaming(
+            "http://127.0.0.1:8080/v1", "local-model",
+            requests=1, parallel=1, client=client,
+        )
+        assert timeout_report["failure_categories"] == {"timeout": 1}
+        assert timeout_report["failed_requests_with_partial_content"] == 1
+        assert timeout_report["partial_content_chunks_discarded"] == 1
+        assert "sensitive server detail" not in repr(timeout_report)
+
+        rate_client, _ = _client(failure=RateLimitError("do not expose"))
+        rate_report = await benchmark_local_model_streaming(
+            "http://127.0.0.1:8080/v1", "local-model",
+            requests=1, parallel=1, client=rate_client,
+        )
+        assert rate_report["failure_categories"] == {"rate_limited": 1}
 
     asyncio.run(run())
 

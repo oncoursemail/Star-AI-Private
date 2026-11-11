@@ -17,6 +17,18 @@ from typing import Any
 from .desktop_core import Settings
 
 
+_STREAM_FAILURE_CATEGORIES = frozenset({
+    "empty_stream",
+    "timeout",
+    "rate_limited",
+    "client_error",
+    "server_error",
+    "connection_error",
+    "protocol_error",
+    "request_error",
+})
+
+
 @dataclass(frozen=True)
 class Probe:
     elapsed_ms: int
@@ -33,6 +45,7 @@ class StreamingProbe:
     inter_chunk_gaps_ms: tuple[float, ...]
     content_chunks: int
     ok: bool
+    failure_category: str | None = None
 
     def __post_init__(self) -> None:
         if (isinstance(self.elapsed_ms, bool) or
@@ -43,6 +56,12 @@ class StreamingProbe:
             raise ValueError("content_chunks must be a bounded integer")
         if type(self.ok) is not bool:
             raise ValueError("ok must be a boolean")
+        if (self.failure_category is not None and
+                (type(self.failure_category) is not str or
+                 self.failure_category not in _STREAM_FAILURE_CATEGORIES)):
+            raise ValueError("failure_category must be a known category or None")
+        if self.ok and self.failure_category is not None:
+            raise ValueError("a successful stream cannot have a failure category")
         if type(self.inter_chunk_gaps_ms) is not tuple:
             raise ValueError("inter_chunk_gaps_ms must be a tuple")
         first_content_value: float | None = None
@@ -66,6 +85,32 @@ class StreamingProbe:
             raise ValueError("content timestamps cannot extend beyond request completion")
         if self.ok and self.content_chunks == 0:
             raise ValueError("an empty stream cannot be successful")
+
+
+def _classify_stream_failure(error: BaseException | None) -> str:
+    """Return a bounded, content-free failure label; never persist exception text."""
+    if error is None:
+        return "empty_stream"
+    name = type(error).__name__.lower()
+    if isinstance(error, TimeoutError) or "timeout" in name:
+        return "timeout"
+    status_code = getattr(error, "status_code", None)
+    if type(status_code) is int:
+        if status_code == 429:
+            return "rate_limited"
+        if status_code in {408, 504}:
+            return "timeout"
+        if 400 <= status_code < 500:
+            return "client_error"
+        if 500 <= status_code < 600:
+            return "server_error"
+    if isinstance(error, (ConnectionError, OSError)) or any(
+        token in name for token in ("connection", "connect", "network", "transport")
+    ):
+        return "connection_error"
+    if any(token in name for token in ("json", "decode", "protocol", "validation")):
+        return "protocol_error"
+    return "request_error"
 
 
 def _nearest_rank(values: list[float], proportion: float) -> float | None:
@@ -139,6 +184,17 @@ def summarize_stream_probes(
     latency = [float(sample.elapsed_ms) for sample in succeeded]
     gaps = [float(gap) for sample in succeeded for gap in sample.inter_chunk_gaps_ms]
     chunks = sum(sample.content_chunks for sample in succeeded)
+    failure_categories: dict[str, int] = {}
+    failed_with_partial_content = 0
+    partial_content_chunks = 0
+    for sample in samples:
+        if sample.ok:
+            continue
+        category = sample.failure_category or "unspecified"
+        failure_categories[category] = failure_categories.get(category, 0) + 1
+        if sample.content_chunks:
+            failed_with_partial_content += 1
+            partial_content_chunks += sample.content_chunks
     return {
         "requests": len(samples),
         "successful": len(succeeded),
@@ -156,6 +212,9 @@ def summarize_stream_probes(
         "content_chunks": chunks,
         "content_chunks_per_second": round(chunks * 1000 / wall_ms, 2),
         "requests_per_second": round(len(succeeded) * 1000 / wall_ms, 3),
+        "failure_categories": dict(sorted(failure_categories.items())),
+        "failed_requests_with_partial_content": failed_with_partial_content,
+        "partial_content_chunks_discarded": partial_content_chunks,
         "note": (
             "Local-model streaming measurements only. Content chunks may contain multiple tokens; "
             "inter-chunk gap and time-to-second-content are not token-level ITL/TTST. Use AIPerf "
@@ -256,6 +315,7 @@ async def benchmark_local_model_streaming(
             gaps: list[float] = []
             content_chunks = 0
             ok = False
+            failure: BaseException | None = None
             try:
                 stream = await active_client.chat.completions.create(
                     model=model,
@@ -282,7 +342,8 @@ async def benchmark_local_model_streaming(
                     previous_content = now
                     content_chunks += 1
                 ok = content_chunks > 0
-            except Exception:
+            except Exception as exc:
+                failure = exc
                 ok = False
             finally:
                 closer = getattr(stream, "close", None)
@@ -296,8 +357,9 @@ async def benchmark_local_model_streaming(
                     except Exception:
                         pass
             elapsed = max(0.0, (monotonic() - began) * 1000)
+            failure_category = None if ok else _classify_stream_failure(failure)
             return StreamingProbe(
-                elapsed, first_content, tuple(gaps), content_chunks, ok,
+                elapsed, first_content, tuple(gaps), content_chunks, ok, failure_category,
             )
 
     started = monotonic()
