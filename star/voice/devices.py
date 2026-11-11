@@ -45,7 +45,7 @@ def _device_output_monotonic(host_now: float, time_info: object) -> float | None
         output = float(getattr(time_info, "outputBufferDacTime"))
     except (AttributeError, TypeError, ValueError, OverflowError):
         return None
-    if not all(math.isfinite(value) for value in (now, current, output)):
+    if not math.isfinite(now) or not math.isfinite(current) or not math.isfinite(output):
         return None
     delay = output - current
     # Reject a broken stream-clock mapping rather than inventing a timestamp.
