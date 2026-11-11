@@ -126,6 +126,7 @@ def test_sync_posix_escalates_when_worker_ignores_sigterm():
     finally:
         tree.close()
 
+
 def test_async_posix_shutdown_is_bounded_and_reaps_group():
     async def run():
         tree = await start_managed_async_process(
