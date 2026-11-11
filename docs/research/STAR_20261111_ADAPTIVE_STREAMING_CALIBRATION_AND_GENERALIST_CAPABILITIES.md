@@ -290,6 +290,14 @@ Avatar behavior should be driven by actual state:
 - no false lip-sync after cancellation;
 - no persistent real-world identity inferred from anonymous diarization slots.
 
+### InteractiveAvatar: long-duration visual consistency and intent-aware reactions
+
+The InteractiveAvatar research proposes continuous streaming avatar generation with a Long-Short Visual Memory mechanism for visual consistency and a Reasoning-Reaction Module for aligning avatar speech/actions with user intent.
+
+Paper: https://arxiv.org/abs/2606.22905
+
+**STAR application:** borrow the state-management idea, not the heavyweight video-generation stack. Maintain compact short-term expression state plus a slower-changing persona/appearance state. Route intent to a bounded reaction vocabulary, then synchronize the reaction with the actual voice/playback state. Avoid generating a new full avatar video for every response when a deterministic Live2D rig can produce the required expression more cheaply and consistently.
+
 Naturalness is not maximum motion or maximum talking. It is appropriate timing, coherent reactions, remembering relevant context, and being comfortable with silence. STAR remains transparently identified as an AI streamer.
 
 ## 7. General knowledge and multimodal tool use
