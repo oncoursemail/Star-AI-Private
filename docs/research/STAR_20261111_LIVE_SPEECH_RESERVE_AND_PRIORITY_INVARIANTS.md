@@ -48,6 +48,31 @@ Source: https://learn.microsoft.com/en-us/windows/win32/procthread/multimedia-cl
 
 **STAR implication:** implement a native Windows audio adapter that registers only the bounded WASAPI capture/render worker with the appropriate MMCSS task profile. Do not mark all AI threads as high priority, and do not use real-time process priority as a shortcut. Measure audio underruns and game frame pacing before and after any host change.
 
+### 2. WASAPI playback evidence and clock correlation
+
+Microsoft documents that WASAPI loopback can capture the stream being played by a rendering endpoint in shared mode. The Core Audio API also exposes `IAudioClock` and `IAudioClock2` for device position and stream-clock correlation. The device position is meaningful together with the clock frequency; `IAudioClock::GetPosition` also supplies a QPC timestamp associated with the sampled device position.
+
+Sources:
+- https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording
+- https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi
+- https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclock-getposition
+
+**STAR implication:** the native output adapter should emit a content-free receipt containing an opaque output-route epoch, monotonically increasing sample/frame sequence, device-position/QPC pair, first-observed playback position, last-observed playback position, underrun count, and confirmed drain time. It should not store loopback PCM. On endpoint invalidation or device change, rotate the route epoch and reject receipts from the previous endpoint. If loopback is unavailable, mark audible timing as unobserved rather than recording a fabricated zero-latency success.
+
+Important boundary: local WASAPI loopback proves that the Windows audio engine rendered samples to the selected endpoint; it does not prove that a remote livestream viewer received or heard them. For a public-stream acceptance test, correlate the local playback receipt with the OBS program/recording path or a separate remote monitor capture. Do not call `IAudioEndpoint::GetLatency` from the real-time processing thread; Microsoft explicitly says that method must not be called there.
+
+### 3. OBS frame-loss lanes are not interchangeable
+
+OBS distinguishes frames missed due to rendering lag, frames skipped due to encoding lag, and frames dropped due to network congestion. These indicate different bottlenecks and must not be collapsed into one “dropped frames” number.
+
+Sources:
+- https://obsproject.com/wiki/GPU-overload-issues
+- https://obsproject.com/wiki/General-Performance-And-Encoding-Issues
+- https://obsproject.com/help/
+
+**STAR implication:** record all three counters independently, plus render/encode time and audio buffering/underruns. A network drop counter of zero does not mean the game/OBS composition or encoder is healthy. Test with the actual game, avatar, browser sources, capture sources, audio filters and output profile active for a representative session.
+
+
 ### 2. llama.cpp SPEED-Bench
 
 The upstream llama.cpp SPEED-Bench client measures an already-running server and reports latency, throughput and speculative-draft acceptance by workload category. Its guidance says to match client concurrency to the server slot count (`--np`) when measuring throughput.
