@@ -1,14 +1,14 @@
 # STAR research: need-aware skills, causal memory, live avatars, game mastery and inference
 
 **Research date:** 2026-11-10  
-**Implementation branch:** \`feat/general-skill-bm25-retrieval-20261110-auto11\`  
+**Implementation branch:** `feat/general-skill-bm25-retrieval-20261110-auto11`  
 **Scope:** research synthesis and an offline evaluator. No model route, microphone, avatar, game input, OBS state, permissions, or production setting is changed.
 
 ## Executive findings
 
-STAR already has separate foundations for general Agent Skills, gameplay evidence, paired game-transfer evaluation, continual-learning evaluation, multi-party streaming research, and model quality/speed gates. The next intelligence gain should come from measuring whether STAR knows **when** to use a capability, whether using it actually helps, and whether the experience remains useful later.
+STAR's current branch already has general Agent Skills, gameplay evidence, paired game-transfer evaluation and general-knowledge checks. Related continual-learning, multi-party streaming and model quality/speed work is tracked in separate reviewable PRs. The next intelligence gain should come from measuring whether STAR knows **when** to use a capability, whether using it actually helps, and whether the experience remains useful later.
 
-This pass adds \`benchmarks/agent_skill_need.py\`. It evaluates the missing middle stage between finding a skill and applying it:
+This pass adds `benchmarks/agent_skill_need.py`. It evaluates the missing middle stage between finding a skill and applying it:
 
 1. Does the task actually require an external skill?
 2. Does STAR decide to load one?
@@ -41,11 +41,11 @@ Primary sources:
 
 ### New implementation
 
-Added \`benchmarks/agent_skill_need.py\` and \`tests/test_agent_skill_need.py\`.
+Added `benchmarks/agent_skill_need.py` and `tests/test_agent_skill_need.py`.
 
 The JSONL evaluator accepts a curated task record with:
 - opaque task ID and local query;
-- gold need label: \`required\`, \`optional\`, or \`not_needed\`;
+- gold need label: `required`, `optional`, or `not_needed`;
 - gold relevant skill names;
 - predicted probability that a skill is required;
 - actual load/skip decision and actually loaded skill names;
@@ -67,10 +67,10 @@ Optional tasks are reported separately and excluded from binary required/not-nee
 
 Example:
 
-\`\`\`bash
+```bash
 python -m benchmarks.agent_skill_need --cases ./private-evals/skill-need.jsonl
 python -m benchmarks.agent_skill_need --cases ./private-evals/skill-need.jsonl --out ./reports/skill-need.json
-\`\`\`
+```
 
 The output path must not already exist. The benchmark does not call a model, fetch SRA-Bench, read skill bodies, or execute tools. Gold labels and task text should remain in a private, versioned evaluation dataset; do not put private user queries or viewer messages in the repository.
 
@@ -112,14 +112,14 @@ Paper: https://aclanthology.org/2026.acl-long.749/
 Do not replace STAR's existing memory stores with a second competing database. Add a query-time evidence layer over the existing governed stores:
 
 - **Immutable experience records:** task, time, project/game version, action, observation digest, tool result, outcome and provenance.
-- **Causal edges:** \`attempted\`, \`caused\`, \`blocked_by\`, \`verified_by\`, \`supersedes\`, \`derived_from\`.
+- **Causal edges:** `attempted`, `caused`, `blocked_by`, `verified_by`, `supersedes`, `derived_from`.
 - **Temporal entity facts:** preserve old values and validity intervals; resolve the current value at retrieval time rather than overwriting history.
 - **Compact navigational summaries:** point to exact source records and bounded file/symbol/test anchors.
 - **Just-in-time inspection:** retrieve a summary first, then fetch exact source evidence only when the task requires it.
 - **Freshness checks:** revalidate file hashes, symbol anchors, model/build IDs and test results before treating historical evidence as current.
 - **Memory utility evaluation:** paired memory-off/on task streams, dependent transfer probes, independent interference probes, retention probes and sealed holdouts.
 
-A similarity score is a candidate-ranking signal, not proof that an old memory is true or current. Keep the existing continual-learning evaluator's fixed-runner, paired-arm and independent-validation discipline.
+A similarity score is a candidate-ranking signal, not proof that an old memory is true or current. When integrating the separate continual-learning evaluator work (PR #1109), preserve fixed-runner, paired-arm and independent-validation discipline.
 
 ## 3. Natural VTuber streaming and avatar embodiment
 
@@ -160,7 +160,7 @@ The Social Director should coordinate:
 
 Natural streaming is not constant talking. Silence, listening, yielding and stopping after a human has answered are valid actions. Keep STAR transparently identified as AI; optimize timing, context, humor, expressiveness and continuity rather than pretending to be human.
 
-Do not store raw audio, voiceprints, private viewer identities or full chat transcripts in the new benchmark. Use ephemeral speaker slots and aggregate measures where possible. Existing multi-party floor and cross-modal timeline work should be integrated in dependency order, not duplicated.
+Do not store raw audio, voiceprints, private viewer identities or full chat transcripts in the new benchmark. Use ephemeral speaker slots and aggregate measures where possible. The multi-party floor and cross-modal timeline implementations are in separate open PRs (#1107 and #1103); integrate them in dependency order rather than duplicating their policies here.
 
 ## 4. Gaming mastery and autonomous game creation
 
@@ -180,21 +180,21 @@ Research overview: https://sethkarten.ai/papers/gamedevbench.html
 ### STAR's existing foundations
 
 The current branch already contains:
-- \`star/gameplay_skill_bank.py\`: independently signed practice/validation evidence and conservative skill suggestions;
-- \`star/game_transfer_eval.py\`: paired, preregistered holdout comparisons across games and situations;
-- \`star/game_skill_memory.py\`: bounded game episode evidence and practice advice;
-- \`star/general_knowledge_benchmark.py\`: a narrow development-artifact consistency suite.
+- `star/gameplay_skill_bank.py`: independently signed practice/validation evidence and conservative skill suggestions;
+- `star/game_transfer_eval.py`: paired, preregistered holdout comparisons across games and situations;
+- `star/game_skill_memory.py`: bounded game episode evidence and practice advice;
+- `star/general_knowledge_benchmark.py`: a narrow development-artifact consistency suite.
 
 Extend these systems rather than creating another game skill bank.
 
 ### Recommended closed loop
 
-\`\`\`text
+```text
 Observe -> Build a state estimate -> Choose a bounded objective
    -> Practice in an isolated environment -> Measure outcome
    -> Update skill hypothesis -> Validate on unseen situations
    -> Test transfer to another map/game -> Request review
-\`\`\`
+```
 
 For Studio/game creation, separate read-only observation from mutation:
 - inspect hierarchy, scripts, properties, constraints, output and screenshots;
@@ -212,13 +212,13 @@ Measure game performance on a live clock as well as paused/offline tasks. Track 
 
 ### llama.cpp MoE cache
 
-The upstream MoE-cache documentation explains that frequently used experts can remain in device memory while other experts stay in host memory. \`--moe-cache-mib\` controls cache size and \`--moe-cache-cpu-share\` chooses how much of the cache-miss work is computed on the CPU rather than uploaded. The best setting depends on host RAM speed, PCIe transfer, pinned/mapped memory, model, cache size and batch regime. The upstream tuning script runs multiple configurations and models the cache behavior.
+The upstream MoE-cache documentation explains that frequently used experts can remain in device memory while other experts stay in host memory. `--moe-cache-mib` controls cache size and `--moe-cache-cpu-share` chooses how much of the cache-miss work is computed on the CPU rather than uploaded. The best setting depends on host RAM speed, PCIe transfer, pinned/mapped memory, model, cache size and batch regime. The upstream tuning script runs multiple configurations and models the cache behavior.
 
 Documentation: https://github.com/ggml-org/llama.cpp/blob/master/docs/moe-cache.md
 
 ### Prompt/KV cache observability
 
-llama.cpp's server reports \`cache_n\` (reused prompt tokens) and \`prompt_n\` (newly evaluated tokens) in timing data. Preserve a stable prompt prefix and inspect these counters before assuming prompt caching is effective. A growing context can still increase decode cost because each generated token attends over the context.
+llama.cpp's server reports `cache_n` (reused prompt tokens) and `prompt_n` (newly evaluated tokens) in timing data. Preserve a stable prompt prefix and inspect these counters before assuming prompt caching is effective. A growing context can still increase decode cost because each generated token attends over the context.
 
 Discussion with upstream maintainer explanation: https://github.com/ggml-org/llama.cpp/discussions/29001
 
