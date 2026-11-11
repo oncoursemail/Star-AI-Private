@@ -253,9 +253,10 @@ class AdaptiveQoS:
             if estimate * 1.2 > slack:
                 return None
             return estimate, "measured_p95_with_headroom"
-        # Never use idle samples for a game-control route. It must have five
-        # successful observations under the active-game load regime first.
-        if job.kind == "game_control" and stream.game_active:
+        # A live game-control route must have five successful observations
+        # under the active-game load regime. A private, non-live rehearsal may
+        # collect the first samples; those samples are still regime-scoped.
+        if job.kind == "game_control" and stream.game_active and stream.live:
             return None
         # Do not speculate about how long a brand-new vision/model route takes
         # while live. Speech is the only essential exploratory admission.
