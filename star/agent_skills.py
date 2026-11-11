@@ -292,7 +292,7 @@ class SkillLibrary:
         # signatures invalidate metadata immediately when a SKILL.md changes.
         self._cache_lock = RLock()
         self._metadata_cache: dict[
-            Path, tuple[tuple[int, int, int, int], Skill | None]
+            Path, tuple[tuple[int, int, int, int, str], Skill | None]
         ] = {}
         self._search_index: _SkillSearchIndex | None = None
 
@@ -329,6 +329,7 @@ class SkillLibrary:
                         stat.st_ctime_ns,
                         stat.st_size,
                         getattr(stat, "st_ino", 0),
+                        source,
                     )
                 except OSError:
                     continue
