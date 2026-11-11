@@ -44,11 +44,11 @@ def _library(tmp_path: Path) -> SkillLibrary:
 
 def test_search_ranks_title_and_description_matches(tmp_path):
     library = _library(tmp_path)
-    results = library.search("Roblox RemoteEvent server validation security", limit=3)
+    results = library.search("Roblox RemoteEvent server validate security", limit=3)
 
     assert results[0]["name"] == "roblox-secure-remotes"
     assert results[0]["score"] > results[1]["score"]
-    assert {"roblox", "remoteevent", "server", "validation"} <= set(results[0]["matched_terms"])
+    assert {"roblox", "remoteevent", "server", "validate"} <= set(results[0]["matched_terms"])
 
 
 def test_search_supports_description_only_matches(tmp_path):
