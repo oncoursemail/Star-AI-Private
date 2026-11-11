@@ -5,11 +5,11 @@ Only reviewed read-only tool operations consume skill content.
 """
 from __future__ import annotations
 
+import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-import math
-import re
 from .validation_messages import describe_invalid
 
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
