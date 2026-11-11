@@ -29,6 +29,9 @@ from .stream_motion import (
 )
 from .stream_persona import event_message
 from .stream_turntaking import TurnAdvice
+from .stream_timeline_context import (
+    MAX_CONTEXT_AGE_MS, MAX_SNAPSHOT_SKEW_MS, TimelineContextPacket,
+)
 
 MODES = frozenset({"normal", "cat", "puppy"})
 
@@ -54,6 +57,39 @@ _DELIVERY = {
     "viewer_comment": "Optional short acknowledgement, without copying abusive chat.",
     "ambient": "Quiet is allowed; never force an idle catchphrase.",
 }
+
+_TIMELINE_EVENT_KINDS = {
+    "owner_interrupt": frozenset({("audio", "owner_interrupt")}),
+    "game_danger": frozenset({("game", "damage"), ("game", "death"),
+                               ("vision", "visual_hazard")}),
+    "game_success": frozenset({("game", "victory")}),
+    "game_observation": frozenset({
+        ("game", "objective_change"), ("game", "state_change"),
+        ("game", "respawn"), ("vision", "scene_change"),
+        ("vision", "ui_change"), ("vision", "visual_objective"),
+        ("vision", "screen_observation"),
+    }),
+    "viewer_question": frozenset({("chat", "viewer_question")}),
+    "viewer_comment": frozenset({("chat", "viewer_reaction")}),
+}
+
+
+def _timeline_context_matches(intent: SpeechIntent, packet: TimelineContextPacket,
+                              now_s: float) -> bool:
+    """Bind metadata to the exact signal and current shared monotonic clock."""
+    if packet.event_key != intent.signal_id:
+        return False
+    if (packet.modality, packet.kind) not in _TIMELINE_EVENT_KINDS.get(intent.kind, ()):
+        return False
+    if intent.kind == "game_success" and intent.evidence != "observed":
+        return False
+    now_ms = now_s * 1000.0
+    if not math.isfinite(now_ms):
+        return False
+    snapshot_age = now_ms - packet.snapshot_ms
+    if snapshot_age < -25.0 or snapshot_age > MAX_SNAPSHOT_SKEW_MS:
+        return False
+    return packet.age_ms + max(0.0, snapshot_age) <= MAX_CONTEXT_AGE_MS
 
 
 def _time(value: object) -> float:
@@ -114,6 +150,7 @@ class StarStage:
         self._counts = {
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
+            "timeline_context_attached": 0, "timeline_context_rejected": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -175,7 +212,8 @@ class StarStage:
                 knowledge: KnowledgePacket | None = None,
                 telemetry: StreamTelemetry | None = None,
                 episode: EpisodePacket | None = None,
-                turn: TurnAdvice | None = None) -> StagePlan | None:
+                turn: TurnAdvice | None = None,
+                timeline_context: TimelineContextPacket | None = None) -> StagePlan | None:
         """Propose a short reaction; measured overload favors silence and gameplay."""
         current = _time(self._clock() if now is None else now)
         if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
@@ -186,6 +224,8 @@ class StarStage:
             raise TypeError("episode must be a host-approved EpisodePacket")
         if turn is not None and not isinstance(turn, TurnAdvice):
             raise TypeError("turn must be a host-provided TurnAdvice")
+        if timeline_context is not None and not isinstance(timeline_context, TimelineContextPacket):
+            raise TypeError("timeline_context must be a validated TimelineContextPacket")
         # The host, not chat or a prompt, supplies validated GPU/FPS/voice data.
         # Preserve urgent danger/owner preemption; defer commentary when gameplay,
         # VRAM or speech queues are under strain. No unbounded TTS queue buildup.
@@ -222,6 +262,15 @@ class StarStage:
                 "game_observation", "game_success", "viewer_question"
             }:
                 prompt += "\n" + episode.context_record
+            # Cross-modal metadata is attached only to the exact event that
+            # caused this intent, with matching modality/kind and a fresh
+            # shared clock. It contains no media, chat text or source IDs.
+            if timeline_context is not None:
+                if _timeline_context_matches(intent, timeline_context, current):
+                    prompt += "\n" + timeline_context.context_record
+                    self._counts["timeline_context_attached"] += 1
+                else:
+                    self._counts["timeline_context_rejected"] += 1
             plan = StagePlan(
                 sequence=self._sequence, signal_id=intent.signal_id,
                 kind=intent.kind, evidence=intent.evidence,

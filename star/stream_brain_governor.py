@@ -26,6 +26,7 @@ from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
+from .stream_timeline_context import TimelineContextPacket
 
 
 def _now(clock: Callable[[], float]) -> float:
@@ -244,6 +245,7 @@ class StreamBrainGovernor:
         turn: TurnAdvice | None = None,
         knowledge: KnowledgePacket | None = None,
         episode: EpisodePacket | None = None,
+        timeline_context: TimelineContextPacket | None = None,
     ) -> StagePlan | None:
         """Propose contextual speech only with fresh trusted hardware data.
 
@@ -255,6 +257,8 @@ class StreamBrainGovernor:
             raise TypeError("expected reviewed KnowledgePacket")
         if episode is not None and not isinstance(episode, EpisodePacket):
             raise TypeError("expected verified EpisodePacket")
+        if timeline_context is not None and not isinstance(timeline_context, TimelineContextPacket):
+            raise TypeError("expected validated TimelineContextPacket")
         with self._lock:
             if not self._enabled:
                 return None
@@ -268,6 +272,7 @@ class StreamBrainGovernor:
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical,
                 turn=turn, knowledge=knowledge, episode=episode,
+                timeline_context=timeline_context,
             )
             if plan is not None:
                 self._counts["speech_prepared"] += 1

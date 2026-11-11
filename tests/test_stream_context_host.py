@@ -18,6 +18,8 @@ from star.stream_episode import StreamEpisode
 from star.stream_hardware_telemetry import RealtimeTelemetryHost
 from star.stream_qos import AdaptiveQoS, InferenceJob
 from star.stream_stage import StarStage
+from star.stream_event_timeline import StreamEventTimeline, TimelineEvent
+from star.stream_timeline_context import build_timeline_context
 
 NOW = 1_800_000_000
 PRACTICE = b"host-only-practice-signer-0123456789012345678"
@@ -120,6 +122,31 @@ def rig(tmp_path):
         yield instance
     finally:
         instance.close()
+
+
+def test_event_timeline_metadata_reaches_the_exact_governed_stream_turn(rig):
+    rig.ready()
+    timeline = StreamEventTimeline()
+    session = timeline.enable(owner_approved=True, now_ms=rig.now)
+    event = TimelineEvent(
+        session.session_id, session.clock_epoch, "game0", "game", 1,
+        rig.now, "victory", "c" * 64, 0.95, 10.0,
+    )
+    receipt = timeline.ingest(event, now_ms=rig.now)
+    packet = build_timeline_context(
+        timeline.snapshot(now_ms=rig.now), receipt.event_key,
+    )
+    assert packet is not None
+
+    context = rig.context()
+    context.enable(owner_approved=True, broadcast_approved=True)
+    assert rig.signal("game_success", "Star won the round", ident=receipt.event_key)
+    plan = context.prepare(timeline_context=packet)
+
+    assert plan is not None
+    assert "STAR LIVE EVENT METADATA" in plan.context_record
+    assert rig.stage.metrics()["timeline_context_attached"] == 1
+    assert context.status()["prepared"] == 1
 
 
 def test_requires_separate_owner_and_broadcast_approval(rig):
