@@ -211,8 +211,8 @@ class AcpAdapter:
         if tree is not None:
             empty = await terminate_managed_async(tree, grace_period_s=0.35)
             tree.close()
-            if not empty and not await asyncio.to_thread(tree.wait_empty, 2.0, 0.02):
-                self.error = (self.error + "; process-tree cleanup not confirmed")[-300:]
+            if not empty:
+                self.error = (self.error + "; process-tree cleanup not confirmed after hard-stop")[-300:]
         elif proc.returncode is None:
             proc.kill()
         if proc.returncode is None:
