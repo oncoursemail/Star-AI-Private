@@ -188,3 +188,15 @@ def test_game_control_rejects_invalid_device_and_kind() -> None:
 
     with pytest.raises(ValueError, match="device must be"):
         job("bad-device", 1, device="remote")
+
+
+
+def test_game_control_is_not_priority_when_no_game_is_active() -> None:
+    scheduler = ready()
+    result = scheduler.admit(
+        job("no-active-game", 1000),
+        snapshot(1000, live=True, game=False, backlog=300),
+        now_ms=1000,
+    )
+    assert not result.admitted
+    assert result.reason == "game_or_voice_backpressure"
