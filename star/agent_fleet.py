@@ -210,6 +210,8 @@ def _run_acp(task: FleetTask, wt: Path, timeout: float, cancel: threading.Event)
         turn = asyncio.run(adapter.run_turn(task.acp_prompt))
     finally:
         stop.set()
+    if "process-tree cleanup not confirmed" in adapter.error:
+        return None, "cleanup_unconfirmed"
     if turn.state == "cancelled":
         return None, "cancelled"
     if turn.state != "ok":
@@ -266,7 +268,10 @@ def run_task(repo: Path, base_ref: str, task: FleetTask, worktrees: Path, cancel
         else:
             rc, out = _run(task.agent_cmd, wt, timeout, cancel)
         if rc is None:
-            rec.status, rec.detail = "cancelled", out
+            if out == "cleanup_unconfirmed":
+                rec.status, rec.detail = "error", "worker process-tree cleanup could not be confirmed"
+            else:
+                rec.status, rec.detail = "cancelled", out
             return rec
         if rc != 0:
             rec.status, rec.detail = "agent_failed", f"agent exit {rc}: {out[-300:]}"
