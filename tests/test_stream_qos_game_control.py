@@ -35,12 +35,13 @@ def job(
     ident: str,
     at: int,
     *,
+    kind: str = "game_control",
     device: str = "auto",
     ttl: int = 1600,
 ) -> InferenceJob:
     return InferenceJob(
         ident,
-        "game_control",
+        kind,
         at,
         at + ttl,
         128,
@@ -60,6 +61,7 @@ def train_route(
     *,
     device: str,
     duration_ms: int,
+    kind: str = "game_control",
     start_ms: int = 1000,
     steps: int = 5,
 ) -> None:
@@ -67,7 +69,7 @@ def train_route(
     for index in range(steps):
         at = start_ms + index * 3000
         offer = scheduler.admit(
-            job(f"cal-{device}-{index}", at, device=device),
+            job(f"cal-{kind}-{device}-{index}", at, kind=kind, device=device),
             snapshot(at, live=False, game=True),
             now_ms=at,
         )
@@ -229,3 +231,76 @@ def test_idle_game_control_samples_do_not_certify_live_game_route() -> None:
     assert result.reason == "no_calibrated_deadline_safe_route_or_headroom"
     assert "game_control:cpu:idle" in scheduler.status()["route_p95_ms"]
     assert "game_control:cpu:game_active" not in scheduler.status()["route_p95_ms"]
+
+
+def test_live_non_speech_cpu_work_preserves_a_speech_slot() -> None:
+    scheduler = ready()
+    train_route(scheduler, device="cpu", duration_ms=220)
+
+    one_slot = scheduler.admit(
+        job("control-one-slot", 17000, device="cpu"),
+        snapshot(17000, live=True, game=True, cpu_slots=1),
+        now_ms=17000,
+    )
+    assert not one_slot.admitted
+
+    two_slots = scheduler.admit(
+        job("control-two-slots", 17000, device="cpu"),
+        snapshot(17000, live=True, game=True, cpu_slots=2),
+        now_ms=17000,
+    )
+    assert two_slots.admitted
+    assert two_slots.device == "cpu"
+    assert scheduler.status()["speech_cpu_reserve_slots"] == 1
+
+
+def test_speech_can_use_reserved_slot_while_game_control_is_running() -> None:
+    scheduler = ready()
+    train_route(scheduler, device="cpu", duration_ms=220)
+    train_route(
+        scheduler, kind="speech", device="cpu", duration_ms=180, start_ms=17000
+    )
+
+    control = scheduler.admit(
+        job("control-first", 34000, device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert control.admitted
+
+    speech = scheduler.admit(
+        job("speech-reserved-slot", 34000, kind="speech", device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert speech.admitted
+    assert speech.device == "cpu"
+
+    second_control = scheduler.admit(
+        job("control-cannot-take-speech-slot", 34000, device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert not second_control.admitted
+
+
+def test_speech_cpu_reserve_does_not_reduce_private_rehearsal_capacity() -> None:
+    scheduler = ready()
+    train_route(scheduler, device="cpu", duration_ms=220)
+
+    result = scheduler.admit(
+        job("private-one-slot", 17000, device="cpu"),
+        snapshot(17000, live=False, game=True, cpu_slots=1),
+        now_ms=17000,
+    )
+    assert result.admitted
+    assert result.device == "cpu"
+
+
+def test_speech_cpu_reserve_configuration_is_strictly_bounded() -> None:
+    with pytest.raises(ValueError, match="speech_cpu_reserve_slots"):
+        AdaptiveQoS(speech_cpu_reserve_slots=True)
+    with pytest.raises(ValueError, match="speech_cpu_reserve_slots"):
+        AdaptiveQoS(speech_cpu_reserve_slots=-1)
+    with pytest.raises(ValueError, match="speech_cpu_reserve_slots"):
+        AdaptiveQoS(speech_cpu_reserve_slots=9)
