@@ -40,6 +40,9 @@ Sources:
 
 **How STAR should use it:** evaluate the acoustic EOT/INT detector independently using the official scorer and causality rules. Do not treat this dyadic benchmark as a complete test of group conversation or addressee awareness. The datasets are gated; do not vendor audio or labels into STAR's public repository.
 
+TurnBench's causality rule is especially important for deployment: an event timestamp is the time by which all audio used to make that decision has actually been heard. If a detector uses lookahead, the timestamp must include that lookahead delay. Its scorer matches events one-to-one, counts mid-turn pauses/backchannels as false positives, and qualifies a task only at a false-positive rate no greater than 0.15. STAR must not optimize recall while hiding the delay paid by future audio.
+
+
 ### MP-Bench: multi-party participation
 
 MP-Bench evaluates voice agents as active participants in multi-party conversations, covering turn-taking awareness, response appropriateness and comprehension. Its evaluation of 12 agents reports that real-time agents reached at most 22% on multi-party comprehension and near-chance performance on multi-party turn-taking.
