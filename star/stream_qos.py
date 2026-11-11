@@ -2,7 +2,7 @@
 
 Pure-Python advisory state machine. It never runs models, moves game characters,
 captures media, operates microphones, changes process priorities or grants access.
-An authorized host supplies *same-clock* measurements, executes separately, and
+An authorized host supplies same-clock measurements, executes separately, and
 enforces each proposed reservation itself. No personally identifying data, audio,
 images, chat, prompts, model weights or secrets are stored.
 
@@ -11,6 +11,11 @@ unbounded image/research queue can make even a good voice model feel inhuman.
 This controller reserves headroom, uses recent measured p95 completion times,
 backs away from repeatedly failing routes, and lets speech prefer CPU during
 live gameplay. A recommendation is not an actual latency or FPS improvement.
+
+game_control is the low-latency inference/planning lane for the game pilot. It
+is deliberately separate from game input: the host must still enforce the
+owner-approved game scope, game_action_gate, one-step dispatch/ACK, and a
+fresh observed outcome before any control is applied.
 """
 from __future__ import annotations
 
@@ -23,9 +28,12 @@ from threading import RLock
 from .stream_budget import StreamTelemetry
 
 _CLOCK_CEILING = 1e13
-_JOBS = frozenset({"speech", "vision", "commentary", "research", "training", "render"})
+_JOBS = frozenset({
+    "speech", "game_control", "vision", "commentary", "research", "training", "render"
+})
 _BACKGROUND = frozenset({"research", "training", "render"})
 _GPU_ONLY = frozenset({"vision", "render"})
+_CPU_PREFERRED_WHEN_GAME = frozenset({"speech", "game_control"})
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 
 
@@ -224,6 +232,11 @@ class AdaptiveQoS:
             if snap.cpu_busy_percent > 90:
                 return None
         else:
+            # A game-control model may use the GPU when the game is healthy,
+            # but must not compete with a struggling game or delayed speech.
+            if (job.kind == "game_control" and stream.game_active
+                    and (stream.game_fps < 50 or stream.speech_backlog_ms > 250)):
+                return None
             reserved = sum(p.job.vram_mib for p in self._inflight.values()
                            if p.device == "gpu")
             floor = (self.minimum_headroom_mib if stream.live and stream.game_active
@@ -240,6 +253,11 @@ class AdaptiveQoS:
             if estimate * 1.2 > slack:
                 return None
             return estimate, "measured_p95_with_headroom"
+        # A live game-control route must have five successful observations
+        # under the active-game load regime. A private, non-live rehearsal may
+        # collect the first samples; those samples are still regime-scoped.
+        if job.kind == "game_control" and stream.game_active and stream.live:
+            return None
         # Do not speculate about how long a brand-new vision/model route takes
         # while live. Speech is the only essential exploratory admission.
         if stream.live and job.kind != "speech":
@@ -272,7 +290,12 @@ class AdaptiveQoS:
                 return self._reason("protect_live_stream_from_background_work")
             under_pressure = ((stream.game_active and stream.game_fps < 50)
                               or stream.speech_backlog_ms > 250)
-            if under_pressure and (stream.live or stream.game_active) and job.kind != "speech":
+            priority_exempt = (
+                job.kind == "speech"
+                or (job.kind == "game_control" and stream.game_active)
+            )
+            if (under_pressure and (stream.live or stream.game_active)
+                    and not priority_exempt):
                 return self._reason("game_or_voice_backpressure")
             if (stream.live and job.kind == "vision" and
                     self._last_vision_ms is not None and
@@ -281,16 +304,17 @@ class AdaptiveQoS:
 
             devices = ([job.device] if job.device != "auto" else
                        (["gpu"] if job.kind in _GPU_ONLY else
-                        ["cpu", "gpu"] if job.kind == "speech" and stream.game_active
-                        else ["gpu", "cpu"]))
+                        ["cpu", "gpu"] if job.kind in _CPU_PREFERRED_WHEN_GAME
+                        and stream.game_active else ["gpu", "cpu"]))
             offers = [(device, self._route(job, snap, now, device))
                       for device in devices]
             viable = [(device, result) for device, result in offers if result is not None]
             if not viable:
                 return self._reason("no_calibrated_deadline_safe_route_or_headroom")
-            # Prefer measured routes over unknown ones; during gameplay give a
-            # deadline-compliant CPU speech route priority over the gaming GPU.
-            if job.kind == "speech" and stream.live and stream.game_active:
+            # During gameplay, prefer a deadline-compliant CPU route for both
+            # voice and game-control inference so the GPU stays available to
+            # render the game. A healthy, measured GPU route remains a fallback.
+            if job.kind in _CPU_PREFERRED_WHEN_GAME and stream.game_active:
                 viable.sort(key=lambda row: (row[1][0] is None,
                                               row[0] != "cpu",
                                               row[1][0] or 0))
@@ -311,7 +335,7 @@ class AdaptiveQoS:
             return QoSDecision(True, label, device, ticket, p95, expires)
 
     def finish(self, ticket: int, *, now_ms: float, succeeded: bool) -> bool:
-        """Host acknowledges completion; only *successful* measured runs train p95."""
+        """Host acknowledges completion; only successful measured runs train p95."""
         if type(ticket) is not int or ticket <= 0 or type(succeeded) is not bool:
             raise ValueError("a positive ticket and explicit success boolean are required")
         with self._lock:
