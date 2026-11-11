@@ -155,16 +155,16 @@ def test_jsonl_rejects_duplicate_keys_and_nonfinite_constants(tmp_path):
         1,
     )
     path = tmp_path / "duplicate.jsonl"
-    path.write_text(duplicate + "\\n", encoding="utf8")
+    path.write_text(duplicate + "\n", encoding="utf8")
     with pytest.raises(ValueError, match="duplicate JSON key"):
         read_jsonl(path)
 
-    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": NaN') + "\\n",
+    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": NaN') + "\n",
                     encoding="utf8")
     with pytest.raises(ValueError, match="non-finite JSON constant"):
         read_jsonl(path)
 
-    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": Infinity') + "\\n",
+    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": Infinity') + "\n",
                     encoding="utf8")
     with pytest.raises(ValueError, match="non-finite JSON constant"):
         read_jsonl(path)
