@@ -106,9 +106,15 @@ def _attributes(value: dict[str, Any] | None) -> dict[str, str | int | float | b
             if rule == "http" and not 100 <= item <= 599:
                 raise ValueError("http_status_code must be between 100 and 599")
         else:
-            if type(item) not in (int, float):
+            if type(item) is int:
+                try:
+                    number = float(item)
+                except OverflowError as exc:
+                    raise ValueError(f"{key} must be finite") from exc
+            elif type(item) is float:
+                number = item
+            else:
                 raise ValueError(f"{key} must be a finite number")
-            number = float(item)
             if not math.isfinite(number) or not 0 <= number <= _MAX_NUMBER:
                 raise ValueError(f"{key} must be finite and nonnegative")
             if rule == "percent" and number > 100:
