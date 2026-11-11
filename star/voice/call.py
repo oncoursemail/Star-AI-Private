@@ -39,11 +39,10 @@ from .persona import opener_hint, system_message
 from .styles import strip_tags
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
- 
+
 def _finite_timestamp(value: object) -> TypeGuard[int | float]:
     """Accept finite numeric timestamps but reject booleans and non-numeric host data."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
-
 
 
 # -- engine interfaces ------------------------------------------------------------------------
