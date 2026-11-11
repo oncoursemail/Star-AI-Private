@@ -1,5 +1,6 @@
 """Offline tests for star.agent_fleet using throwaway git repos and python subprocesses."""
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -94,7 +95,7 @@ def test_cancel_during_test_run(repo, tmp_path):
 def test_run_kills_descendant_that_keeps_stdout_open(tmp_path):
     pid_file = tmp_path / "child.pid"
     command = ["/bin/sh", "-c", f"sleep 60 & echo $! > '{pid_file}'; exit 0"]
-    rc, output = fl._run(command, tmp_path, 5, threading.Event())
+    rc, _output = fl._run(command, tmp_path, 5, threading.Event())
     assert rc == 0 and pid_file.exists()
     child_pid = int(pid_file.read_text())
     end = time.monotonic() + 4
@@ -109,8 +110,7 @@ def test_run_kills_descendant_that_keeps_stdout_open(tmp_path):
     except ProcessLookupError:
         return
     # Linux can retain a killed orphan as a zombie briefly; that is no longer consuming resources.
-    stat = tmp_path / "unused"
-    proc_stat = __import__("pathlib").Path(f"/proc/{child_pid}/stat")
+    proc_stat = Path(f"/proc/{child_pid}/stat")
     assert proc_stat.exists() and proc_stat.read_text().split()[2] == "Z"
 
 
