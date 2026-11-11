@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from math import ceil, isfinite
+from typing import TypeGuard
 
 
 @dataclass
@@ -89,8 +90,8 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
     samples: dict[str, list[float]] = {key: [] for key in pairs}
     failed = invalid = incomplete = 0
 
-    def valid(value) -> bool:
-        return type(value) in (float, int) and isfinite(value)
+    def valid(value: object) -> TypeGuard[int | float]:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
 
     for turn in turns:
         if turn.error:

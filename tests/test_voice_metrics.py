@@ -34,7 +34,15 @@ def test_negative_clock_differences_are_clamped_and_zero_generation_has_no_rate(
         speech_end=2.0, turn_end=1.0, transcript_at=0.5,
         first_token_at=0.0, first_audio_at=-1.0, last_token_at=0.0, tokens=15,
     )
-    assert all(value == 0.0 for key, value in m.stages().items() if key != "tokens_per_second")
+    stages = m.stages()
+    optional_device_stages = (
+        "audio_submit_to_device_output",
+        "speech_end_to_device_output",
+        "device_output_total",
+    )
+    assert all(value == 0.0 for key, value in stages.items()
+               if key != "tokens_per_second" and key not in optional_device_stages)
+    assert all(stages[key] is None for key in optional_device_stages)
     assert m.stages()["tokens_per_second"] is None
     m.first_token_at, m.last_token_at, m.tokens = 1.0, 3.0, 2
     assert m.stages()["tokens_per_second"] is None

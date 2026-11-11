@@ -115,8 +115,22 @@ class Microphone:
                 continue
 
 
+def _pcm_rms(pcm: bytes) -> float:
+    """RMS for native-endian PCM16. Called by the metrics worker, never the PortAudio callback."""
+    if len(pcm) < 2 or len(pcm) % 2:
+        return 0.0
+    samples = memoryview(pcm).cast("h")
+    if not samples:
+        return 0.0
+    mean_square = sum(sample * sample for sample in samples) / len(samples)
+    return math.sqrt(mean_square) / 32768.0
+
+
+_LEVEL_QUEUE_CAPACITY = 64
+
+
 class SoundSpeaker:
-    """Loudspeaker with an interruptible queue. stop() silences within one audio block (a few ms)."""
+    """Interruptible PortAudio speaker; level metering runs outside the audio callback."""
 
     def __init__(self, sample_rate: int = 24000, device=None) -> None:
         sd = _sounddevice()
@@ -125,9 +139,46 @@ class SoundSpeaker:
         self._buffer = bytearray()
         self._played = 0                    # samples played since reset()
         self._first_device_output_at: float | None = None
-        self._levels: collections.deque = collections.deque(maxlen=64)     # (time, rms) of recent output blocks
+        self._levels: collections.deque[tuple[float, float]] = collections.deque(maxlen=64)
+        self._levels_lock = threading.Lock()
+        # A bounded deque keeps telemetry separate from PCM delivery. CPython's deque
+        # append/popleft operations are thread-safe and avoid queue.Queue's callback lock.
+        self._level_queue: collections.deque[tuple[int, float, bytes]] = collections.deque(
+            maxlen=_LEVEL_QUEUE_CAPACITY
+        )
+        self._level_stop = threading.Event()
+        self._level_worker: threading.Thread | None = None
+        self._level_submitted_seq = 0
+        self._level_processed_seq = 0
+        self._level_overflow_until = float("-inf")
+        self.dropped_level_blocks = 0
+        self._closed = threading.Event()
         self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16", device=_device(device),
                                           callback=self._callback)
+        self._level_worker = threading.Thread(
+            target=self._process_levels, name="star-speaker-levels", daemon=True
+        )
+        self._level_worker.start()
+
+    def _process_levels(self) -> None:
+        """Compute echo-meter RMS away from PortAudio's high-priority callback thread."""
+        while True:
+            try:
+                sequence, at, chunk = self._level_queue.popleft()
+            except IndexError:
+                if self._level_stop.is_set():
+                    return
+                time.sleep(0.01)
+                continue
+            try:
+                value = _pcm_rms(chunk)
+            except Exception:
+                # An unknown meter value must not be mistaken for silence by the echo gate.
+                value = 1.0
+                self._level_overflow_until = max(self._level_overflow_until, time.monotonic() + 0.4)
+            with self._levels_lock:
+                self._levels.append((at, value))
+                self._level_processed_seq = max(self._level_processed_seq, sequence)
 
     def _callback(self, out, frames, time_info, _status) -> None:
         wanted = frames * 2
@@ -142,9 +193,14 @@ class SoundSpeaker:
         if len(chunk) < wanted:
             out[len(chunk):] = b"\x00" * (wanted - len(chunk))
         if chunk:
-            import numpy as np
-            block = np.frombuffer(chunk, dtype="<i2").astype(np.float32)
-            self._levels.append((host_now, float(np.sqrt(np.mean(block * block))) / 32768.0))
+            # Metering is best-effort and bounded. If the worker falls behind, the
+            # oldest meter sample is discarded, never PCM; level() fails conservative.
+            if len(self._level_queue) >= _LEVEL_QUEUE_CAPACITY:
+                self.dropped_level_blocks += 1
+                self._level_overflow_until = max(self._level_overflow_until, host_now + 0.4)
+            sequence = self._level_submitted_seq + 1
+            self._level_queue.append((sequence, host_now, chunk))
+            self._level_submitted_seq = sequence
 
     def __enter__(self) -> "SoundSpeaker":
         self._stream.start()
@@ -154,11 +210,18 @@ class SoundSpeaker:
         self.close()
 
     def close(self) -> None:
+        if self._closed.is_set():
+            return
         try:
             self._stream.stop()
             self._stream.close()
         except Exception:
             pass
+        self._closed.set()
+        self._level_stop.set()
+        worker = self._level_worker
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(timeout=1.0)
 
     # -- Speaker interface --------------------------------------------------------------------
     def play(self, pcm: bytes, sample_rate: int) -> None:
@@ -191,6 +254,12 @@ class SoundSpeaker:
             return self._first_device_output_at
 
     def level(self) -> float:
-        """Loudest output block of the last 0.4 s (peak-held so the echo gate can compare against it)."""
-        cutoff = time.monotonic() - 0.4
-        return max((level for at, level in list(self._levels) if at >= cutoff), default=0.0)
+        """Peak-held output level; unknown/pending meter data is treated conservatively as audible."""
+        now = time.monotonic()
+        with self._levels_lock:
+            levels = tuple(self._levels)
+            processed = self._level_processed_seq
+        if self._level_submitted_seq > processed or now < self._level_overflow_until:
+            return 1.0
+        cutoff = now - 0.4
+        return max((value for at, value in levels if at >= cutoff), default=0.0)
