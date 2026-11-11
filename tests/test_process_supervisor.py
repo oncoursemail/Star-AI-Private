@@ -176,7 +176,7 @@ def test_invalid_wait_bounds_are_rejected():
         tree.wait_empty(1, 0)
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group state checks")
 def test_sync_close_kills_descendant_after_root_exits(tmp_path):
     pid_file = tmp_path / "child.pid"
     script = f"sleep 60 & echo $! > '{pid_file}'; exit 0"
@@ -192,7 +192,7 @@ def test_sync_close_kills_descendant_after_root_exits(tmp_path):
     assert _wait_pid_gone(child_pid)
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group state checks")
 def test_sync_terminate_kills_running_descendants(tmp_path):
     pid_file = tmp_path / "child.pid"
     script = f"sleep 60 & echo $! > '{pid_file}'; wait"
@@ -211,7 +211,7 @@ def test_sync_terminate_kills_running_descendants(tmp_path):
     assert _wait_pid_gone(child_pid)
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group state checks")
 def test_async_terminate_kills_running_descendants(tmp_path):
     async def run():
         pid_file = tmp_path / "async-child.pid"
