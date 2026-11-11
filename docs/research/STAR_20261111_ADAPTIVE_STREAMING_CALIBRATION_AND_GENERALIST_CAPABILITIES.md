@@ -292,7 +292,32 @@ Avatar behavior should be driven by actual state:
 
 Naturalness is not maximum motion or maximum talking. It is appropriate timing, coherent reactions, remembering relevant context, and being comfortable with silence. STAR remains transparently identified as an AI streamer.
 
-## 7. Unified feature roadmap
+## 7. General knowledge and multimodal tool use
+
+### AgentVista (NeurIPS 2026)
+
+AgentVista evaluates general multimodal agents on 209 expert-curated tasks across 25 sub-domains and seven broad categories. Tasks use realistic visual scenes and require multi-step workflows that interleave visual evidence with tools such as web search and code execution. Its November 2026 repository update reports 35.4% overall accuracy for the strongest listed model/configuration; this is an external benchmark result, not a STAR score.
+
+Source and benchmark code: https://github.com/hkust-nlp/AgentVista
+
+**STAR application:** general knowledge should not be reduced to trivia. Evaluate whether STAR can inspect a diagram, locate the relevant evidence, compare sources, perform calculations, use a tool, and produce a verifiable answer. Use distinct holdout tasks across:
+- academics and scientific figures;
+- technology and hardware troubleshooting;
+- geography and map reasoning;
+- society and policy/current events;
+- culture and art;
+- entertainment and media;
+- commerce and product constraints.
+
+For every answer, preserve claim-level source provenance, publication/observation date, freshness, uncertainty, and the exact tool evidence used. Separate stable knowledge (e.g. mathematics) from perishable knowledge (e.g. current releases or prices). When evidence conflicts or is stale, abstain or research again rather than inventing certainty.
+
+Recommended knowledge loop:
+
+\`question -> decompose claims -> retrieve authoritative evidence -> cross-check -> calculate/use tools -> answer with uncertainty -> delayed recall test -> update provenance\`
+
+Do not let a model grade its own answer as the only correctness signal. Prefer exact answers, deterministic calculations, independently checked sources, or human-reviewed labels. For visual questions, retain the minimal evidence region and source reference rather than storing entire private images or conversations.
+
+## 8. Unified feature roadmap
 
 | System | New capability | Proof required |
 |---|---|---|
@@ -316,7 +341,7 @@ Suggested compute priority:
 
 The host must enforce these priorities. Prompt text alone is not a scheduler.
 
-## 8. Acceptance plan
+## 9. Acceptance plan
 
 Before calling STAR a natural, reliable live streamer:
 
