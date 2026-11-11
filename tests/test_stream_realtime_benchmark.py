@@ -141,6 +141,35 @@ def test_jsonl_decoder_rejects_undeclared_fields_and_converts_frame_arrays(tmp_p
         read_jsonl(path)
 
 
+def test_jsonl_rejects_duplicate_keys_and_nonfinite_constants(tmp_path):
+    record = {
+        "pair_id": "pair1", "variant": "baseline", "game_id": "game",
+        "game_version": "v1", "first_audio_ms": 200,
+        "frame_times_ms": [16.7] * 120, "gpu_peak_mib": 1000,
+        "audio_finished": True,
+    }
+    valid = json.dumps(record)
+    duplicate = valid.replace(
+        '"pair_id": "pair1"',
+        '"pair_id": "pair1", "pair_id": "pair2"',
+        1,
+    )
+    path = tmp_path / "duplicate.jsonl"
+    path.write_text(duplicate + "\\n", encoding="utf8")
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        read_jsonl(path)
+
+    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": NaN') + "\\n",
+                    encoding="utf8")
+    with pytest.raises(ValueError, match="non-finite JSON constant"):
+        read_jsonl(path)
+
+    path.write_text(valid.replace('"first_audio_ms": 200', '"first_audio_ms": Infinity') + "\\n",
+                    encoding="utf8")
+    with pytest.raises(ValueError, match="non-finite JSON constant"):
+        read_jsonl(path)
+
+
 def test_no_frames_and_gpu_overcommit_never_pass():
     records = cohort()
     with pytest.raises(ValueError):
