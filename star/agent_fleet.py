@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from star import resource_probes as probes
 from star.acp_adapter import AcpAdapter
+from star.process_supervisor import start_managed_process
 
 PROTECTED_MARKERS = ("paintball", os.path.join("appdata", "roaming", "star").lower())
 AGENT_CLIS = ("opencode", "codex", "claude")   # ACP/CLI coding agents the owner may have installed and signed in to
@@ -138,24 +139,36 @@ def connect_repo(path: str | Path, base_ref: str = "HEAD", remote: str = "origin
 
 
 def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> tuple[int | None, str]:
-    """Run cmd (no shell); poll so cancel and timeout kill the process. rc None = killed."""
-    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            errors="replace")
+    """Run cmd without a shell; cancellation/timeout stops the complete managed process group."""
+    managed = start_managed_process(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    errors="replace")
+    proc = managed.process
     out: list[str] = []
     stream = proc.stdout
     assert stream is not None
     reader = threading.Thread(target=lambda: out.append(stream.read()), daemon=True)
     reader.start()
     end = time.monotonic() + timeout
-    while proc.poll() is None:
-        if cancel.is_set() or time.monotonic() > end:
-            proc.kill()
+    try:
+        while proc.poll() is None:
+            if cancel.is_set() or time.monotonic() > end:
+                managed.terminate()
+                proc.wait()
+                reader.join(2)
+                return None, "cancelled" if cancel.is_set() else "timeout"
+            time.sleep(0.05)
+        rc = proc.wait()
+        # The root may exit while a compiler/browser/model child still holds stdout open.
+        # Closing the group/job before joining the reader prevents orphaned workers and pipe hangs.
+        managed.close()
+        reader.join(5)
+        return rc, "".join(out)
+    finally:
+        if proc.poll() is None:
+            managed.terminate()
             proc.wait()
-            reader.join(2)
-            return None, "cancelled" if cancel.is_set() else "timeout"
-        time.sleep(0.05)
-    reader.join(5)
-    return proc.returncode, "".join(out)
+        managed.close()
+        reader.join(2)
 
 
 def _run_acp(task: FleetTask, wt: Path, timeout: float, cancel: threading.Event) -> tuple[int | None, str]:
