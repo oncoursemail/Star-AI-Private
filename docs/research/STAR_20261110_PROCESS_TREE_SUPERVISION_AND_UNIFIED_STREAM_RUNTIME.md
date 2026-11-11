@@ -52,7 +52,7 @@ New `tests/test_process_supervisor.py` covers:
 
 Additional integration regressions were added to `tests/test_agent_fleet.py` and `tests/test_acp_adapter.py` to prove that descendants are cleaned up through the actual fleet and ACP entry points.
 
-**Local focused validation:** 8/8 process-supervisor tests passed in an isolated Linux environment. The new GitHub integration tests and Windows native API path still require CI/Windows acceptance.
+**Local focused validation:** 8/8 Linux-runnable process-supervisor tests passed in an isolated environment. A Windows-only native acceptance test now starts a worker, waits for Job Object assignment, creates a child, then verifies active-process accounting reaches zero after termination. The Windows-only test is skipped on Linux; it still requires the repository's gated Windows acceptance run.
 
 ---
 
