@@ -66,7 +66,8 @@ def terminate_managed(
     _validate_bounds(grace_period_s, poll_s, kill_wait_s)
     if tree.mode != "posix_process_group":
         tree.terminate()
-        return _wait_sync_tree_empty(tree, kill_wait_s, poll_s)
+        empty = _wait_sync_tree_empty(tree, kill_wait_s, poll_s)
+        return empty and tree.mode != "root_only"
 
     try:
         os.killpg(tree.pid, signal.SIGTERM)
@@ -125,7 +126,8 @@ async def terminate_managed_async(
             tree.terminate()
             if not await wait_for_root():
                 return False
-            return await wait_for_empty(kill_wait_s)
+            empty = await wait_for_empty(kill_wait_s)
+            return empty and tree.mode != "root_only"
 
         try:
             os.killpg(tree.pid, signal.SIGTERM)
