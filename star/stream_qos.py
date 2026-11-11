@@ -142,13 +142,20 @@ class AdaptiveQoS:
     """
 
     def __init__(self, *, minimum_headroom_mib: float = 1536,
-                 lease_cap_ms: float = 10_000) -> None:
+                 lease_cap_ms: float = 10_000,
+                 speech_cpu_reserve_slots: int = 1) -> None:
         reserve = _number(minimum_headroom_mib, "minimum_headroom_mib", 8192)
         cap = _number(lease_cap_ms, "lease_cap_ms", 120_000)
         if reserve < 512 or not 250 <= cap <= 30_000:
             raise ValueError("invalid realtime headroom or lease cap")
+        if (type(speech_cpu_reserve_slots) is not int
+                or not 0 <= speech_cpu_reserve_slots <= 8):
+            raise ValueError("speech_cpu_reserve_slots must be an integer in 0..8")
         self.minimum_headroom_mib = reserve
         self.lease_cap_ms = cap
+        # During a live stream, non-speech CPU work cannot consume the final
+        # configured slots reserved for speech responsiveness.
+        self.speech_cpu_reserve_slots = speech_cpu_reserve_slots
         self._lock = RLock()
         self._enabled = False
         self._clock_ms: float | None = None
@@ -223,8 +230,11 @@ class AdaptiveQoS:
         key = (job.kind, device)
         if self._consecutive_failures.get(key, 0) >= 3:
             return None
-        if sum(p.device == device for p in self._inflight.values()) >= (
-                snap.cpu_slots if device == "cpu" else snap.gpu_slots):
+        slots = snap.cpu_slots if device == "cpu" else snap.gpu_slots
+        if (device == "cpu" and job.kind != "speech" and stream.live
+                and self.speech_cpu_reserve_slots):
+            slots = max(0, slots - self.speech_cpu_reserve_slots)
+        if sum(p.device == device for p in self._inflight.values()) >= slots:
             return None
         if snap.free_ram_mib - sum(p.job.ram_mib for p in self._inflight.values()) < job.ram_mib + 512:
             return None
@@ -373,6 +383,7 @@ class AdaptiveQoS:
             return {
                 **self._counts,
                 "enabled": self._enabled,
+                "speech_cpu_reserve_slots": self.speech_cpu_reserve_slots,
                 "inflight": len(self._inflight),
                 "expired_awaiting_host_stop": len(self._expired),
                 "disabled_workers_awaiting_host_stop": (
