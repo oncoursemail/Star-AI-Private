@@ -219,11 +219,23 @@ class ToolWorkshop:
         if source == "skills":
             if self.intelligence.skills is None:
                 raise RuntimeError("Agent Skills are not enabled")
-            skills = self.intelligence.skills.list()["skills"]
-            words = re.findall(r"[a-z0-9_]{3,}", query.lower())
-            ranked = [item for item in skills if any(w in
-                (item["name"]+" "+item["description"]).lower() for w in words)]
-            return {"records": ranked[:limit], "source": "local-agent-skill-catalog"}
+            library = self.intelligence.skills
+            search = getattr(library, "search", None)
+            if callable(search):
+                records = search(query, limit=limit)
+            else:
+                # Compatibility for older adapters; the built-in SkillLibrary
+                # uses BM25 and returns ranked metadata without loading bodies.
+                catalog = library.list()["skills"]
+                words = set(re.findall(r"[a-z0-9_]{3,}", query.casefold()))
+                records = [
+                    item for item in catalog
+                    if words and any(
+                        word in (item["name"] + " " + item["description"]).casefold()
+                        for word in words
+                    )
+                ][:limit]
+            return {"records": records, "source": "local-agent-skill-catalog"}
         raise PermissionError("Recipe has an unapproved operation")
 
     def run(self, identifier: int, query: str, *, preview: bool = False) -> dict:
