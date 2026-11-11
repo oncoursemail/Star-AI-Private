@@ -225,3 +225,15 @@ This PR adds an offline decision evaluator and tests only. Before claiming more 
 7. Publish p50/p95 latency, false-response rates, overlap behavior, game frame-time, OBS drops, audio underruns, CPU/RAM/GPU/VRAM and task success.
 
 No audio dataset, private viewer content, model, microphone, avatar, OBS session, gameplay input or production permission was changed in this research pass.
+
+## 9. Fresh game-creation benchmark update
+
+The official GameDevBench repository now publishes a 333-task Godot 4.4.1 benchmark and updated leaderboard entries. At the time of this review it lists Claude Opus 5.5 (xhigh) at 70.6%, GPT-6.1 Sol (xhigh) at 70.0%, and GPT-6 Astra (High) at 68.8% (229/333) using runtime video and strict confinement. These are external benchmark results, not STAR scores, and model/harness/effort settings differ.
+
+The benchmark's authors report that performance drops from 51.4% on gameplay-oriented tasks to 33.0% on 2D graphics tasks. Their image/video feedback mechanism improved GPT-5.4 from 41.1% to 52.0% in the reported setup. The repository requires Godot 4.4.1 for comparable official runs and uses strict solver isolation by default.
+
+Sources:
+- Official repository and current results: https://github.com/waynchi/gamedevbench
+- Paper: https://arxiv.org/abs/2602.11103
+
+**STAR implication:** prioritize a visual feedback loop for Creator Brain. After every material UI, animation, shader, sprite or scene change, capture the actual running game, compare it with the reference/acceptance criteria, inspect logs and input behavior, then repair and retest. Keep exact engine/build versions in each result receipt. Use isolated workspaces and never let a benchmark agent read its own hidden ground-truth files. A compile-only result is not a visual quality score.
