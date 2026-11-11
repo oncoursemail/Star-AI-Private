@@ -27,6 +27,9 @@ from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
 from .stream_timeline_context import TimelineContextPacket
+from .stream_multiparty_floor import (
+    FloorDecision, FloorObservation, StreamMultipartyFloorGate,
+)
 
 
 def _now(clock: Callable[[], float]) -> float:
@@ -79,6 +82,7 @@ class StreamBrainGovernor:
         qos: AdaptiveQoS,
         stage: StarStage,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
+        multiparty_floor: StreamMultipartyFloorGate | None = None,
     ) -> None:
         if not isinstance(telemetry, RealtimeTelemetryHost):
             raise TypeError("telemetry must be a RealtimeTelemetryHost")
@@ -86,18 +90,23 @@ class StreamBrainGovernor:
             raise TypeError("expected existing AdaptiveQoS and StarStage")
         if not callable(clock_ms):
             raise TypeError("host clock must be callable")
+        if multiparty_floor is not None and not isinstance(multiparty_floor, StreamMultipartyFloorGate):
+            raise TypeError("multiparty_floor must be StreamMultipartyFloorGate or None")
         self._telemetry, self._qos, self._stage = telemetry, qos, stage
         self._clock = clock_ms
+        self._multiparty_floor = multiparty_floor
         self._lock = RLock()
         self._enabled = False
         self._generation = 0
         self._leases: dict[int, BrainLease] = {}
         self._speech_binding: tuple[StagePlan, BrainLease] | None = None
+        self._last_floor_decision: FloorDecision | None = None
         self._counts = {
             "admitted": 0, "deferred": 0, "stopped": 0,
             "successful": 0, "stale_lease": 0, "missing_sensor": 0,
             "speech_prepared": 0, "audio_abandoned": 0,
-            "audio_interrupted": 0,
+            "audio_interrupted": 0, "floor_admitted": 0,
+            "floor_suppressed": 0, "floor_rejected": 0, "floor_missing": 0,
         }
 
     def enable(
@@ -119,13 +128,20 @@ class StreamBrainGovernor:
             self._stage.enable(
                 owner_approved=True, mode=mode, reduced_motion=reduced_motion
             )
+            floor_started = False
             try:
                 self._qos.enable(owner_approved=True)
                 self._telemetry.set_context(
                     live=live, game_active=game_active, owner_approved=True
                 )
+                if self._multiparty_floor is not None:
+                    self._multiparty_floor.enable(owner_approved=True)
+                    floor_started = True
             except Exception:
+                if floor_started and self._multiparty_floor is not None:
+                    self._multiparty_floor.disable()
                 self._qos.disable()
+                self._telemetry.disable()
                 self._stage.disable()
                 raise
             self._enabled = True
@@ -148,9 +164,12 @@ class StreamBrainGovernor:
                 self._enabled = False
                 self._generation += 1
                 self._qos.disable()  # quarantine workers; do not release memory
+                if self._multiparty_floor is not None:
+                    self._multiparty_floor.disable()
                 self._telemetry.disable()
                 self._stage.disable()
                 self._speech_binding = None
+                self._last_floor_decision = None
 
     def _sample(self) -> LiveHostSample | None:
         sample = self._telemetry.snapshot()
@@ -227,16 +246,87 @@ class StreamBrainGovernor:
                 self._counts["successful"] += 1
             return bool(accepted and succeeded)
 
-    def offer(self, signal: StreamSignal, *, moderated: bool = False) -> bool:
-        """Queue a moderated event; an event NEVER grants an OS capability."""
+    def offer(
+        self, signal: StreamSignal, *, moderated: bool = False,
+        spoken_turn: bool = False,
+        floor_observation: FloorObservation | None = None,
+    ) -> bool:
+        """Queue an event; spoken viewer turns may require addressee proof.
+
+        The optional floor gate applies only to host-classified spoken viewer
+        questions/comments. Ordinary chat, game events and the authenticated
+        owner-interrupt path retain their existing routing. A floor receipt is
+        content-free and must bind the exact signal ID and same monotonic clock.
+        """
         if not isinstance(signal, StreamSignal):
             raise TypeError("expected StreamSignal")
+        if type(moderated) is not bool or type(spoken_turn) is not bool:
+            raise TypeError("moderated and spoken_turn must be booleans")
+        if floor_observation is not None and type(floor_observation) is not FloorObservation:
+            raise TypeError("floor_observation must be FloorObservation or None")
+        if spoken_turn and signal.kind not in {"viewer_question", "viewer_comment"}:
+            raise ValueError("multiparty floor gating is only for spoken viewer events")
+        if not spoken_turn and floor_observation is not None:
+            raise ValueError("floor_observation requires spoken_turn=True")
         with self._lock:
+            self._last_floor_decision = None
             if not self._enabled:
                 return False
-            return self._stage.offer(
+            floor_authorized = False
+            if spoken_turn:
+                gate = self._multiparty_floor
+                if gate is None or floor_observation is None:
+                    self._counts["floor_missing"] += 1
+                    return False
+                if not moderated:
+                    self._counts["floor_rejected"] += 1
+                    return False
+                if floor_observation.turn_id != signal.signal_id:
+                    self._counts["floor_rejected"] += 1
+                    return False
+                skew = abs(signal.timestamp * 1000.0 - float(floor_observation.captured_ms))
+                if skew > gate.policy.max_signal_skew_ms:
+                    self._counts["floor_rejected"] += 1
+                    return False
+                if not gate.observe(floor_observation):
+                    self._counts["floor_rejected"] += 1
+                    return False
+                decision = gate.decide(signal.signal_id, now_ms=_now(self._clock))
+                self._last_floor_decision = decision
+                if not decision.should_speak:
+                    self._counts["floor_suppressed"] += 1
+                    return False
+                floor_authorized = True
+            queued = self._stage.offer(
                 signal, now=_now(self._clock) / 1000, moderated=moderated
             )
+            if queued and floor_authorized:
+                self._counts["floor_admitted"] += 1
+            elif floor_authorized:
+                # Do not expose a response authorization for an event the
+                # existing stage rejected at its own admission boundary.
+                self._last_floor_decision = None
+            return queued
+
+    def take_floor_decision(self, signal_id: str) -> FloorDecision | None:
+        """Consume the most recent one-use floor result for the exact event.
+
+        A trusted host can route a non-spoken `backchannel` result to the
+        existing avatar/listener-cue path. This method does not play audio,
+        move the rig, or make the decision reusable.
+        """
+        if type(signal_id) is not str:
+            raise TypeError("signal_id must be a string")
+        with self._lock:
+            decision = self._last_floor_decision
+            if decision is None or decision.turn_id != signal_id:
+                return None
+            if (not self._enabled or self._multiparty_floor is None
+                    or decision.session_epoch != self._multiparty_floor.session_epoch):
+                self._last_floor_decision = None
+                return None
+            self._last_floor_decision = None
+            return decision
 
     def prepare(
         self, *, voice_speaking: bool = False,
@@ -392,6 +482,14 @@ class StreamBrainGovernor:
                 "stage_phase": self._stage.metrics()["phase"],
                 "qos_expired_reservations":
                     self._qos.status()["expired_awaiting_host_stop"],
+                "multiparty_floor_enabled": (
+                    self._multiparty_floor.status()["enabled"]
+                    if self._multiparty_floor is not None else False
+                ),
+                "multiparty_floor_session_epoch": (
+                    self._multiparty_floor.session_epoch
+                    if self._multiparty_floor is not None and self._enabled else None
+                ),
             }
 
 
