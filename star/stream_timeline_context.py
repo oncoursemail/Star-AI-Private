@@ -239,7 +239,12 @@ def build_timeline_context(
         }))
     candidates.sort(key=lambda item: (item[0], item[1]["other_modality"], item[1]["other_kind"]))
     aligned = [item[1] for item in candidates[:max_pairs]]
-    modalities = {event.modality} | {item["other_modality"] for item in aligned}
+    modalities: set[str] = {event.modality}
+    for item in aligned:
+        other_modality = item["other_modality"]
+        if type(other_modality) is not str:
+            return None
+        modalities.add(other_modality)
     payload = {
         "type": "star_live_event_context",
         "event": {
