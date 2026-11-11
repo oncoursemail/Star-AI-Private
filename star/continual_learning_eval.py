@@ -484,6 +484,7 @@ def evaluate_continual_learning(
     else:
         verdict = "no_reliable_gain"
 
+    conventional_gain = _mean(conventional)
     return ContinualLearningReport(
         verdict=verdict, split=manifest.split, manifest_sha256=manifest.sha256,
         preregistered_tasks=len(manifest.tasks), completed_pairs=completed,
@@ -491,7 +492,7 @@ def evaluate_continual_learning(
         overall_gain_pp=None if overall_gain is None else round(overall_gain * 100, 3),
         dependent_gain_pp=None if dependent_gain is None else round(dependent_gain * 100, 3),
         independent_gain_pp=None if independent_gain is None else round(independent_gain * 100, 3),
-        conventional_gain_pp=None if not conventional else round(_mean(conventional) * 100, 3),
+        conventional_gain_pp=None if conventional_gain is None else round(conventional_gain * 100, 3),
         retention_gain_pp=None if retention_gain is None else round(retention_gain * 100, 3),
         improved_streams=wins, worse_streams=losses, tied_streams=ties,
         stream_sign_test_p=round(stream_p, 8), dependent_sign_test_p=round(dependent_p, 8),
