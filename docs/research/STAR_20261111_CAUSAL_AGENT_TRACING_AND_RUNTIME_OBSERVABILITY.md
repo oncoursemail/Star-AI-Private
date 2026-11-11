@@ -25,7 +25,7 @@ This change adds a small, dependency-free trace ledger as an instrumentation con
 
 ### 1. W3C Trace Context and OpenTelemetry: shared identifiers, semantic structure, and maturity
 
-W3C Trace Context standardizes the `traceparent` header for request correlation. Version 00 uses a 32-hex trace ID, 16-hex parent ID and two-hex flags field; all-zero IDs are invalid, and only the sampled bit is currently defined. STAR's parser therefore accepts lowercase version-00 headers and flags `00` or `01` only.
+W3C Trace Context standardizes the `traceparent` header for request correlation. Version 00 uses a 32-hex trace ID, 16-hex parent ID and two-hex flags field; all-zero IDs are invalid, and only the sampled bit is currently defined. STAR's parser therefore accepts lowercase version-00 headers and flags `00` or `01` only. Newly recorded root traces default to sampled (`01`); a received parent context's sampling flag is preserved when creating child spans.
 
 OpenTelemetry's semantic conventions provide common names for spans, metrics, events and resources so signals can be correlated across languages and services. The GenAI attribute registry has moved to the dedicated GenAI semantic-conventions repository; its input/output message and retrieval attributes can contain sensitive information. Treat GenAI conventions as versioned interoperability guidance, not permission to record prompts or transcripts.
 
