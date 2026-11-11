@@ -42,7 +42,10 @@ _EVENTS = frozenset({
     "model_finished", "tool_started", "tool_finished", "audio_queued",
     "audio_playback_started", "audio_playback_finished", "avatar_updated",
     "game_observed", "game_action", "budget_admitted", "budget_deferred",
-    "task_finished", "stream_started", "stream_stopped", "obs_sampled", "error",
+    "task_finished", "stream_started", "stream_stopped", "obs_sampled",
+    "inference_sampled", "hardware_sampled", "stream_director_sampled",
+    "speech_proposed", "speech_completed", "game_learning_sampled",
+    "task_checkpoint_sampled", "error",
 })
 
 # Only low-cardinality enums, opaque IDs, booleans, and bounded numeric facts
@@ -59,6 +62,18 @@ _ATTRIBUTE_RULES: dict[str, str] = {
     "frame_time_ms": "number", "gpu_memory_mib": "number",
     "cpu_busy_percent": "percent", "obs_render_lag_ms": "number",
     "kv_cache_usage_ratio": "ratio",
+    "prompt_tokens_per_second": "number", "generation_tokens_per_second": "number",
+    "busy_slots_per_decode": "number", "speculative_acceptance_percent": "percent",
+    "speculative_tokens_per_step": "number", "elapsed_ms": "number",
+    "requests_processing": "integer", "requests_deferred": "integer",
+    "counter_reset_count": "integer", "anomaly_count": "integer",
+    "total_vram_mib": "number", "free_vram_mib": "number", "free_ram_mib": "number",
+    "stream_accepted": "integer", "stream_rejected": "integer",
+    "stream_expired": "integer", "stream_evicted": "integer",
+    "stream_completed": "integer", "stream_abandoned": "integer", "stream_queued": "integer",
+    "speech_kind": "speech_kind", "untrusted_context": "boolean",
+    "learning_sessions": "integer", "learning_episodes": "integer",
+    "learning_state_actions": "integer", "checkpoint_steps": "integer",
     "cache_hit": "boolean", "interrupted": "boolean", "cancelled": "boolean",
     "game_active": "boolean", "stream_live": "boolean",
 }
@@ -93,8 +108,16 @@ def _attributes(value: dict[str, Any] | None) -> dict[str, str | int | float | b
             if (type(item) is not str or not _OPAQUE_ID.fullmatch(item)
                     or "://" in item):
                 raise ValueError(f"{key} must be a short opaque identifier, not a URL or free text")
-        elif rule in {"outcome", "error", "device"}:
-            allowed = {"outcome": _OUTCOMES, "error": _ERROR_CATEGORIES, "device": _DEVICES}[rule]
+        elif rule in {"outcome", "error", "device", "speech_kind"}:
+            allowed = {
+                "outcome": _OUTCOMES,
+                "error": _ERROR_CATEGORIES,
+                "device": _DEVICES,
+                "speech_kind": frozenset({
+                    "owner_interrupt", "game_danger", "game_success",
+                    "viewer_question", "game_observation", "viewer_comment", "ambient",
+                }),
+            }[rule]
             if type(item) is not str or item not in allowed:
                 raise ValueError(f"{key} has an unsupported enum value")
         elif rule == "boolean":
