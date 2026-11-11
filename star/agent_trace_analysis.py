@@ -90,14 +90,19 @@ def profile_trace(
     assigned a fabricated duration. Component inclusive durations are not
     additive because parent/child and concurrent spans can overlap.
     """
-    if type(snapshot) is not dict or snapshot.get("schema_version") != 1:
+    if (type(snapshot) is not dict or type(snapshot.get("schema_version")) is not int
+            or snapshot.get("schema_version") != 1):
         raise ValueError("snapshot must be an AgentTrace schema-version-1 dictionary")
     if type(slowest_limit) is not int or not 1 <= slowest_limit <= 50:
         raise ValueError("slowest_limit must be an integer in 1..50")
 
     trace_id = snapshot.get("trace_id")
-    if type(trace_id) is not str or not _TRACE_ID.fullmatch(trace_id):
+    if (type(trace_id) is not str or not _TRACE_ID.fullmatch(trace_id)
+            or trace_id == "0" * 32):
         raise ValueError("snapshot has an invalid trace ID")
+    trace_flags = snapshot.get("trace_flags")
+    if type(trace_flags) is not str or trace_flags not in {"00", "01"}:
+        raise ValueError("snapshot has invalid trace flags")
 
     raw_spans = snapshot.get("spans")
     raw_events = snapshot.get("events")
@@ -118,6 +123,8 @@ def profile_trace(
         status = raw.get("status")
         if type(span_id) is not str or not _SPAN_ID.fullmatch(span_id):
             raise ValueError("span has an invalid span ID")
+        if span_id == "0" * 16:
+            raise ValueError("span has an invalid all-zero span ID")
         if span_id in spans:
             raise ValueError("snapshot contains duplicate span IDs")
         if parent_id is not None and (
