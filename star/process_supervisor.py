@@ -1,9 +1,9 @@
 """Cross-platform process-tree containment for STAR-owned workers.
 
 POSIX workers are started in a fresh session and stopped as a process group.
-Windows workers are attached to a Job Object with KILL_ON_JOB_CLOSE. Windows
-attachment happens immediately after process creation; a creation-time
-PROC_THREAD_ATTRIBUTE_JOB_LIST launcher is a future hardening step.
+Windows workers are created suspended, attached to a Job Object, then resumed.
+This closes the child-spawn-before-assignment race. A creation-time
+PROC_THREAD_ATTRIBUTE_JOB_LIST launcher remains the stronger future option.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ class JobApi(Protocol):
     def terminate(self, job: Any, exit_code: int) -> None: ...
     def active_processes(self, job: Any) -> int: ...
     def close(self, job: Any) -> None: ...
+    def resume_primary_thread(self, pid: int) -> None: ...
 
 
 class _Win32JobApi:
@@ -119,6 +120,22 @@ class _Win32JobApi:
         self._close.argtypes = [wintypes.HANDLE]
         self._close.restype = wintypes.BOOL
 
+        self._snapshot = self._kernel.CreateToolhelp32Snapshot
+        self._snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        self._snapshot.restype = wintypes.HANDLE
+        self._thread_first = self._kernel.Thread32First
+        self._thread_first.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+        self._thread_first.restype = wintypes.BOOL
+        self._thread_next = self._kernel.Thread32Next
+        self._thread_next.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+        self._thread_next.restype = wintypes.BOOL
+        self._open_thread = self._kernel.OpenThread
+        self._open_thread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        self._open_thread.restype = wintypes.HANDLE
+        self._resume_thread = self._kernel.ResumeThread
+        self._resume_thread.argtypes = [wintypes.HANDLE]
+        self._resume_thread.restype = wintypes.DWORD
+
     @staticmethod
     def _check(ok: Any, operation: str) -> None:
         if not ok:
@@ -157,6 +174,55 @@ class _Win32JobApi:
     def close(self, job: Any) -> None:
         self._check(self._close(job), "CloseHandle")
 
+    def resume_primary_thread(self, pid: int) -> None:
+        """Resume the one initial thread held by CREATE_SUSPENDED."""
+        from ctypes import wintypes
+
+        class ThreadEntry32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ThreadID", wintypes.DWORD),
+                ("th32OwnerProcessID", wintypes.DWORD),
+                ("tpBasePri", wintypes.LONG),
+                ("tpDeltaPri", wintypes.LONG),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        snapshot = self._snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+        invalid_handle = ctypes.c_void_p(-1).value
+        if not snapshot or snapshot == invalid_handle:
+            self._check(False, "CreateToolhelp32Snapshot")
+        try:
+            entry = ThreadEntry32()
+            entry.dwSize = ctypes.sizeof(entry)
+            if not self._thread_first(snapshot, ctypes.byref(entry)):
+                self._check(False, "Thread32First")
+            thread_id = None
+            while True:
+                if int(entry.th32OwnerProcessID) == pid:
+                    thread_id = int(entry.th32ThreadID)
+                    break
+                entry.dwSize = ctypes.sizeof(entry)
+                if not self._thread_next(snapshot, ctypes.byref(entry)):
+                    break
+            if thread_id is None:
+                raise ProcessTreeError("suspended worker's initial thread was not found")
+            thread = self._open_thread(0x0002, False, thread_id)  # THREAD_SUSPEND_RESUME
+            self._check(thread, "OpenThread")
+            try:
+                previous = int(self._resume_thread(thread))
+                if previous == 0xFFFFFFFF:
+                    self._check(False, "ResumeThread")
+                if previous != 1:
+                    raise ProcessTreeError(
+                        f"expected initial thread suspend count 1, got {previous}"
+                    )
+            finally:
+                self._check(self._close(thread), "CloseHandle(thread)")
+        finally:
+            self._check(self._close(snapshot), "CloseHandle(snapshot)")
+
 
 class ProcessTreeSupervisor:
     """Owns one process group (POSIX) or Job Object (Windows) for a STAR worker."""
@@ -169,6 +235,7 @@ class ProcessTreeSupervisor:
         group_owned: bool = False,
         job_api: JobApi | None = None,
         require_tree: bool = False,
+        suspended: bool = False,
     ) -> None:
         self.process = process
         self.pid = int(process.pid)
@@ -185,11 +252,15 @@ class ProcessTreeSupervisor:
         elif self.platform == "nt":
             api = job_api
             job = None
+            assigned = False
             try:
                 api = api or _Win32JobApi()
                 job = api.create_job()
                 api.set_kill_on_close(job)
                 api.assign_pid(job, self.pid)
+                assigned = True
+                if suspended:
+                    api.resume_primary_thread(self.pid)
                 self._api, self._job = api, job
                 self.mode = "windows_job"
             except Exception as exc:
@@ -198,10 +269,36 @@ class ProcessTreeSupervisor:
                     try:
                         api.close(job)
                     except Exception:
-                        pass
+                        try:
+                            api.terminate(job, 1)
+                        except Exception:
+                            pass
+                if assigned:
+                    # Once assigned, a failed resume must never fall back to an
+                    # uncontained worker. Closing the kill-on-close job and killing
+                    # the root are both attempted before surfacing the launch error.
+                    self._kill_root()
+                    raise ProcessTreeError(
+                        f"could not start contained worker: {self.error}"
+                    ) from exc
                 if require_tree:
                     self._kill_root()
-                    raise ProcessTreeError(f"could not contain worker process tree: {self.error}") from exc
+                    raise ProcessTreeError(
+                        f"could not contain worker process tree: {self.error}"
+                    ) from exc
+                if suspended:
+                    if api is None:
+                        self._kill_root()
+                        raise ProcessTreeError(
+                            "Windows Job Object API unavailable; suspended worker was terminated"
+                        ) from exc
+                    try:
+                        api.resume_primary_thread(self.pid)
+                    except Exception as resume_exc:
+                        self._kill_root()
+                        raise ProcessTreeError(
+                            "could not resume root-only fallback worker; worker was terminated"
+                        ) from resume_exc
         elif require_tree:
             self._kill_root()
             raise ProcessTreeError(f"process-tree supervision is unsupported on {self.platform!r}")
@@ -303,8 +400,9 @@ def _creation_kwargs(platform: str, kwargs: dict[str, Any]) -> dict[str, Any]:
     if platform == "posix":
         kwargs["start_new_session"] = True
     elif platform == "nt":
-        # CREATE_NEW_PROCESS_GROUP; Job Object membership is attached immediately after launch.
-        kwargs["creationflags"] = int(kwargs.get("creationflags", 0)) | 0x00000200
+        # CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED. The supervisor assigns
+        # the Job Object before resuming the initial thread.
+        kwargs["creationflags"] = int(kwargs.get("creationflags", 0)) | 0x00000200 | 0x00000004
     return kwargs
 
 
@@ -322,7 +420,8 @@ def start_managed_process(
     proc = popen_factory(args, **_creation_kwargs(target, dict(kwargs)))
     try:
         return ProcessTreeSupervisor(proc, platform=target, group_owned=target == "posix",
-                                     job_api=job_api, require_tree=require_tree)
+                                     job_api=job_api, require_tree=require_tree,
+                                     suspended=target == "nt")
     except Exception:
         if getattr(proc, "returncode", None) is None:
             try:
@@ -345,7 +444,8 @@ async def start_managed_async_process(
     proc = await asyncio.create_subprocess_exec(*args, **_creation_kwargs(target, dict(kwargs)))
     try:
         return ProcessTreeSupervisor(proc, platform=target, group_owned=target == "posix",
-                                     job_api=job_api, require_tree=require_tree)
+                                     job_api=job_api, require_tree=require_tree,
+                                     suspended=target == "nt")
     except Exception:
         if proc.returncode is None:
             proc.kill()
