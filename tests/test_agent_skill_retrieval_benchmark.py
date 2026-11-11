@@ -30,7 +30,7 @@ def test_evaluator_reports_recall_mrr_and_ndcg_at_k():
     assert report["recall_at_k"] == 1.0
     assert report["mrr_at_k"] == 0.5
     assert report["ndcg_at_k"] == pytest.approx(
-        (1 / 1.0 + 1 / 1.5849625007)
+        (1 / 1.5849625007 + 1 / 2.0)
         / (1 / 1.0 + 1 / 1.5849625007)
     )
     assert len(calls) == 2
