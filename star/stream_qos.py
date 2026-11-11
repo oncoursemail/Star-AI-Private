@@ -231,11 +231,21 @@ class AdaptiveQoS:
         if self._consecutive_failures.get(key, 0) >= 3:
             return None
         slots = snap.cpu_slots if device == "cpu" else snap.gpu_slots
+        inflight = [pending for pending in self._inflight.values()
+                    if pending.device == device]
+        # First enforce the physical concurrency budget. Then enforce the
+        # non-speech quota separately: speech already occupying a CPU slot
+        # must not be counted against the slot reserved for future speech.
+        if len(inflight) >= slots:
+            return None
         if (device == "cpu" and job.kind != "speech" and stream.live
                 and self.speech_cpu_reserve_slots):
-            slots = max(0, slots - self.speech_cpu_reserve_slots)
-        if sum(p.device == device for p in self._inflight.values()) >= slots:
-            return None
+            non_speech_inflight = sum(
+                pending.job.kind != "speech" for pending in inflight
+            )
+            non_speech_capacity = max(0, slots - self.speech_cpu_reserve_slots)
+            if non_speech_inflight >= non_speech_capacity:
+                return None
         if snap.free_ram_mib - sum(p.job.ram_mib for p in self._inflight.values()) < job.ram_mib + 512:
             return None
         if device == "cpu":
