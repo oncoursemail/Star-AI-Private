@@ -274,6 +274,50 @@ A candidate passes only if all applicable gates pass:
 
 Use paired baseline/candidate trials on the same opportunities. A faster configuration must not win by speaking less, skipping difficult questions, lowering game FPS or dropping audio.
 
+## 9. General knowledge: broaden the benchmark before claiming breadth
+
+The current `star/general_knowledge_benchmark.py` explicitly describes itself as ten public development tasks and says it does not establish model delivery, broad knowledge or a knowledge gain. Keep it as a small artifact-integrity check; do not present it as a general-knowledge benchmark.
+
+Build a layered Knowledge Lab evaluation set:
+
+| Layer | Research benchmark | What STAR should measure |
+|---|---|---|
+| Stable factual recall | SimpleQA | Short-answer factual accuracy and abstention |
+| Misconceptions | TruthfulQA | Reject common false premises instead of echoing them |
+| Time-sensitive facts | FreshQA | Detect stale answers, verify current evidence and flag false premises |
+| Hard research | BrowseComp | Persistent search, query reformulation, multi-source synthesis and citation support |
+| General assistant work | GAIA | Multimodal input, file handling, browsing and multi-step tool use |
+| Expert science reasoning | GPQA Diamond | Deep specialist reasoning; keep separate from everyday general knowledge |
+
+Sources:
+- SimpleQA: https://openai.com/index/introducing-simpleqa/
+- TruthfulQA: https://openai.com/index/truthfulqa/
+- FreshQA/FreshLLMs: https://github.com/freshllms/freshqa and https://arxiv.org/abs/2310.03214
+- BrowseComp: https://openai.com/index/browsecomp/
+- GAIA: https://ai.meta.com/research/publications/gaia-a-benchmark-for-general-ai-assistants/
+- GPQA: https://arxiv.org/abs/2311.12022
+
+The source projects have important scope limits. SimpleQA uses short, stable fact questions and does not establish long-form factuality. BrowseComp is intentionally difficult web research, not a representative sample of ordinary conversation. GAIA tests tool-using assistant workflows, not only stored knowledge. GPQA is expert science reasoning, not a broad trivia score. FreshQA requires dated snapshots because answers change.
+
+### Knowledge Lab architecture
+
+1. **Question router:** classify stable fact, current fact, specialist reasoning, research, multimodal or task-execution request.
+2. **Evidence retriever:** search approved local indexes and, when enabled, authoritative current sources.
+3. **Claim ledger:** store claim, source URL, source date, retrieval time, exact supporting passage span, scope and confidence.
+4. **Conflict resolver:** keep competing claims with provenance; do not silently collapse disagreement.
+5. **Freshness policy:** set review/expiry windows by domain. API versions, prices, current events and game balance data age faster than mathematics or established history.
+6. **Answer planner:** separate known facts, sourced current facts, inference and uncertainty.
+7. **Abstention/calibration:** test whether confidence predicts correctness; allow “I could not verify that” as a successful behavior.
+8. **Memory promotion:** promote only reviewed, source-backed, versioned facts; retain the source and date so the claim can be rechecked.
+9. **Practice loop:** generate spaced-repetition questions from verified knowledge, then score on unseen paraphrases rather than repeating the exact prompt.
+10. **Privacy boundary:** do not turn private viewer conversations or owner data into general training examples without explicit permission.
+
+### General-knowledge acceptance
+
+Track accuracy separately by domain and freshness class; citation precision/recall; unsupported-claim rate; false-premise correction; abstention precision; stale-answer rate; multi-hop completion; and performance on paraphrased holdouts. A single aggregate score must not hide a domain regression.
+
+Do not train on hidden test answers. Keep benchmark answer keys outside the model and tool sandbox. Use public development data for iteration, sealed holdouts for final comparisons, and human review for open-ended or ambiguous answers.
+
 ## 10. Implementation and verification boundary
 
 This branch adds:
