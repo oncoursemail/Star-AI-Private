@@ -22,8 +22,9 @@ Rules, per model (a model has `slots` parallel slots in llama.cpp):
     (the KV cache of the slot, or the server's RAM prompt cache, keeps the prompt and the text so far).
   * Resuming = the same request again with the text so far as the start of the answer (chat:
     `continue_final_message`; completions: prompt + text), `max_tokens` reduced by the tokens already made. The
-    prompt cache turns the re-sent prefix into a cache hit, so only a few tokens are read again. The client sees a
-    pause, then the rest of the same answer: nothing lost, nothing twice.
+    prompt cache may turn the re-sent prefix into a cache hit when caching is enabled and the same prefix/slot
+    remains reusable. Cache reuse is an optimization, not a correctness dependency: the complete answer must still
+    be correct when `cache_n` is zero or unavailable. The client sees a pause, then the rest of the same answer.
   * The proxy always streams from upstream (so it holds the partial text) and gives a non-streaming client the one
     JSON answer it asked for.
   * Cases that cannot be continued exactly (tool-call output, grammar / JSON-schema output, n > 1, a prompt that is
