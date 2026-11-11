@@ -248,3 +248,56 @@ A passing offline test is not a Windows acceptance result. A passing Windows pro
 - Benchmarks are research inputs, not STAR measurements.
 - No model training, automatic memory promotion, live game control, OBS broadcast or external publication is enabled.
 - No claim of human identity, consciousness, or human-equivalent behavior is made; the goal is socially fluent, expressive and transparent AI streaming.
+
+
+---
+
+## 8. VTuber ecosystem scan: useful patterns to evaluate, not copy blindly
+
+### AITuber OnAir
+
+AITuber OnAir is a modular TypeScript toolkit whose public repository describes separate packages for chat, voice, transcription, comment intelligence, conversation-pattern diversification, agent policies, WebSocket chat and viewer relationships. Its comment-intelligence package is especially relevant: it filters unsafe/noisy live comments, selects one comment to answer, and summarizes ignored comments instead of flooding the model with every message. Its `manneri` package detects repetitive conversation patterns, while `kizuna` offers viewer points/achievements.
+
+- Repository: https://github.com/shinshin86/aituber-onair
+
+STAR should evaluate these patterns against its existing stream director and multi-party floor controller before adding another parallel comment queue:
+
+- Keep a bounded, rate-limited viewer-event buffer.
+- Select one high-value comment or question per response opportunity.
+- Preserve aggregate context about ignored messages without retaining unnecessary raw viewer data.
+- Detect repeated topics and rotate to relevant alternatives without injecting random or fabricated facts.
+- Offer opt-in, transparent viewer achievements; avoid manipulative parasocial scoring or claims of exclusive emotional bonds.
+- Keep moderation/risk checks outside the language model's authority to bypass.
+
+The repository is MIT-licensed according to its README, but bundled avatar assets and third-party media have separate terms. Review package dependencies, asset terms and license notices before reuse. A reference architecture does not imply that STAR should import the whole monorepo.
+
+### Open-LLM-VTuber
+
+The Open-LLM-VTuber project demonstrates a modular local-first stack with swappable LLM, ASR and TTS providers, voice interruption, visual perception, Live2D expression mapping, proactive speech and persistent conversation history. Its release notes describe an asynchronous backend, concurrent TTS segment generation with ordered playback, first-fragment prioritization, and interruption logic that stops further token generation.
+
+- Organization: https://github.com/Open-LLM-VTuber
+- Project repository: https://github.com/Open-LLM-VTuber/Open-LLM-VTuber
+- Releases: https://github.com/Open-LLM-VTuber/Open-LLM-VTuber/releases
+
+Useful STAR experiments:
+
+1. Measure first-sentence TTS separately from full-response completion; prioritize the first audible fragment only when the sentence is semantically safe to stream.
+2. On interruption, cancel generation, stop queued audio, preserve the unspoken response state, and avoid replaying already-audible text.
+3. Keep provider lifecycle explicit so idle models can release VRAM without reinitializing on every turn.
+4. Keep ASR, VAD, endpointing, LLM, TTS and avatar animation asynchronous but coordinated by one turn/session epoch.
+5. Run a no-headphones echo test: STAR must not treat her own TTS or speaker output as a new viewer utterance.
+
+These are design references, not evidence that the same latency or quality will transfer to STAR's hardware.
+
+### Broadcast and avatar control boundaries
+
+VTube Studio exposes a local WebSocket API and requires the user to allow plugin API access. OBS WebSocket is included with OBS Studio 28+ and recommends password protection.
+
+- VTube Studio API project: https://github.com/DenchiSoft/VTubeStudio
+- OBS WebSocket: https://github.com/obsproject/obs-websocket
+
+STAR's host should expose a small allowlist of typed actions (expression, hotkey, scene preset, mute, stop) rather than a generic arbitrary WebSocket command. Bind control to localhost by default, authenticate OBS, keep secrets outside model context, and never allow viewer text to choose arbitrary files, processes, URLs, scenes or plugin calls.
+
+### Integration decision
+
+Do not add another full VTuber framework to STAR. Keep STAR's existing Python/React architecture and evaluate small, isolated ideas against its existing modules. First candidates are comment selection/summarization, conversation-diversity detection, cancellable first-chunk TTS, explicit provider lifecycle and typed avatar/OBS actions. Each candidate should be A/B tested against the existing stream director and turn-taking evaluations before promotion.
