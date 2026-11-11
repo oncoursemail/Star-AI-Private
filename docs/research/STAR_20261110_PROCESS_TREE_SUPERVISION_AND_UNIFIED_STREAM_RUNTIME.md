@@ -230,6 +230,20 @@ Keep six complementary stores:
 
 Retrieval should filter by provenance, freshness, contradiction and project version before ranking by semantic similarity. Consolidation should be reversible and evaluated on held-out transfer tasks. Do not let an untrusted viewer message, web page or model-generated claim become trusted permanent knowledge without evidence.
 
+### General-knowledge engine
+
+Build a source-grounded knowledge service rather than treating the model's parametric knowledge as a live encyclopedia.
+
+1. **Ingestion:** accept approved web pages, API references, PDFs, books, videos/transcripts, images and structured datasets. Preserve canonical source URL/ID, author/publisher, publication/update date, retrieval time, content digest and license/access constraints.
+2. **Claim extraction:** store atomic claims with subject, predicate, object, time interval, source span, confidence and epistemic state. Keep competing claims rather than silently overwriting disagreements.
+3. **Temporal validity:** use domain-specific freshness windows (for example, software APIs/prices/weather need short windows; stable mathematics needs long windows). Revalidate volatile facts before answering.
+4. **Hybrid retrieval:** combine lexical search, embeddings, metadata filters and graph traversal. Retrieve source evidence first, then ask the reasoning model to synthesize it; do not let similarity alone promote a claim.
+5. **Answer discipline:** cite claims, separate verified facts from inference, state uncertainty, and abstain when sources conflict or are stale. Maintain a correction trail when a later source supersedes an earlier one.
+6. **Practice and transfer:** turn knowledge into short tasks, explain-back exercises and unfamiliar applications. A fact is learned only when STAR can use it correctly in a new context, not merely repeat its stored wording.
+7. **Evaluation:** score factual accuracy, citation support, temporal correctness, contradiction handling, abstention calibration and cross-domain transfer separately. Keep a held-out set so retrieval tuning does not overfit the questions used to build memory.
+
+Useful domain coverage for the initial knowledge graph: mathematics, science, history, geography, programming, engineering, art/music, language, game design, game engines, 3D production, networking and computer operations. For fast-changing topics, route through fresh research; for stable topics, prefer curated reference material and verified lessons. Keep the knowledge graph, episodic memories and procedural skills linked but separately governed.
+
 ---
 
 ## 8. Prioritized follow-on roadmap
