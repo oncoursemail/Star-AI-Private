@@ -206,3 +206,58 @@ def test_rejects_invalid_case_values():
             "E1", "C1", "calibration", "respond", "respond", "star", "question",
             active_speakers=True,
         )
+
+
+def test_selects_response_threshold_on_calibration_and_freezes_it_for_holdout():
+    rows = []
+    for index in range(10):
+        rows.append(_case(
+            f"CP{index}", f"CALP{index}", "calibration",
+            "respond", "respond", "star", "question",
+            response_probability=0.8 if index < 5 else 0.9,
+        ))
+    for index in range(10):
+        rows.append(_case(
+            f"CN{index}", f"CALN{index}", "calibration",
+            "silence", "silence", "other", "side_conversation",
+            response_probability=0.75 if index == 0 else 0.1,
+        ))
+    for index in range(5):
+        rows.append(_case(
+            f"HP{index}", f"HOLDP{index}", "holdout",
+            "respond", "respond", "star", "question",
+            response_probability=0.85,
+        ))
+    for index in range(5):
+        rows.append(_case(
+            f"HN{index}", f"HOLDN{index}", "holdout",
+            "silence", "silence", "other", "side_conversation",
+            response_probability=0.95,
+        ))
+
+    selection = evaluate_cases(
+        rows, max_calibration_false_response_rate=0.05,
+    )["response_threshold_selection"]
+
+    assert selection["status"] == "selected"
+    assert selection["selected_threshold"] == 0.75
+    assert selection["calibration_metrics"]["false_response_rate"] == 0.0
+    assert selection["calibration_metrics"]["recall"] == 1.0
+    # Holdout is scored with the frozen calibration threshold; it is not retuned.
+    assert selection["holdout_metrics"]["false_response_rate"] == 1.0
+    assert selection["holdout_metrics"]["recall"] == 1.0
+
+
+def test_threshold_selection_declines_small_calibration_sets():
+    selection = evaluate_cases(sample_cases())["response_threshold_selection"]
+
+    assert selection["status"] == "insufficient_calibration"
+    assert selection["selected_threshold"] is None
+    assert selection["holdout_metrics"] is None
+    assert selection["observed_events"] == 4
+
+
+@pytest.mark.parametrize("rate", [True, -0.01, 1.01, float("nan")])
+def test_threshold_selection_rejects_invalid_false_response_budgets(rate):
+    with pytest.raises(ValueError, match="max_calibration_false_response_rate"):
+        evaluate_cases(sample_cases(), max_calibration_false_response_rate=rate)
