@@ -1,7 +1,7 @@
 """Latency arithmetic and report formatting independently of live voice calls."""
 import pytest
 
-from star.voice.metrics import TurnMetrics, latency_table
+from star.voice.metrics import TurnMetrics, latency_summary, latency_table
 
 
 def test_empty_turn_has_unknown_stage_latencies_and_empty_table():
@@ -80,3 +80,38 @@ def test_latency_table_only_averages_complete_turns_and_reports_failure_reasons(
 def test_latencies_do_not_silently_accept_non_numeric_timestamps():
     with pytest.raises(TypeError):
         TurnMetrics(speech_end=0.0, first_audio_at="invalid").stages()
+
+
+def test_device_output_timing_is_separate_from_speaker_submission():
+    metrics = TurnMetrics(
+        turn=1,
+        speech_end=1.0,
+        first_token_at=1.2,
+        first_audio_at=1.4,
+        first_device_output_at=1.43,
+        last_token_at=1.3,
+        tokens=4,
+    )
+    stages = metrics.stages()
+    assert stages["total"] == pytest.approx(0.4)
+    assert stages["device_output_total"] == pytest.approx(0.43)
+    assert stages["audio_submit_to_device_output"] == pytest.approx(0.03)
+
+    report = latency_summary([metrics])
+    assert report["latency"]["speech_end_to_device_output"]["p50_ms"] == 430.0
+    assert report["latency"]["audio_submit_to_device_output"]["p50_ms"] == 30.0
+
+
+def test_device_output_timestamp_before_submission_is_rejected():
+    metrics = TurnMetrics(
+        turn=1,
+        speech_end=1.0,
+        first_token_at=1.2,
+        first_audio_at=1.4,
+        first_device_output_at=1.39,
+        last_token_at=1.3,
+        tokens=4,
+    )
+    report = latency_summary([metrics])
+    assert report["invalid_clock_turns"] == 1
+    assert report["latency"]["speech_end_to_device_output"]["n"] == 0
