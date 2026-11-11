@@ -109,6 +109,7 @@ class FakeSpeaker:
         self.log: list[tuple[str, float]] = []
         self.queued = 0.0
         self.queue_end = 0.0
+        self.first_output_at: float | None = None
         self.stops = 0
 
     def play(self, pcm: bytes, sample_rate: int) -> None:
@@ -116,6 +117,8 @@ class FakeSpeaker:
             now = time.monotonic()
             duration = len(pcm) / 2 / sample_rate
             self.queue_end = max(now, self.queue_end) + duration
+            if self.first_output_at is None:
+                self.first_output_at = now
             self.queued += duration
             self.log.append(("play", now))
 
@@ -131,6 +134,7 @@ class FakeSpeaker:
         with self.lock:
             self.queued = 0.0
             self.queue_end = time.monotonic()
+            self.first_output_at = None
 
     def pending_seconds(self) -> float:
         with self.lock:
@@ -139,6 +143,10 @@ class FakeSpeaker:
     def played_seconds(self) -> float:
         with self.lock:
             return self.queued - max(0.0, self.queue_end - time.monotonic())
+
+    def first_device_output_at(self) -> float | None:
+        with self.lock:
+            return self.first_output_at
 
     def level(self) -> float:
         return 0.1 if self.pending_seconds() > 0 else 0.0
