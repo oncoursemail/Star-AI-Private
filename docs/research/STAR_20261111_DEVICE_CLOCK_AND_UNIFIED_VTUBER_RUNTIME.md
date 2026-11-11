@@ -101,6 +101,20 @@ For the next Windows-specific layer, Microsoft documents two complementary sourc
 
 The acceptance sequence should therefore be PortAudio scheduled-DAC estimate → WASAPI loopback capture → OBS program-output capture → optional remote monitoring capture. Keep each stage separately labelled; never call one stage proof of the next.
 
+## PortAudio hot-path review: a separate performance follow-up
+
+The current `SoundSpeaker._callback` also computes an RMS envelope with NumPy after copying the output block. python-sounddevice warns that callbacks run at very high/real-time priority and should avoid memory allocation, file access, library calls or unpredictable work. The new clock conversion is deliberately small and bounded, but it does not remove this pre-existing callback cost.
+
+Follow-up design:
+- Keep the callback limited to bounded buffer movement, timestamp capture and a minimal lock-free/low-contention handoff.
+- Move RMS/viseme envelope calculation to a worker or precompute envelope blocks outside the callback.
+- If a bounded queue is full, drop an envelope sample rather than block audio.
+- Timestamp envelope blocks against the same device-output clock so avatar animation can be aligned without delaying audio.
+- Measure callback CPU load, output underflow count and mouth-motion skew before/after.
+- Do not replace the audio callback with a polling loop or call PortAudio APIs from inside it.
+
+This is a research finding and follow-up, not a code change in this PR. The current branch keeps the existing RMS behavior unchanged.
+
 ## Research findings and design implications
 
 ### 1. Voice: think incrementally, speak only when the turn is stable enough
