@@ -33,6 +33,23 @@ class JobApi(Protocol):
 
 class _Win32JobApi:
     """Small ctypes wrapper around the documented Windows Job Object APIs."""
+    # ctypes DLL functions and nested structure factories are attached at runtime.
+    _ExtendedLimit: Any
+    _BasicAccounting: Any
+    _kernel: Any
+    _create: Any
+    _set: Any
+    _open: Any
+    _assign: Any
+    _terminate: Any
+    _query: Any
+    _close: Any
+    _snapshot: Any
+    _thread_first: Any
+    _thread_next: Any
+    _open_thread: Any
+    _resume_thread: Any
+
 
     def __init__(self) -> None:
         if os.name != "nt":
