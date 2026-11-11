@@ -45,6 +45,7 @@ class StreamingProbe:
             raise ValueError("ok must be a boolean")
         if type(self.inter_chunk_gaps_ms) is not tuple:
             raise ValueError("inter_chunk_gaps_ms must be a tuple")
+        first_content_value: float | None = None
         if self.content_chunks == 0:
             if self.first_content_ms is not None or self.inter_chunk_gaps_ms:
                 raise ValueError("an empty stream cannot have content timings")
@@ -53,15 +54,15 @@ class StreamingProbe:
             if (isinstance(first, bool) or not isinstance(first, (int, float)) or
                     not math.isfinite(first) or not 0 <= first <= self.elapsed_ms):
                 raise ValueError("first_content_ms must be a valid request-relative timestamp")
+            first_content_value = float(first)
             if len(self.inter_chunk_gaps_ms) != self.content_chunks - 1:
                 raise ValueError("one inter-chunk gap is required between content chunks")
         for gap in self.inter_chunk_gaps_ms:
             if (isinstance(gap, bool) or not isinstance(gap, (int, float)) or
                     not math.isfinite(gap) or gap < 0):
                 raise ValueError("inter-chunk gaps must be finite and nonnegative")
-        if self.content_chunks and (
-            float(self.first_content_ms) + sum(self.inter_chunk_gaps_ms) > self.elapsed_ms + 1e-6
-        ):
+        if (first_content_value is not None and
+                first_content_value + sum(self.inter_chunk_gaps_ms) > self.elapsed_ms + 1e-6):
             raise ValueError("content timestamps cannot extend beyond request completion")
         if self.ok and self.content_chunks == 0:
             raise ValueError("an empty stream cannot be successful")
