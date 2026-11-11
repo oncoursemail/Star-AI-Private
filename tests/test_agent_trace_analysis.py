@@ -88,8 +88,6 @@ def test_component_percentiles_use_nearest_rank_and_exclude_open_spans():
     _closed_span(trace, "model.two", "model", 20, 40, root)
     _closed_span(trace, "model.three", "model", 50, 80, root)
     trace.start_span("model.open", "model", at_ms=90, parent=root)
-    trace.finish_span(root, at_ms=100)
-
     profile = profile_trace(trace.snapshot())
     model = next(item for item in profile["components"] if item["component"] == "model")
 
