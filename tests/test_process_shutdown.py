@@ -52,12 +52,8 @@ def _pid_alive(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    stat = Path(f"/proc/{pid}/stat")
-    if stat.exists():
-        try:
-            return stat.read_text().split()[2] != "Z"
-        except OSError:
-            return False
+    except PermissionError:
+        return True
     return True
 
 
@@ -76,6 +72,7 @@ def test_sync_non_posix_uses_supervisor_hard_stop():
     assert tree.terminated
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
 def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
     ready = tmp_path / "child-ready"
     pid_file = tmp_path / "child.pid"
@@ -113,6 +110,7 @@ def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
         tree.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
 def test_sync_posix_escalates_when_worker_ignores_sigterm(tmp_path):
     ready = tmp_path / "worker-ready"
     code = (
@@ -134,6 +132,7 @@ def test_sync_posix_escalates_when_worker_ignores_sigterm(tmp_path):
         tree.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
 def test_async_posix_shutdown_is_bounded_and_reaps_group():
     async def run():
         tree = await start_managed_async_process(
