@@ -56,6 +56,14 @@ Source: https://aclanthology.org/2026.emnlp-main.2349/
 
 **How STAR should use it:** keep separate timestamps for detection, decision, playback cancellation, physical silence and any correction. A model saying it noticed an event is not evidence that the audio pipeline yielded on time.
 
+### InteractionBench: timing, task accuracy and long-session grounding
+
+InteractionBench (submitted 2026-11-02) evaluates conversational timing, spoken-task accuracy, whisper/volume behavior and groundedness over conversations longer than twenty turns. It contains 221 items per system across 13 scenarios and reports 1,519 graded runs. The paper reports a rank correlation of 0.83 between timing and spoken-task accuracy among the evaluated full-duplex systems. It also shows why timing must be measured at the client: substituting a server-side clock for audible arrival changed one hosted system's timing score materially.
+
+Source: https://arxiv.org/abs/2611.02430
+
+**How STAR should use it:** add scripted long-session probes for state updates, unknown information, history recall, false premises, constraints and self-contradictions. Measure the first audible sample at the playback device—not only model completion or server timestamps. Add whisper/volume adaptation as a separate optional vocal behavior, never a default that obscures intelligibility. This paper is a useful protocol reference, not a claim that its exact scenario set represents live Twitch/Discord group chat.
+
 ### Full-duplex execution and conversational history
 
 Full-duplex systems must preserve what the listener actually heard after interruption. When playback is cut, the host should record only the audible portion in the conversation state; generated-but-never-played audio must not silently become shared conversational history.
