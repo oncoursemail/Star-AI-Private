@@ -126,12 +126,18 @@ def test_invalid_parent_graphs_are_rejected(mutation, message):
     trace.finish_span(root, at_ms=10)
     snapshot = trace.snapshot()
 
+    root_record = next(
+        item for item in snapshot["spans"] if item["parent_span_id"] is None
+    )
+    child_record = next(
+        item for item in snapshot["spans"] if item["parent_span_id"] is not None
+    )
     if mutation == "missing_parent":
-        snapshot["spans"][1]["parent_span_id"] = "f" * 16
+        child_record["parent_span_id"] = "f" * 16
     elif mutation == "child_outlives_parent":
-        snapshot["spans"][1]["ended_ms"] = 11
+        child_record["ended_ms"] = 11
     else:
-        snapshot["spans"][0]["parent_span_id"] = child.span_id
+        root_record["parent_span_id"] = child.span_id
 
     with pytest.raises(ValueError, match=message):
         profile_trace(snapshot)
