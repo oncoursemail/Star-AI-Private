@@ -92,7 +92,14 @@ The implementation rejects missing, non-finite or implausible clock offsets rath
 
 ### Evidence boundary
 
-This timestamp is a PortAudio scheduled-DAC estimate. It does **not** prove acoustic output, account for every device/driver buffering behavior, establish that a human heard the sound, or prove that OBS or Twitch delivered it. A Windows WASAPI loopback/IAudioClock adapter and an OBS/remote-monitor measurement remain necessary for stronger end-to-end evidence.
+This timestamp is a PortAudio scheduled-DAC estimate. It does **not** prove acoustic output, account for every device/driver buffering behavior, establish that a human heard the sound, or prove that OBS or Twitch delivered it.
+
+For the next Windows-specific layer, Microsoft documents two complementary sources:
+- WASAPI loopback can capture the mix being played by a rendering endpoint in shared mode. This verifies the Windows audio-engine output path, not room acoustics or remote-viewer delivery.
+- `IAudioClock::GetPosition` and `IAudioClock2::GetDevicePosition` expose device position correlated with a performance-counter timestamp. The latter documents a hardware-position/QPC pair that can be extrapolated with QueryPerformanceCounter.
+- MMCSS can prioritize time-sensitive multimedia threads. Apply it narrowly to dedicated audio workers/callbacks; do not raise the entire STAR process to real-time priority.
+
+The acceptance sequence should therefore be PortAudio scheduled-DAC estimate → WASAPI loopback capture → OBS program-output capture → optional remote monitoring capture. Keep each stage separately labelled; never call one stage proof of the next.
 
 ## Research findings and design implications
 
@@ -308,6 +315,10 @@ Record:
 9. llama.cpp speculative decoding documentation: https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md — draft/verification modes and benchmark caveats.
 10. OBS encoding performance troubleshooting: https://obsproject.com/kb/encoding-performance-troubleshooting/ — game frame caps and GPU headroom.
 11. Roblox Studio MCP Open Cloud permissions: https://create.roblox.com/docs/studio/mcp-open-cloud — per-game/per-person scopes and risk tiers.
+12. Microsoft WASAPI loopback recording: https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording — captures the audio-engine mix played by a rendering endpoint.
+13. Microsoft IAudioClock: https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nn-audioclient-iaudioclock — device position and clock frequency.
+14. Microsoft IAudioClock2::GetDevicePosition: https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclock2-getdeviceposition — hardware device position correlated with QPC.
+15. Microsoft MMCSS: https://learn.microsoft.com/en-us/windows/win32/procthread/multimedia-class-scheduler-service — multimedia-thread scheduling categories and priority behavior.
 
 ## Implementation status and limitations
 
