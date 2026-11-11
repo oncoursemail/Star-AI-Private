@@ -138,8 +138,8 @@ class TraceContext:
             raise ValueError("span_id must be 16 lowercase hexadecimal characters")
         if self.span_id == "0" * 16:
             raise ValueError("all-zero span IDs are invalid")
-        if type(self.trace_flags) is not str or not _FLAGS.fullmatch(self.trace_flags):
-            raise ValueError("trace_flags must be two lowercase hexadecimal characters")
+        if type(self.trace_flags) is not str or self.trace_flags not in {"00", "01"}:
+            raise ValueError("version 00 trace_flags must be 00 or 01")
 
     def to_traceparent(self) -> str:
         return f"00-{self.trace_id}-{self.span_id}-{self.trace_flags}"
@@ -148,7 +148,7 @@ class TraceContext:
     def from_traceparent(cls, header: str) -> "TraceContext":
         if type(header) is not str or len(header) != 55:
             raise ValueError("traceparent must be a 55-character W3C version 00 header")
-        parts = header.lower().split("-")
+        parts = header.split("-")
         if len(parts) != 4 or parts[0] != "00":
             raise ValueError("only W3C traceparent version 00 is supported")
         return cls(parts[1], parts[2], parts[3])
