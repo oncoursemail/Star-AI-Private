@@ -22,6 +22,7 @@ from typing import Any, AsyncIterator, Callable, Mapping, Sequence
 
 from star.agent_session import (UNMEASURED, AuthState, SessionEvent, SessionProbe, SessionState,
                                 TurnState, UsageReport)
+from star.process_supervisor import ProcessTreeSupervisor, start_managed_async_process
 
 State = TurnState
 _MAX_TEXT = 200_000
@@ -58,6 +59,8 @@ class AcpAdapter:
     last_turn: AcpTurn | None = field(default=None, init=False)
     _cancel: asyncio.Event | None = field(default=None, init=False, repr=False)
     _proc: asyncio.subprocess.Process | None = field(default=None, init=False, repr=False)
+    _tree: ProcessTreeSupervisor | None = field(default=None, init=False, repr=False)
+    process_tree_mode: str = field(default="", init=False)
     _sid: str = field(default="", init=False, repr=False)
     _nid: int = field(default=0, init=False, repr=False)
     _text: list[str] = field(default_factory=list, init=False, repr=False)
@@ -103,9 +106,11 @@ class AcpAdapter:
         if not self._installed():
             return await self._down("unavailable", "agent command not found")
         try:
-            self._proc = await asyncio.create_subprocess_exec(
+            self._tree = await start_managed_async_process(
                 *self.command, cwd=self.cwd, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            self._proc = self._tree.process
+            self.process_tree_mode = self._tree.mode
         except OSError as exc:
             return await self._down("unavailable", type(exc).__name__)
         deadline = asyncio.get_running_loop().time() + self.timeout
@@ -199,11 +204,17 @@ class AcpAdapter:
 
     async def _close(self) -> None:
         proc, self._proc = self._proc, None
+        tree, self._tree = self._tree, None
         if proc is None:
             return
-        if proc.returncode is None:
+        if tree is not None:
+            if proc.returncode is None:
+                tree.terminate()
+        elif proc.returncode is None:
             proc.kill()
         await proc.wait()
+        if tree is not None:
+            tree.close()
 
     def _send(self, obj: dict[str, Any]) -> None:
         if self._proc is None or self._proc.stdin is None:
