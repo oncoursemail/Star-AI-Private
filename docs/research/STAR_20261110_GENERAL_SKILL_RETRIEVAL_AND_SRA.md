@@ -57,7 +57,7 @@ Added `SkillLibrary.search(query, limit=5)`:
 - Uses stable deterministic tie-breaking and existing source precedence.
 - Supports bounded queries and limits (2–200 characters; 1–20 results).
 - Returns only name, description, source, ranking score and matched terms.
-- Does not open `SKILL.md` bodies, references or assets during search.
+- Catalog discovery reads only the bounded frontmatter prefix (at most 8,007 characters) from each `SKILL.md`; it does not read the instruction body, references or assets during search.
 - Does not call a model, embedding endpoint, network service or external index.
 
 The score is a ranking value, **not** a calibrated probability, confidence score, quality rating or authorization signal.
@@ -75,6 +75,7 @@ This improves the actual reusable research-tool workflow without adding a new al
 - Title and description relevance.
 - Stable ranking and result limits.
 - Metadata-only output (no body, file path or reference leakage).
+- Bounded frontmatter reads (8,007-character maximum per skill file).
 - Project-skill precedence over a personal duplicate.
 - Empty results for unrelated queries.
 - Invalid queries and limits, including booleans masquerading as integers.
@@ -110,7 +111,7 @@ Use objective task-specific graders and host-observed tool/load traces. A model 
 
 ## Performance and rollout limits
 
-- Search scans the existing bounded catalog (maximum 200 entries) and uses only short metadata. This is designed to avoid an extra embedding-server request in the Tool Workshop path.
+- Search scans the existing bounded catalog (maximum 200 entries), reads at most 8,007 frontmatter characters per skill file, and scores only names/descriptions. This is designed to avoid full skill-body I/O and an extra embedding-server request in the Tool Workshop path.
 - No latency benchmark was run; no speedup or retrieval-quality gain is claimed yet.
 - The search is lexical BM25, not semantic retrieval. Paraphrase recall must be measured before changing defaults.
 - The external 26,262-skill SRA corpus is not vendored and is not automatically installed.
