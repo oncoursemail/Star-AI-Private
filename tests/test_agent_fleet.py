@@ -91,7 +91,7 @@ def test_cancel_during_test_run(repo, tmp_path):
                      worktrees=tmp_path / "w", cancel=cancel)
     assert r.receipts[0].status == "cancelled" and time.monotonic() - t0 < 20
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group state checks")
 def test_run_kills_descendant_that_keeps_stdout_open(tmp_path):
     pid_file = tmp_path / "child.pid"
     command = ["/bin/sh", "-c", f"sleep 60 & echo $! > '{pid_file}'; exit 0"]
