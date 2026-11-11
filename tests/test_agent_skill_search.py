@@ -144,3 +144,35 @@ def test_tool_workshop_skills_source_uses_ranked_search(tmp_path):
         assert records[0]["score"] > 0
     finally:
         workshop.db.close()
+
+
+def test_catalog_reads_only_bounded_frontmatter_prefix(tmp_path, monkeypatch):
+    library = _library(tmp_path)
+    original_open = Path.open
+    read_sizes = []
+
+    class TrackingReader:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.handle.close()
+            return False
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            return self.handle.read(size)
+
+    def tracking_open(path, *args, **kwargs):
+        handle = original_open(path, *args, **kwargs)
+        if path.name == "SKILL.md":
+            return TrackingReader(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    assert library.search("Roblox RemoteEvent server")
+    assert read_sizes
+    assert set(read_sizes) == {8007}
