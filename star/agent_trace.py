@@ -66,9 +66,15 @@ _ATTRIBUTE_RULES: dict[str, str] = {
 
 
 def _clock(value: object, name: str) -> float:
-    if type(value) not in (int, float):
+    if type(value) is int:
+        try:
+            number = float(value)
+        except OverflowError as exc:
+            raise ValueError(f"{name} must be finite") from exc
+    elif type(value) is float:
+        number = value
+    else:
         raise ValueError(f"{name} must be numeric monotonic milliseconds")
-    number = float(value)
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK_MS:
         raise ValueError(f"{name} must be finite and within the supported clock range")
     return number
