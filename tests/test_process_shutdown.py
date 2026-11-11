@@ -73,6 +73,23 @@ def test_sync_non_posix_uses_supervisor_hard_stop():
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_root_only_fallback_never_claims_process_tree_cleanup():
+    tree = FakeTree()
+    tree.mode = "root_only"
+    assert not terminate_managed(tree)
+    assert tree.terminated
+
+
+def test_async_root_only_fallback_never_claims_process_tree_cleanup():
+    async def run():
+        tree = FakeTree()
+        tree.mode = "root_only"
+        assert not await terminate_managed_async(tree)
+        assert tree.terminated
+
+    asyncio.run(run())
+
+
 def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
     ready = tmp_path / "child-ready"
     pid_file = tmp_path / "child.pid"
