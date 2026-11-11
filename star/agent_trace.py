@@ -16,11 +16,11 @@ import secrets
 from threading import RLock
 from typing import Any
 
-_TRACE_ID = re.compile(r"[0-9a-f]{32}\\Z")
-_SPAN_ID = re.compile(r"[0-9a-f]{16}\\Z")
-_FLAGS = re.compile(r"[0-9a-f]{2}\\Z")
-_OPERATION = re.compile(r"[a-z][a-z0-9_.-]{0,63}\\Z")
-_OPAQUE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,63}\\Z")
+_TRACE_ID = re.compile(r"[0-9a-f]{32}\Z")
+_SPAN_ID = re.compile(r"[0-9a-f]{16}\Z")
+_FLAGS = re.compile(r"[0-9a-f]{2}\Z")
+_OPERATION = re.compile(r"[a-z][a-z0-9_.-]{0,63}\Z")
+_OPAQUE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,63}\Z")
 _MAX_CLOCK_MS = 1e13
 _MAX_NUMBER = 1e9
 
