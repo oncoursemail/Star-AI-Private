@@ -23,11 +23,14 @@ This change adds a small, dependency-free trace ledger as an instrumentation con
 
 ## Research findings and design implications
 
-### 1. OpenTelemetry: use shared identifiers and semantic structure, but pin maturity
+### 1. W3C Trace Context and OpenTelemetry: shared identifiers, semantic structure, and maturity
+
+W3C Trace Context standardizes the `traceparent` header for request correlation. Version 00 uses a 32-hex trace ID, 16-hex parent ID and two-hex flags field; all-zero IDs are invalid, and only the sampled bit is currently defined. STAR's parser therefore accepts lowercase version-00 headers and flags `00` or `01` only.
 
 OpenTelemetry's semantic conventions provide common names for spans, metrics, events and resources so signals can be correlated across languages and services. The GenAI attribute registry has moved to the dedicated GenAI semantic-conventions repository; its input/output message and retrieval attributes can contain sensitive information. Treat GenAI conventions as versioned interoperability guidance, not permission to record prompts or transcripts.
 
 Sources:
+- https://www.w3.org/TR/trace-context/
 - https://opentelemetry.io/docs/concepts/semantic-conventions/
 - https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/
 - https://opentelemetry.io/docs/specs/semconv/general/events/
@@ -167,6 +170,7 @@ Use the trace layer to make existing learning/evaluation systems auditable:
 
 ## Primary references
 
+- W3C Trace Context Recommendation: https://www.w3.org/TR/trace-context/
 - OpenTelemetry semantic conventions: https://opentelemetry.io/docs/concepts/semantic-conventions/
 - OpenTelemetry GenAI attributes and sensitivity notes: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/
 - OpenTelemetry events: https://opentelemetry.io/docs/specs/semconv/general/events/
