@@ -137,7 +137,7 @@ def test_cancel_reaches_a_silent_agent(agent):
     run(go())
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group state checks")
 def test_run_turn_stops_descendant_processes_on_session_close(tmp_path):
     pid_file = tmp_path / "child.pid"
     script = tmp_path / "child_agent.py"
