@@ -40,6 +40,33 @@ def _id(value: object, name: str) -> str:
     return value
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Reject duplicate JSON keys instead of silently keeping the last value."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_constant(value: str) -> None:
+    """JSON's JavaScript-compatible NaN/Infinity extensions are not valid evidence."""
+    raise ValueError(f"non-finite JSON constant is not allowed: {value}")
+
+
+def _decode_json_line(line: str) -> object:
+    """Decode one bounded JSONL record without ambiguous keys or non-finite values."""
+    try:
+        return json.loads(
+            line,
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_constant,
+        )
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("invalid JSONL record") from exc
+
+
 def _pct(values: Iterable[float], proportion: float) -> float:
     ordered = sorted(values)
     return ordered[max(0, math.ceil(proportion * len(ordered)) - 1)]
@@ -217,7 +244,7 @@ def read_jsonl(path: str | Path) -> list[RealtimeRun]:
             if line.strip():
                 if len(line) > 110_000:
                     raise ValueError("oversized run record")
-                rows.append(RealtimeRun.from_dict(json.loads(line)))
+                rows.append(RealtimeRun.from_dict(_decode_json_line(line)))
                 if len(rows) > 1000:
                     raise ValueError("too many run records")
     return rows
