@@ -9,10 +9,9 @@ from star.agent_trace import AgentTrace, TraceContext
 TRACE_ID = "a" * 32
 
 
-def test_w3c_traceparent_round_trip_and_normalization():
+def test_w3c_traceparent_round_trip():
     context = TraceContext(TRACE_ID, "b" * 16, "01")
     assert TraceContext.from_traceparent(context.to_traceparent()) == context
-    assert TraceContext.from_traceparent(context.to_traceparent().upper()) == context
 
 
 @pytest.mark.parametrize("header", [
@@ -21,6 +20,9 @@ def test_w3c_traceparent_round_trip_and_normalization():
     "00-" + ("a" * 32) + "-" + ("0" * 16) + "-00",
     "01-" + ("a" * 32) + "-" + ("b" * 16) + "-00",
     "00-" + ("a" * 32) + "-" + ("b" * 16) + "-0x",
+    "00-" + ("A" * 32) + "-" + ("b" * 16) + "-01",
+    "00-" + ("a" * 32) + "-" + ("b" * 16) + "-02",
+    "00-" + ("a" * 32) + "-" + ("b" * 16) + "-ff",
 ])
 def test_invalid_traceparent_is_rejected(header):
     with pytest.raises(ValueError):
