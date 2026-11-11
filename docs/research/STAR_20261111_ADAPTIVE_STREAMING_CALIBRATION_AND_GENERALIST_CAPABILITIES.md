@@ -100,7 +100,7 @@ GameWorld provides 34 browser games and 170 tasks across runner, arcade, platfor
 
 Sources:
 - Paper: https://arxiv.org/abs/2604.07429
-- Project: https://gameworld-project.github.io/
+- Project: https://gameworld-bench.github.io/
 - Code: https://github.com/gameworld-project/gameworld
 
 The benchmark shows why paused and live-clock results must be reported separately. Pausing isolates decision quality; real-time play also tests perception/action latency and reaction timing.
@@ -184,7 +184,7 @@ Code: https://github.com/vllm-project/vllm-ascend/tree/releases/v0.30.0
 TurboQuant explores low-bit online vector quantization for KV-cache memory reduction.
 
 Paper: https://arxiv.org/abs/2504.19874  
-Google Research: https://research.google/blog/turboquant-reducing-the-memory-footprint-of-large-language-models/
+Google Research: https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/
 
 **STAR application:** only test quantized KV when the exact inference runtime/model format supports it. Compare paired output quality, long-context retrieval, first-token latency, inter-token latency, RAM/VRAM, and mixed-load frame-time. Do not apply a research kernel to production just because its paper reports a favorable H100 result.
 
