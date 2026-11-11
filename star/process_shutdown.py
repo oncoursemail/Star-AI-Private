@@ -33,6 +33,24 @@ def _validate_bounds(grace_period_s: float, poll_s: float, kill_wait_s: float) -
             raise ValueError(f"invalid {name}")
 
 
+def _wait_sync_tree_empty(
+    tree: ProcessTreeSupervisor,
+    timeout_s: float,
+    poll_s: float,
+) -> bool:
+    deadline = time.monotonic() + float(timeout_s)
+    poll = getattr(tree.process, "poll", None)
+    while True:
+        if callable(poll):
+            poll()
+        if tree.wait_empty(0.0, poll_s):
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(float(poll_s), remaining))
+
+
 def terminate_managed(
     tree: ProcessTreeSupervisor,
     *,
@@ -48,15 +66,15 @@ def terminate_managed(
     _validate_bounds(grace_period_s, poll_s, kill_wait_s)
     if tree.mode != "posix_process_group":
         tree.terminate()
-        return tree.wait_empty(kill_wait_s, poll_s)
+        return _wait_sync_tree_empty(tree, kill_wait_s, poll_s)
 
     try:
         os.killpg(tree.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return tree.wait_empty(0.0, poll_s)
+        return _wait_sync_tree_empty(tree, 0.0, poll_s)
     except OSError:
         tree.terminate()
-        return tree.wait_empty(kill_wait_s, poll_s)
+        return _wait_sync_tree_empty(tree, kill_wait_s, poll_s)
 
     deadline = time.monotonic() + float(grace_period_s)
     poll = getattr(tree.process, "poll", None)
@@ -73,7 +91,7 @@ def terminate_managed(
         time.sleep(min(float(poll_s), remaining))
 
     tree.terminate()
-    return tree.wait_empty(kill_wait_s, poll_s)
+    return _wait_sync_tree_empty(tree, kill_wait_s, poll_s)
 
 
 async def terminate_managed_async(
