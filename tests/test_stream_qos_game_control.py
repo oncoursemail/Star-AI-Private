@@ -304,3 +304,32 @@ def test_speech_cpu_reserve_configuration_is_strictly_bounded() -> None:
         AdaptiveQoS(speech_cpu_reserve_slots=-1)
     with pytest.raises(ValueError, match="speech_cpu_reserve_slots"):
         AdaptiveQoS(speech_cpu_reserve_slots=9)
+
+
+def test_live_speech_occupancy_does_not_double_count_the_reserved_slot() -> None:
+    scheduler = ready()
+    train_route(scheduler, device="cpu", duration_ms=220)
+    train_route(
+        scheduler, kind="speech", device="cpu", duration_ms=180, start_ms=17000
+    )
+
+    speech = scheduler.admit(
+        job("speech-first", 34000, kind="speech", device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert speech.admitted and speech.device == "cpu"
+
+    control = scheduler.admit(
+        job("control-uses-unoccupied-slot", 34000, device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert control.admitted and control.device == "cpu"
+
+    over_capacity = scheduler.admit(
+        job("control-over-capacity", 34000, device="cpu"),
+        snapshot(34000, live=True, game=True, cpu_slots=2),
+        now_ms=34000,
+    )
+    assert not over_capacity.admitted
