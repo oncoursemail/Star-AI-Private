@@ -59,6 +59,10 @@ class StreamingProbe:
             if (isinstance(gap, bool) or not isinstance(gap, (int, float)) or
                     not math.isfinite(gap) or gap < 0):
                 raise ValueError("inter-chunk gaps must be finite and nonnegative")
+        if self.content_chunks and (
+            float(self.first_content_ms) + sum(self.inter_chunk_gaps_ms) > self.elapsed_ms + 1e-6
+        ):
+            raise ValueError("content timestamps cannot extend beyond request completion")
         if self.ok and self.content_chunks == 0:
             raise ValueError("an empty stream cannot be successful")
 
@@ -69,6 +73,22 @@ def _nearest_rank(values: list[float], proportion: float) -> float | None:
     ordered = sorted(values)
     index = max(0, math.ceil(proportion * len(ordered)) - 1)
     return round(ordered[index], 1)
+
+
+def _validate_benchmark_request(
+    endpoint: object, model: object, requests: object, parallel: object, server: object,
+) -> None:
+    """Reject ambiguous endpoint and workload values before constructing a client."""
+    if type(endpoint) is not str or not endpoint.strip():
+        raise ValueError("Benchmark endpoint must be a non-empty string")
+    if type(model) is not str or not model.strip():
+        raise ValueError("Benchmark model must be a non-empty string")
+    if type(requests) is not int or not 1 <= requests <= 12:
+        raise ValueError("Benchmark requests must be an integer from 1..12")
+    if type(parallel) is not int or not 1 <= parallel <= 4:
+        raise ValueError("Benchmark concurrency must be an integer from 1..4")
+    if type(server) is not bool:
+        raise ValueError("server must be a boolean")
 
 
 def summarize_probes(samples: list[Probe], wall_ms: int, *, parallel: int) -> dict:
@@ -110,6 +130,10 @@ def summarize_stream_probes(
     succeeded = [sample for sample in samples if sample.ok]
     first = [float(sample.first_content_ms) for sample in succeeded
              if sample.first_content_ms is not None]
+    second = [
+        float(sample.first_content_ms) + float(sample.inter_chunk_gaps_ms[0])
+        for sample in succeeded if sample.content_chunks >= 2
+    ]
     latency = [float(sample.elapsed_ms) for sample in succeeded]
     gaps = [float(gap) for sample in succeeded for gap in sample.inter_chunk_gaps_ms]
     chunks = sum(sample.content_chunks for sample in succeeded)
@@ -121,6 +145,8 @@ def summarize_stream_probes(
         "wall_ms": round(float(wall_ms), 1),
         "first_content_p50_ms": _nearest_rank(first, 0.50),
         "first_content_p95_ms": _nearest_rank(first, 0.95),
+        "time_to_second_content_p50_ms": _nearest_rank(second, 0.50),
+        "time_to_second_content_p95_ms": _nearest_rank(second, 0.95),
         "request_latency_p50_ms": _nearest_rank(latency, 0.50),
         "request_latency_p95_ms": _nearest_rank(latency, 0.95),
         "inter_chunk_gap_p50_ms": _nearest_rank(gaps, 0.50),
@@ -130,8 +156,9 @@ def summarize_stream_probes(
         "requests_per_second": round(len(succeeded) * 1000 / wall_ms, 3),
         "note": (
             "Local-model streaming measurements only. Content chunks may contain multiple tokens; "
-            "inter-chunk gap is not token-level ITL. Use GenAI-Perf or the server's token timings "
-            "for token-level comparisons. No GPU speedup or quality gain is implied."
+            "inter-chunk gap and time-to-second-content are not token-level ITL/TTST. Use AIPerf "
+            "or token-aware server telemetry for token-level comparisons. No GPU speedup or "
+            "quality gain is implied."
         ),
     }
 
@@ -146,14 +173,13 @@ async def benchmark_local_model(
     server: bool = False,
 ) -> dict:
     """Measure real requests. `server=True` treats `endpoint` as the STAR Server address."""
+    _validate_benchmark_request(endpoint, model, requests, parallel, server)
     if server:
         # Same private-IP validation and keyring key as normal STAR Server chat.
         config = Settings(provider="star_server", server_endpoint=endpoint, model=model)
     else:
         config = Settings(endpoint=endpoint, model=model)
     config.validate()
-    if not model.strip() or not 1 <= requests <= 12 or not 1 <= parallel <= 4:
-        raise ValueError("Benchmark requires a model, 1..12 requests and 1..4 slots")
     own = client is None
     if client is None:
         from .providers import open_client
@@ -205,13 +231,12 @@ async def benchmark_local_model_streaming(
     server: bool = False,
 ) -> dict:
     """Measure first-content and inter-chunk timing from an already-running local model."""
+    _validate_benchmark_request(endpoint, model, requests, parallel, server)
     if server:
         config = Settings(provider="star_server", server_endpoint=endpoint, model=model)
     else:
         config = Settings(endpoint=endpoint, model=model)
     config.validate()
-    if not model.strip() or not 1 <= requests <= 12 or not 1 <= parallel <= 4:
-        raise ValueError("Streaming benchmark requires a model, 1..12 requests and 1..4 slots")
     own = client is None
     if client is None:
         from .providers import open_client
