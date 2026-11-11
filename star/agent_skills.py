@@ -5,8 +5,10 @@ Only reviewed read-only tool operations consume skill content.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import re
 from .validation_messages import describe_invalid
 
@@ -14,6 +16,23 @@ _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _MAX_FILE = 64_000
 _MAX_SKILLS = 200  # bundled packs alone are ~90 since the engine and gameplay packs; user/project skills come on top
 _REFERENCE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml"}
+
+_SEARCH_TOKEN = re.compile(r"[a-z0-9]+(?:[+#]{1,2})?")
+_SEARCH_STOP_WORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for",
+    "from", "how", "in", "into", "is", "it", "of", "on", "or", "our",
+    "that", "the", "this", "to", "use", "using", "what", "when", "where",
+    "which", "with", "you", "your",
+})
+_SOURCE_PRIORITY = {"project": 0, "workspace": 1, "personal": 2, "bundled": 3}
+
+
+def _search_tokens(text: str) -> list[str]:
+    return [
+        token for token in _SEARCH_TOKEN.findall(text.casefold())
+        if len(token) > 1 and token not in _SEARCH_STOP_WORDS
+    ]
+
 
 _STARTERS = {
     "roblox-ui-craft": """---
@@ -295,6 +314,102 @@ class SkillLibrary:
     def list(self) -> dict:
         return {"skills": [{"name": s.name, "description": s.description,
                             "source": s.source} for s in self.catalog()]}
+
+    def search(self, query: str, *, limit: int = 5) -> list[dict]:
+        """Rank installed skill metadata with a small, dependency-free BM25 search.
+
+        Only names and descriptions are scored. Skill bodies, references and
+        executable assets are not opened until the caller explicitly loads one.
+        Scores are ranking values, not probabilities or quality judgments.
+        """
+        if type(query) is not str or not 2 <= len(query.strip()) <= 200:
+            raise ValueError("Skill search query must contain 2..200 characters")
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("Skill search limit must be an integer from 1 to 20")
+        query_tokens = _search_tokens(query)
+        if not query_tokens:
+            raise ValueError("Skill search query contains no searchable terms")
+
+        skills = self.catalog()
+        if not skills:
+            return []
+
+        documents = []
+        document_frequency: Counter[str] = Counter()
+        title_lengths = []
+        description_lengths = []
+        for skill in skills:
+            title_tokens = _search_tokens(skill.name.replace("-", " "))
+            description_tokens = _search_tokens(skill.description)
+            combined = set(title_tokens + description_tokens)
+            document_frequency.update(combined)
+            title_lengths.append(len(title_tokens))
+            description_lengths.append(len(description_tokens))
+            documents.append((skill, title_tokens, description_tokens,
+                              Counter(title_tokens), Counter(description_tokens)))
+
+        total = len(documents)
+        average_title = max(1.0, sum(title_lengths) / total)
+        average_description = max(1.0, sum(description_lengths) / total)
+        unique_query = list(dict.fromkeys(query_tokens))
+        phrase = " ".join(query_tokens)
+        ranked = []
+
+        def field_score(frequency: int, length: int, average: float) -> float:
+            if frequency <= 0:
+                return 0.0
+            k1, b = 1.2, 0.75
+            denominator = frequency + k1 * (
+                1.0 - b + b * length / average
+            )
+            return frequency * (k1 + 1.0) / denominator
+
+        for skill, title, description, title_tf, description_tf in documents:
+            score = 0.0
+            matched = []
+            title_text = " ".join(title)
+            description_text = " ".join(description)
+            for token in unique_query:
+                title_frequency = title_tf[token]
+                description_frequency = description_tf[token]
+                if not title_frequency and not description_frequency:
+                    continue
+                matched.append(token)
+                df = document_frequency[token]
+                inverse_frequency = math.log1p(
+                    (total - df + 0.5) / (df + 0.5)
+                )
+                score += inverse_frequency * (
+                    2.5 * field_score(
+                        title_frequency, len(title), average_title
+                    )
+                    + field_score(
+                        description_frequency, len(description),
+                        average_description,
+                    )
+                )
+            if not matched:
+                continue
+            if phrase and phrase in title_text:
+                score += 2.0
+            elif phrase and phrase in description_text:
+                score += 0.75
+            score += 0.1 * len(matched) / len(unique_query)
+            ranked.append((score, skill, matched))
+
+        ranked.sort(key=lambda item: (
+            -item[0], _SOURCE_PRIORITY.get(item[1].source, 9), item[1].name
+        ))
+        return [
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "source": skill.source,
+                "score": round(score, 6),
+                "matched_terms": matched,
+            }
+            for score, skill, matched in ranked[:limit]
+        ]
 
     def load(self, name: str) -> dict:
         skill = self._find(name)
