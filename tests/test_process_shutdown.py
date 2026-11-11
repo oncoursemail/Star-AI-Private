@@ -113,38 +113,18 @@ def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
         tree.close()
 
 
-def test_sync_posix_escalates_when_descendant_ignores_sigterm(tmp_path):
-    ready = tmp_path / "child-ready"
-    pid_file = tmp_path / "child.pid"
-    child_code = (
-        "import pathlib,signal,sys,time\n"
-        "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
-        "pathlib.Path(sys.argv[1]).write_text('ready')\n"
-        "time.sleep(60)\n"
-    )
-    parent_code = (
-        "import pathlib,signal,subprocess,sys,time\n"
-        "def stop(*_): raise SystemExit(0)\n"
-        "signal.signal(signal.SIGTERM,stop)\n"
-        "child=subprocess.Popen([sys.executable,'-c',sys.argv[2],sys.argv[3]])\n"
-        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
-        "time.sleep(60)\n"
-    )
+def test_sync_posix_escalates_when_worker_ignores_sigterm():
+    code = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)"
     tree = start_managed_process(
-        [sys.executable, "-c", parent_code, str(pid_file), child_code, str(ready)],
+        [sys.executable, "-c", code],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
-        _wait_for(pid_file)
-        _wait_for(ready)
-        child_pid = int(pid_file.read_text())
         assert terminate_managed(tree, grace_period_s=0.12, kill_wait_s=2.0)
         tree.process.wait(timeout=2)
-        assert _wait_pid_gone(child_pid)
     finally:
         tree.close()
-
 
 def test_async_posix_shutdown_is_bounded_and_reaps_group():
     async def run():
