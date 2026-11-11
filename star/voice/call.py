@@ -21,6 +21,7 @@ actually played stay in the conversation history, so Star knows what the user di
 from __future__ import annotations
 
 import inspect
+from math import isfinite
 import queue
 import re
 import threading
@@ -854,6 +855,22 @@ class CallSession:
 
     def _finish_reply(self, reply: _Reply) -> None:
         metrics = reply.metrics
+        # SoundSpeaker can map PortAudio's callback clock onto time.monotonic.
+        # Ignore the optional stamp when a caller injected a different clock.
+        if self.clock is time.monotonic:
+            reader = getattr(self.speaker, "first_device_output_at", None)
+            if callable(reader):
+                try:
+                    stamp = reader()
+                    submitted = [
+                        value for value in (metrics.first_ack_at, metrics.first_audio_at)
+                        if type(value) in (int, float) and isfinite(value)
+                    ]
+                    if (type(stamp) in (int, float) and isfinite(stamp)
+                            and (not submitted or stamp >= min(submitted))):
+                        metrics.first_device_output_at = float(stamp)
+                except Exception:
+                    pass
         metrics.done_at = self.clock()
         metrics.audio_seconds = reply.audio_seconds
         interrupted = reply.cancel.is_set()
