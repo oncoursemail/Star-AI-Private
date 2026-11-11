@@ -113,6 +113,64 @@ Sources:
 - Paper: https://arxiv.org/abs/2602.11103
 - Official repository: https://github.com/waynchi/gamedevbench
 
+### Generalist game learning and continual skill acquisition
+
+#### SIMA 2: transfer concepts across worlds
+
+Google DeepMind's SIMA 2 combines language reasoning with action in 3D virtual worlds. Its report demonstrates transfer of concepts such as mining in one world to harvesting in another, self-directed practice in unfamiliar games, and iterative improvement from experience. The same report also identifies limits in very long-horizon task verification, short interaction memory, precise low-level controls, and robust visual understanding.
+
+Source: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+
+**STAR application:** represent transferable mechanics independently from game-specific bindings. A learned concept such as gather-resource, evade-hazard, navigate-to-marker, craft-item, or coordinate-with-teammate should carry explicit preconditions and a new-game adaptation phase. A skill name alone is not evidence of transfer.
+
+#### Scaling in Games (2026-10-20)
+
+This study evaluates 120 continued-pretraining configurations across 0.8B–27B model sizes, 50–1,600 hours of data, and five mixtures from single-world to diverse multi-world corpora. It reports that more data improves in-corpus performance, diversity helps transfer to related worlds but gives limited gains on distant worlds, and single-world training can generalize worse to distant worlds as model size increases.
+
+Source: https://arxiv.org/abs/2610.28698
+
+**STAR application:** train and practice across different visual styles, controls, physics, camera systems, objective structures, and genres. Track transfer distance; do not count another map from the same game as a fully independent world. Keep distant-world holdouts.
+
+#### SkillLearnBench: skill learning needs external feedback
+
+SkillLearnBench evaluates continual skill generation on 20 verified tasks across 15 sub-domains. Its analysis finds that iterative learning with external feedback can improve reusable workflows, while self-feedback alone can cause recursive drift; no continual-learning method wins consistently across every task/model.
+
+Source: https://arxiv.org/abs/2604.20087  
+Code: https://github.com/cxcscmu/SkillLearnBench
+
+**STAR application:** never promote a skill solely because STAR's own critic says it worked. Require environment-derived state changes, deterministic checks where available, independent replay, and unseen-task transfer. Keep a regression suite for every promoted skill; roll back a skill when it harms previously solved tasks.
+
+#### World-In-World: evaluate world models in closed loops
+
+World-In-World (ICLR 2026) evaluates world models with agent players in closed-loop environments. Its paper reports that visual quality alone does not guarantee task success; controllability matters, and post-training on action-observation data plus inference-time compute can improve embodied task performance.
+
+Source: https://proceedings.iclr.cc/paper_files/paper/2026/hash/5b4263be85820683d78675cc18d2efc7-Abstract-Conference.html
+
+**STAR application:** a predicted future frame is useful only if it improves a real action decision. Compare predicted state transitions with observed game state; score action validity and objective progress, not visual plausibility alone. Use world-model rollouts as optional planning hints, never as the authority for whether an action succeeded.
+
+#### ASIWorld and long-horizon survival tasks
+
+ASIWorld proposes a persistent survival sandbox with persistent world/character state, character-scoped observations, and asynchronous actions for evaluating sustained goal execution.
+
+Source: https://arxiv.org/abs/2610.14807
+
+**STAR application:** add long-horizon tasks that require resource planning, recovery after death/reset, persistent objective state, and coordination of dependent subgoals. Score whether plans remain coherent after the world changes, not merely whether the next action is locally plausible.
+
+### Recommended skill contract
+
+Every game skill should be a versioned contract:
+
+- **Preconditions:** required game state, equipment, resources, permissions, and environment version.
+- **Observation requirements:** what state/screen cues must be visible before acting.
+- **Action policy:** bounded actions and allowed control interface.
+- **Expected state delta:** objective progress, inventory change, position, health, score, or other verifiable effect.
+- **Termination:** exact success, failure, or timeout condition.
+- **Recovery:** safe retry, reset, retreat, or alternate strategy.
+- **Evidence:** trajectory ID, environment version, independent verifier, and held-out transfer result.
+- **Regression suite:** previously solved scenarios that must remain solved after the skill changes.
+
+Promote only after repeated success across distinct scenarios and an unseen transfer task. Store failures as counterexamples with their exact preconditions; do not compress away the reason a skill failed.
+
 ### STAR game architecture
 
 Continue using existing systems rather than creating parallel memory stores:
