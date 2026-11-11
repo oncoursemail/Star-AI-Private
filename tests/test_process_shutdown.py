@@ -40,7 +40,7 @@ class FakeTree:
         return self.terminated
 
 
-def _wait_for(path: Path, timeout_s: float = 4.0) -> None:
+def _wait_for(path: Path, timeout_s: float = 10.0) -> None:
     deadline = time.monotonic() + timeout_s
     while not path.exists() and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -113,14 +113,21 @@ def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
         tree.close()
 
 
-def test_sync_posix_escalates_when_worker_ignores_sigterm():
-    code = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)"
+def test_sync_posix_escalates_when_worker_ignores_sigterm(tmp_path):
+    ready = tmp_path / "worker-ready"
+    code = (
+        "import pathlib,signal,sys,time\\n"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN)\\n"
+        "pathlib.Path(sys.argv[1]).write_text('ready')\\n"
+        "time.sleep(60)\\n"
+    )
     tree = start_managed_process(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(ready)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
+        _wait_for(ready)
         assert terminate_managed(tree, grace_period_s=0.12, kill_wait_s=2.0)
         tree.process.wait(timeout=2)
     finally:
@@ -132,10 +139,13 @@ def test_async_posix_shutdown_is_bounded_and_reaps_group():
         tree = await start_managed_async_process(
             "/bin/sh",
             "-c",
-            "trap 'exit 0' TERM; sleep 60",
-            stdout=asyncio.subprocess.DEVNULL,
+            "trap 'exit 0' TERM; echo ready; sleep 60",
+            stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
+        assert tree.process.stdout is not None
+        ready = await asyncio.wait_for(tree.process.stdout.readline(), timeout=5.0)
+        assert ready.strip() == b"ready"
         assert await terminate_managed_async(tree, grace_period_s=0.5)
         assert tree.process.returncode is not None
         tree.close()
