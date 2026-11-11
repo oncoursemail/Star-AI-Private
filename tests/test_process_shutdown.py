@@ -116,10 +116,10 @@ def test_sync_posix_allows_worker_tree_to_exit_on_sigterm(tmp_path):
 def test_sync_posix_escalates_when_worker_ignores_sigterm(tmp_path):
     ready = tmp_path / "worker-ready"
     code = (
-        "import pathlib,signal,sys,time\\n"
-        "signal.signal(signal.SIGTERM,signal.SIG_IGN)\\n"
-        "pathlib.Path(sys.argv[1]).write_text('ready')\\n"
-        "time.sleep(60)\\n"
+        "import pathlib,signal,sys,time\n"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+        "pathlib.Path(sys.argv[1]).write_text('ready')\n"
+        "time.sleep(60)\n"
     )
     tree = start_managed_process(
         [sys.executable, "-c", code, str(ready)],
