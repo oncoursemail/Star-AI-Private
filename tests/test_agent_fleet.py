@@ -1,4 +1,5 @@
 """Offline tests for star.agent_fleet using throwaway git repos and python subprocesses."""
+import os
 import subprocess
 import sys
 import threading
@@ -88,6 +89,30 @@ def test_cancel_during_test_run(repo, tmp_path):
     r = fl.run_fleet(repo, [fl.FleetTask("t", writer("x"), slow)], enabled=True, resources=RES,
                      worktrees=tmp_path / "w", cancel=cancel)
     assert r.receipts[0].status == "cancelled" and time.monotonic() - t0 < 20
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_run_kills_descendant_that_keeps_stdout_open(tmp_path):
+    pid_file = tmp_path / "child.pid"
+    command = ["/bin/sh", "-c", f"sleep 60 & echo $! > '{pid_file}'; exit 0"]
+    rc, output = fl._run(command, tmp_path, 5, threading.Event())
+    assert rc == 0 and pid_file.exists()
+    child_pid = int(pid_file.read_text())
+    end = time.monotonic() + 4
+    while time.monotonic() < end:
+        try:
+            os.kill(child_pid, 0)
+            time.sleep(0.02)
+        except ProcessLookupError:
+            return
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        return
+    # Linux can retain a killed orphan as a zombie briefly; that is no longer consuming resources.
+    stat = tmp_path / "unused"
+    proc_stat = __import__("pathlib").Path(f"/proc/{child_pid}/stat")
+    assert proc_stat.exists() and proc_stat.read_text().split()[2] == "Z"
+
 
 
 def test_three_agents_edit_same_file_without_conflict(repo, tmp_path):
