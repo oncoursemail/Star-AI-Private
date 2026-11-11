@@ -179,7 +179,7 @@ Report per-lane p50/p95, false interruption rate, correct-silence rate, task com
 - Realtime-Venus, *A full-duplex interaction system with asynchronous delegation* (2026-09-12): https://arxiv.org/abs/2609.13814 and https://realtime-venus.github.io/
 - InteractionBench (updated 2026-11): https://www.fullduplex.ai/benchmarks/interactionbench
 - MP-Bench (Findings of EMNLP 2026): https://www.fullduplex.ai/benchmarks/mp-bench
-- MultiPartyTurnBench: https://www.fullduplex.ai/benchmarks/multi-party-turn-bench
+- MultiPartyTurnBench: https://www.fullduplex.ai/benchmarks/multipartyturnbench
 - NVIDIA AIPerf documentation (latest stable v0.13.0): https://docs.nvidia.com/aiperf/latest/
 - llama.cpp speculative decoding: https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md
 - Roblox, *Studio is Going Agentic* (2026-04-15): https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic
