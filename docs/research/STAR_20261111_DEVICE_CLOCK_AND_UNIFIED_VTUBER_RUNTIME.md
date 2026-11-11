@@ -184,7 +184,7 @@ Implications for STAR:
 
 ### 7. Roblox and creator autonomy: granular permissions, separate environments
 
-Roblox's Studio MCP Open Cloud documentation (updated November 2026) states that scopes are configured per game and per person. It distinguishes safe, balanced, full-access and custom levels and identifies high-risk capabilities such as publishing, monetization, player restrictions, secrets and live data-store writes.
+Roblox's Studio MCP Open Cloud documentation states that scopes are configured per game and per person. It distinguishes safe, balanced, full-access and custom levels and identifies high-risk capabilities such as publishing, monetization, player restrictions, secrets and live data-store writes.
 
 Implications for STAR Creator:
 
