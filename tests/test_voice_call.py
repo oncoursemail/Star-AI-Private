@@ -41,6 +41,8 @@ def test_one_turn_runs_every_stage_and_measures_them():
     assert request[-1] == {"role": "user", "content": TEXTS[1]}
     assert events.states() == ["listening", "user_speaking", "thinking", "speaking", "listening"]
     metrics = session.turns[0]
+    assert metrics.first_device_output_at is not None
+    assert metrics.first_device_output_at >= metrics.first_audio_at
     stages = metrics.stages()
     assert all(stages[k] is not None for k in ("endpoint", "asr", "speech_end_to_transcript",
                                                 "transcript_to_first_token", "first_token_to_first_audio", "total"))
