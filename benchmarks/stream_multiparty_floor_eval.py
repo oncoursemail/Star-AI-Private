@@ -56,10 +56,19 @@ def _number(
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field} must be a finite number")
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{field} is outside its supported range") from exc
     if not math.isfinite(number) or not minimum <= number <= maximum:
         raise ValueError(f"{field} is outside its supported range")
     return number
+
+
+def _integer(value: object, field: str, *, minimum: int, maximum: int) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ValueError(f"{field} must be an integer from {minimum} to {maximum}")
+    return value
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -148,7 +157,9 @@ def load_cases(path: Path) -> list[FloorEvalCase]:
                 predicted_speech_act=_enum(
                     row["predicted_speech_act"], _SPEECH_ACTS, "predicted_speech_act"
                 ),
-                active_speakers=row["active_speakers"],
+                active_speakers=_integer(
+                    row["active_speakers"], "active_speakers", minimum=1, maximum=8
+                ),
                 receipt_age_ms=_number(row["receipt_age_ms"], "receipt_age_ms"),
                 decision_latency_ms=_number(
                     row["decision_latency_ms"], "decision_latency_ms"
@@ -231,9 +242,8 @@ def _metrics(cases: list[FloorEvalCase]) -> dict[str, object]:
     group = [case for case in cases if case.gold_addressee == "group"]
     side = [case for case in cases if case.gold_speech_act == "side_conversation"]
     backchannels = [case for case in cases if case.gold_speech_act == "backchannel"]
-    predicted_responses = lambda rows: sum(
-        case.predicted_action == "respond" for case in rows
-    )
+    def predicted_responses(rows: list[FloorEvalCase]) -> int:
+        return sum(case.predicted_action == "respond" for case in rows)
     latencies = [case.decision_latency_ms for case in cases]
     response_latencies = [
         case.decision_latency_ms for case in cases
