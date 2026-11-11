@@ -27,7 +27,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Iterator, Protocol
+from typing import Callable, Iterable, Iterator, Protocol, TypeGuard
 
 from .chunker import SentenceChunker, speakable
 from .game_context import GameMomentWindow
@@ -38,6 +38,12 @@ from ..persona import leaked_reasoning
 from .persona import opener_hint, system_message
 from .styles import strip_tags
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
+
+ 
+def _finite_timestamp(value: object) -> TypeGuard[int | float]:
+    """Accept finite numeric timestamps but reject booleans and non-numeric host data."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+
 
 
 # -- engine interfaces ------------------------------------------------------------------------
@@ -864,10 +870,9 @@ class CallSession:
                     stamp = reader()
                     submitted = [
                         value for value in (metrics.first_ack_at, metrics.first_audio_at)
-                        if type(value) in (int, float) and isfinite(value)
+                        if _finite_timestamp(value)
                     ]
-                    if (type(stamp) in (int, float) and isfinite(stamp)
-                            and (not submitted or stamp >= min(submitted))):
+                    if _finite_timestamp(stamp) and (not submitted or stamp >= min(submitted)):
                         metrics.first_device_output_at = float(stamp)
                 except Exception:
                     pass
