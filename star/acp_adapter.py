@@ -216,7 +216,10 @@ class AcpAdapter:
         elif proc.returncode is None:
             proc.kill()
         if proc.returncode is None:
-            await proc.wait()
+            try:
+                await asyncio.wait_for(asyncio.shield(proc.wait()), timeout=2.0)
+            except TimeoutError:
+                self.error = (self.error + "; worker exit not confirmed")[-300:]
 
     def _send(self, obj: dict[str, Any]) -> None:
         if self._proc is None or self._proc.stdin is None:
