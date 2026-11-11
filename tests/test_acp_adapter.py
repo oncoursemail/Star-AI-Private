@@ -1,5 +1,7 @@
 """ACP pilot adapter against a fake agent process (a simulation, not a real agent)."""
 import asyncio
+import os
+from pathlib import Path
 import sys
 import textwrap
 import time
@@ -133,6 +135,49 @@ def test_cancel_reaches_a_silent_agent(agent):
         assert a.state == "ready"     # the session survives a cancelled turn
         await a.stop()
     run(go())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_run_turn_stops_descendant_processes_on_session_close(tmp_path):
+    pid_file = tmp_path / "child.pid"
+    script = tmp_path / "child_agent.py"
+    script.write_text(textwrap.dedent("""
+        import json, pathlib, subprocess, sys
+        child = subprocess.Popen(["/bin/sh", "-c", "sleep 60"])
+        pathlib.Path(sys.argv[1]).write_text(str(child.pid))
+        def out(obj):
+            sys.stdout.write(json.dumps(obj) + "\\n")
+            sys.stdout.flush()
+        for line in sys.stdin:
+            msg = json.loads(line)
+            method, ident = msg.get("method"), msg.get("id")
+            if method == "initialize":
+                out({"jsonrpc": "2.0", "id": ident, "result": {"protocolVersion": 1}})
+            elif method == "session/new":
+                out({"jsonrpc": "2.0", "id": ident, "result": {"sessionId": "s1"}})
+            elif method == "session/prompt":
+                out({"jsonrpc": "2.0", "id": ident, "result": {"stopReason": "end_turn"}})
+    """))
+    adapter = AcpAdapter([sys.executable, str(script), str(pid_file)], enabled=True, timeout=5)
+    turn = run(adapter.run_turn("hi"))
+    assert turn.state == "ok" and pid_file.exists()
+    child_pid = int(pid_file.read_text())
+    end = time.monotonic() + 4
+    while time.monotonic() < end:
+        try:
+            os.kill(child_pid, 0)
+            stat = Path(f"/proc/{child_pid}/stat")
+            if stat.exists() and stat.read_text().split()[2] == "Z":
+                break
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        return
+    stat = Path(f"/proc/{child_pid}/stat")
+    assert stat.exists() and stat.read_text().split()[2] == "Z"
 
 
 def test_auth_and_approval_states_are_explicit(agent):
