@@ -170,3 +170,23 @@ def test_slowest_limit_is_bounded_and_empty_trace_is_valid():
     assert profile["counts"]["spans"] == 0
     assert profile["roots"] == []
     assert profile["slowest_spans"] == []
+
+
+def test_invalid_trace_flags_and_all_zero_identifiers_are_rejected():
+    trace = AgentTrace(trace_id=TRACE_ID)
+    root = trace.start_span("session.run", "runtime", at_ms=0)
+    trace.finish_span(root, at_ms=1)
+    snapshot = trace.snapshot()
+
+    bad_flags = dict(snapshot, trace_flags="ff")
+    with pytest.raises(ValueError, match="trace flags"):
+        profile_trace(bad_flags)
+
+    zero_trace = dict(snapshot, trace_id="0" * 32)
+    with pytest.raises(ValueError, match="trace ID"):
+        profile_trace(zero_trace)
+
+    zero_span = dict(snapshot)
+    zero_span["spans"] = [dict(snapshot["spans"][0], span_id="0" * 16)]
+    with pytest.raises(ValueError, match="all-zero"):
+        profile_trace(zero_span)
