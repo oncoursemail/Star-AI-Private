@@ -84,7 +84,7 @@ def test_game_control_requires_active_game_calibration() -> None:
     scheduler = ready()
     result = scheduler.admit(
         job("uncalibrated", 1000),
-        snapshot(1000, live=False, game=True),
+        snapshot(1000, live=True, game=True),
         now_ms=1000,
     )
     assert not result.admitted
