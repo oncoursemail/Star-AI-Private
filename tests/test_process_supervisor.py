@@ -4,6 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 import pytest
@@ -119,6 +120,46 @@ def test_required_windows_tree_fails_closed_when_assignment_fails():
     with pytest.raises(ProcessTreeError):
         ProcessTreeSupervisor(process, platform="nt", job_api=api, require_tree=True)
     assert process.killed
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Objects only")
+def test_windows_job_object_contains_child_created_after_assignment(tmp_path):
+    ready = tmp_path / "ready"
+    go = tmp_path / "go"
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import pathlib,subprocess,sys,time\\n"
+        "ready,go,pid_file=map(pathlib.Path,sys.argv[1:])\\n"
+        "ready.write_text('ready')\\n"
+        "deadline=time.monotonic()+10\\n"
+        "while not go.exists() and time.monotonic()<deadline: time.sleep(0.01)\\n"
+        "if not go.exists(): raise SystemExit(2)\\n"
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\\n"
+        "pid_file.write_text(str(child.pid))\\n"
+        "time.sleep(60)\\n"
+    )
+    tree = start_managed_process(
+        [sys.executable, "-c", script, str(ready), str(go), str(pid_file)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        require_tree=True,
+    )
+    try:
+        end = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < end:
+            time.sleep(0.01)
+        assert ready.exists()
+        assert tree.mode == "windows_job"
+        go.write_text("go")
+        end = time.monotonic() + 5
+        while not pid_file.exists() and time.monotonic() < end:
+            time.sleep(0.01)
+        assert pid_file.exists()
+        tree.terminate()
+        assert tree.wait_empty(5)
+        tree.process.wait(timeout=5)
+    finally:
+        tree.close()
 
 
 def test_invalid_wait_bounds_are_rejected():
