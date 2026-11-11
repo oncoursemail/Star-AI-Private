@@ -132,7 +132,7 @@ class TraceContext:
 
     trace_id: str
     span_id: str
-    trace_flags: str = "00"
+    trace_flags: str = "01"
 
     def __post_init__(self) -> None:
         if type(self.trace_id) is not str or not _TRACE_ID.fullmatch(self.trace_id):
@@ -189,7 +189,7 @@ class AgentTrace:
     """
 
     def __init__(
-        self, *, trace_id: str | None = None, trace_flags: str = "00",
+        self, *, trace_id: str | None = None, trace_flags: str = "01",
         max_spans: int = 256, max_events: int = 1024,
     ) -> None:
         chosen_id = secrets.token_hex(16) if trace_id is None else trace_id
