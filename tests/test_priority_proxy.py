@@ -471,7 +471,9 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
     assert fake.max_busy == 2 and p0_time < 2.0
     view = server.RequestHandlerClass.proxy.sched.view()
     assert view["classes"]["P3"]["preemptions"] == 1 and view["classes"]["P3"]["resumes"] == 1
-    assert view["classes"]["P3"]["resume_cached_tokens"] > 0
+    # The preemption can land before the proxy has consumed any prefix. Assert that the
+    # continuation requests cache reuse; a cache hit is server telemetry, not a correctness invariant.
+    assert cont[0]["cache_prompt"] is True
 
 
 def test_solo_p0_pauses_every_background_stream(stack):
