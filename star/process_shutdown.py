@@ -90,41 +90,43 @@ async def terminate_managed_async(
     """
     _validate_bounds(grace_period_s, poll_s, kill_wait_s)
     process = tree.process
+    wait_task = asyncio.create_task(process.wait())
 
     async def wait_for_empty(timeout_s: float) -> bool:
         return await asyncio.to_thread(tree.wait_empty, timeout_s, poll_s)
 
-    if tree.mode != "posix_process_group":
-        tree.terminate()
-        await process.wait()
-        return await wait_for_empty(kill_wait_s)
-
-    try:
-        os.killpg(tree.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        await process.wait()
-        return await wait_for_empty(0.0)
-    except OSError:
-        tree.terminate()
+    async def wait_for_root() -> bool:
         try:
-            await asyncio.wait_for(asyncio.shield(process.wait()), timeout=kill_wait_s)
+            await asyncio.wait_for(asyncio.shield(wait_task), timeout=kill_wait_s)
         except TimeoutError:
             return False
-        return await wait_for_empty(kill_wait_s)
+        return True
 
-    wait_task = asyncio.create_task(process.wait())
     try:
+        if tree.mode != "posix_process_group":
+            tree.terminate()
+            if not await wait_for_root():
+                return False
+            return await wait_for_empty(kill_wait_s)
+
+        try:
+            os.killpg(tree.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            if not await wait_for_root():
+                return False
+            return await wait_for_empty(0.0)
+        except OSError:
+            tree.terminate()
+            if not await wait_for_root():
+                return False
+            return await wait_for_empty(kill_wait_s)
+
         await asyncio.wait({wait_task}, timeout=grace_period_s)
         empty = await wait_for_empty(grace_period_s)
         if not empty:
             tree.terminate()
-        if not wait_task.done():
-            try:
-                await asyncio.wait_for(asyncio.shield(wait_task), timeout=kill_wait_s)
-            except TimeoutError:
-                return False
-        else:
-            await wait_task
+        if not await wait_for_root():
+            return False
         return await wait_for_empty(kill_wait_s)
     except asyncio.CancelledError:
         tree.terminate()
