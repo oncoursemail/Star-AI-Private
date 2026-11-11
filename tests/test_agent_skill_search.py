@@ -176,3 +176,54 @@ def test_catalog_reads_only_bounded_frontmatter_prefix(tmp_path, monkeypatch):
     assert library.search("Roblox RemoteEvent server")
     assert read_sizes
     assert set(read_sizes) == {8007}
+
+
+def test_repeated_search_reuses_frontmatter_without_reopening_skill_files(tmp_path, monkeypatch):
+    library = _library(tmp_path)
+    first = library.search("Roblox RemoteEvent server security")
+    assert first
+
+    original_open = Path.open
+    opened = []
+
+    def tracking_open(path, *args, **kwargs):
+        if path.name == "SKILL.md":
+            opened.append(path)
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    second = library.search("Roblox RemoteEvent server security")
+
+    assert second == first
+    assert opened == []
+
+
+def test_changed_skill_frontmatter_invalidates_metadata_and_search_index(tmp_path):
+    library = _library(tmp_path)
+    assert library.search("specialized webhook orchestration") == []
+
+    skill_file = tmp_path / "home" / "skills" / "python-typing" / "SKILL.md"
+    skill_file.write_text(
+        "---\nname: python-typing\n"
+        "description: Specialized webhook orchestration and event routing.\n"
+        "---\nUpdated body.\n",
+        encoding="utf-8",
+    )
+
+    results = library.search("specialized webhook orchestration")
+    assert results
+    assert results[0]["name"] == "python-typing"
+    assert {"specialized", "webhook", "orchestration"} <= set(
+        results[0]["matched_terms"]
+    )
+
+
+def test_removed_skill_is_not_returned_from_metadata_cache(tmp_path):
+    library = _library(tmp_path)
+    assert library.search("responsive menus accessible interface layouts")
+
+    skill_dir = tmp_path / "home" / "skills" / "roblox-ui-craft"
+    (skill_dir / "SKILL.md").unlink()
+    skill_dir.rmdir()
+
+    assert library.search("responsive menus accessible interface layouts") == []
