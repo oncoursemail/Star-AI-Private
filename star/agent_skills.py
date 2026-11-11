@@ -5,15 +5,35 @@ Only reviewed read-only tool operations consume skill content.
 """
 from __future__ import annotations
 
+import math
+import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-import re
+from threading import RLock
 from .validation_messages import describe_invalid
 
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _MAX_FILE = 64_000
 _MAX_SKILLS = 200  # bundled packs alone are ~90 since the engine and gameplay packs; user/project skills come on top
 _REFERENCE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml"}
+
+_SEARCH_TOKEN = re.compile(r"[a-z0-9]+(?:[+#]{1,2})?")
+_SEARCH_STOP_WORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for",
+    "from", "how", "in", "into", "is", "it", "of", "on", "or", "our",
+    "that", "the", "this", "to", "use", "using", "what", "when", "where",
+    "which", "with", "you", "your",
+})
+_SOURCE_PRIORITY = {"project": 0, "workspace": 1, "personal": 2, "bundled": 3}
+
+
+def _search_tokens(text: str) -> list[str]:
+    return [
+        token for token in _SEARCH_TOKEN.findall(text.casefold())
+        if len(token) > 1 and token not in _SEARCH_STOP_WORDS
+    ]
+
 
 _STARTERS = {
     "roblox-ui-craft": """---
@@ -207,6 +227,24 @@ class Skill:
     source: str
 
 
+@dataclass(frozen=True)
+class _SkillSearchDocument:
+    skill: Skill
+    title_tokens: tuple[str, ...]
+    description_tokens: tuple[str, ...]
+    title_frequency: Counter[str]
+    description_frequency: Counter[str]
+
+
+@dataclass(frozen=True)
+class _SkillSearchIndex:
+    signature: tuple[tuple[str, str, str, str], ...]
+    documents: tuple[_SkillSearchDocument, ...]
+    document_frequency: Counter[str]
+    average_title_length: float
+    average_description_length: float
+
+
 def _frontmatter(text: str) -> tuple[dict[str, str], str]:
     """Read required YAML scalar fields without interpreting YAML as Python code."""
     normalized = text.replace("\r\n", "\n")
@@ -250,9 +288,19 @@ class SkillLibrary:
         if bundled is not None:
             # Skill packs shipped inside the application (star/skill_packs); a user copy of the same name wins.
             self.roots.append(("bundled", bundled))
+        # Cache only parsed frontmatter and the derived lexical index. File stat
+        # signatures invalidate metadata immediately when a SKILL.md changes.
+        self._cache_lock = RLock()
+        self._metadata_cache: dict[
+            Path, tuple[tuple[int, int, int, int, str], Skill | None]
+        ] = {}
+        self._search_index: _SkillSearchIndex | None = None
 
     def catalog(self) -> list[Skill]:
+        """Discover skills while reusing frontmatter parsed from unchanged files."""
         found: dict[str, Skill] = {}
+        seen_files: set[Path] = set()
+        stop = False
         for source, root in self.roots:
             if not root.is_dir() or root.is_symlink():
                 continue
@@ -263,7 +311,8 @@ class SkillLibrary:
                 continue
             for directory in sorted(root.iterdir(), key=lambda p: p.name):
                 if len(found) >= _MAX_SKILLS:
-                    return list(found.values())
+                    stop = True
+                    break
                 if (not directory.is_dir() or directory.is_symlink()
                         or not _NAME.fullmatch(directory.name) or directory.name in found):
                     continue
@@ -271,17 +320,57 @@ class SkillLibrary:
                 if file.is_symlink() or not file.is_file() or not file.resolve().is_relative_to(real_root):
                     continue
                 try:
-                    if file.stat().st_size > _MAX_FILE:
+                    stat = file.stat()
+                    seen_files.add(file)
+                    if stat.st_size > _MAX_FILE:
                         continue
-                    fields, _ = _frontmatter(file.read_text(encoding="utf-8"))
-                    name, description = fields.get("name", ""), fields.get("description", "")
-                    if (name != directory.name or not _NAME.fullmatch(name)
-                            or not 1 <= len(description) <= 1024
-                            or len(fields.get("compatibility", "")) > 500):
-                        continue
-                    found[name] = Skill(name, description, file, source)
-                except (OSError, UnicodeError, ValueError):
+                    signature = (
+                        stat.st_mtime_ns,
+                        stat.st_ctime_ns,
+                        stat.st_size,
+                        getattr(stat, "st_ino", 0),
+                        source,
+                    )
+                except OSError:
                     continue
+
+                with self._cache_lock:
+                    cached = self._metadata_cache.get(file)
+                if cached is not None and cached[0] == signature:
+                    skill = cached[1]
+                else:
+                    try:
+                        # Only read the bounded frontmatter prefix. Full
+                        # instructions and references remain behind load().
+                        with file.open("r", encoding="utf-8") as handle:
+                            metadata = handle.read(8007)
+                        fields, _ = _frontmatter(metadata)
+                        name = fields.get("name", "")
+                        description = fields.get("description", "")
+                        if (name != directory.name or not _NAME.fullmatch(name)
+                                or not 1 <= len(description) <= 1024
+                                or len(fields.get("compatibility", "")) > 500):
+                            skill = None
+                        else:
+                            skill = Skill(name, description, file, source)
+                    except (UnicodeError, ValueError):
+                        skill = None
+                    except OSError:
+                        continue
+                    with self._cache_lock:
+                        self._metadata_cache[file] = (signature, skill)
+
+                if skill is not None and skill.name not in found:
+                    found[skill.name] = skill
+            if stop:
+                break
+
+        # Removed or no-longer-discoverable files must not occupy the cache.
+        with self._cache_lock:
+            self._metadata_cache = {
+                path: entry for path, entry in self._metadata_cache.items()
+                if path in seen_files
+            }
         return list(found.values())
 
     def _find(self, name: str) -> Skill:
@@ -295,6 +384,126 @@ class SkillLibrary:
     def list(self) -> dict:
         return {"skills": [{"name": s.name, "description": s.description,
                             "source": s.source} for s in self.catalog()]}
+
+    def _get_search_index(self, skills: list[Skill]) -> _SkillSearchIndex:
+        signature = tuple(
+            (skill.name, skill.description, skill.source, str(skill.file))
+            for skill in skills
+        )
+        with self._cache_lock:
+            cached = self._search_index
+            if cached is not None and cached.signature == signature:
+                return cached
+
+            documents: list[_SkillSearchDocument] = []
+            document_frequency: Counter[str] = Counter()
+            title_lengths: list[int] = []
+            description_lengths: list[int] = []
+            for skill in skills:
+                title_tokens = tuple(_search_tokens(skill.name.replace("-", " ")))
+                description_tokens = tuple(_search_tokens(skill.description))
+                document_frequency.update(set(title_tokens + description_tokens))
+                title_lengths.append(len(title_tokens))
+                description_lengths.append(len(description_tokens))
+                documents.append(_SkillSearchDocument(
+                    skill=skill,
+                    title_tokens=title_tokens,
+                    description_tokens=description_tokens,
+                    title_frequency=Counter(title_tokens),
+                    description_frequency=Counter(description_tokens),
+                ))
+
+            total = len(documents)
+            index = _SkillSearchIndex(
+                signature=signature,
+                documents=tuple(documents),
+                document_frequency=document_frequency,
+                average_title_length=max(1.0, sum(title_lengths) / total),
+                average_description_length=max(1.0, sum(description_lengths) / total),
+            )
+            self._search_index = index
+            return index
+
+    def search(self, query: str, *, limit: int = 5) -> list[dict]:
+        """Rank skill metadata using a cached, dependency-free BM25 index.
+
+        Only names and descriptions are scored. Skill bodies, references and
+        executable assets are not opened until the caller explicitly loads one.
+        Scores are ranking values, not probabilities or quality judgments.
+        """
+        if type(query) is not str or not 2 <= len(query.strip()) <= 200:
+            raise ValueError("Skill search query must contain 2..200 characters")
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("Skill search limit must be an integer from 1 to 20")
+        query_tokens = _search_tokens(query)
+        if not query_tokens:
+            raise ValueError("Skill search query contains no searchable terms")
+
+        skills = self.catalog()
+        if not skills:
+            return []
+        index = self._get_search_index(skills)
+
+        unique_query = list(dict.fromkeys(query_tokens))
+        phrase = " ".join(query_tokens)
+        ranked = []
+
+        def field_score(frequency: int, length: int, average: float) -> float:
+            if frequency <= 0:
+                return 0.0
+            k1, b = 1.2, 0.75
+            denominator = frequency + k1 * (
+                1.0 - b + b * length / average
+            )
+            return frequency * (k1 + 1.0) / denominator
+
+        for document in index.documents:
+            score = 0.0
+            matched = []
+            title_text = " ".join(document.title_tokens)
+            description_text = " ".join(document.description_tokens)
+            for token in unique_query:
+                title_frequency = document.title_frequency[token]
+                description_frequency = document.description_frequency[token]
+                if not title_frequency and not description_frequency:
+                    continue
+                matched.append(token)
+                df = index.document_frequency[token]
+                inverse_frequency = math.log1p(
+                    (len(index.documents) - df + 0.5) / (df + 0.5)
+                )
+                score += inverse_frequency * (
+                    2.5 * field_score(
+                        title_frequency, len(document.title_tokens),
+                        index.average_title_length,
+                    )
+                    + field_score(
+                        description_frequency, len(document.description_tokens),
+                        index.average_description_length,
+                    )
+                )
+            if not matched:
+                continue
+            if phrase and phrase in title_text:
+                score += 2.0
+            elif phrase and phrase in description_text:
+                score += 0.75
+            score += 0.1 * len(matched) / len(unique_query)
+            ranked.append((score, document.skill, matched))
+
+        ranked.sort(key=lambda item: (
+            -item[0], _SOURCE_PRIORITY.get(item[1].source, 9), item[1].name
+        ))
+        return [
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "source": skill.source,
+                "score": round(score, 6),
+                "matched_terms": matched,
+            }
+            for score, skill, matched in ranked[:limit]
+        ]
 
     def load(self, name: str) -> dict:
         skill = self._find(name)
