@@ -200,3 +200,32 @@ def test_game_control_is_not_priority_when_no_game_is_active() -> None:
     )
     assert not result.admitted
     assert result.reason == "game_or_voice_backpressure"
+
+
+
+def test_idle_game_control_samples_do_not_certify_live_game_route() -> None:
+    scheduler = ready()
+    for index in range(5):
+        at = 1000 + index * 3000
+        offer = scheduler.admit(
+            job(f"idle-cal-{index}", at, device="cpu"),
+            snapshot(at, live=False, game=False),
+            now_ms=at,
+        )
+        assert offer.admitted
+        assert scheduler.finish(
+            offer.ticket,
+            now_ms=at + 180,
+            succeeded=True,
+        )
+
+    result = scheduler.admit(
+        job("live-after-idle-calibration", 17000),
+        snapshot(17000, live=True, game=True),
+        now_ms=17000,
+    )
+
+    assert not result.admitted
+    assert result.reason == "no_calibrated_deadline_safe_route_or_headroom"
+    assert "game_control:cpu:idle" in scheduler.status()["route_p95_ms"]
+    assert "game_control:cpu:game_active" not in scheduler.status()["route_p95_ms"]
