@@ -22,6 +22,7 @@ from typing import Any, AsyncIterator, Callable, Mapping, Sequence
 
 from star.agent_session import (UNMEASURED, AuthState, SessionEvent, SessionProbe, SessionState,
                                 TurnState, UsageReport)
+from star.process_shutdown import terminate_managed_async
 from star.process_supervisor import ProcessTreeSupervisor, start_managed_async_process
 
 State = TurnState
@@ -208,13 +209,14 @@ class AcpAdapter:
         if proc is None:
             return
         if tree is not None:
-            if proc.returncode is None:
-                tree.terminate()
+            empty = await terminate_managed_async(tree, grace_period_s=0.35)
+            tree.close()
+            if not empty and not await asyncio.to_thread(tree.wait_empty, 2.0, 0.02):
+                self.error = (self.error + "; process-tree cleanup not confirmed")[-300:]
         elif proc.returncode is None:
             proc.kill()
-        await proc.wait()
-        if tree is not None:
-            tree.close()
+        if proc.returncode is None:
+            await proc.wait()
 
     def _send(self, obj: dict[str, Any]) -> None:
         if self._proc is None or self._proc.stdin is None:
