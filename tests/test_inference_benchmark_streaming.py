@@ -189,6 +189,34 @@ def test_streaming_benchmark_reports_sanitized_failure_categories_and_partial_ou
     asyncio.run(run())
 
 
+def test_nested_http_response_status_codes_are_classified_without_leaking_details():
+    class ProviderHTTPError(Exception):
+        def __init__(self, status):
+            self.response = SimpleNamespace(status_code=status)
+            super().__init__("private provider response detail")
+
+    async def run(error):
+        client, _ = _client(failure=error)
+        return await benchmark_local_model_streaming(
+            "http://127.0.0.1:8080/v1", "local-model",
+            requests=1, parallel=1, client=client,
+        )
+
+    for status, expected in (
+        (429, "rate_limited"),
+        (408, "timeout"),
+        (503, "server_error"),
+        (404, "client_error"),
+    ):
+        report = asyncio.run(run(ProviderHTTPError(status)))
+        assert report["failure_categories"] == {expected: 1}
+        assert "private provider response detail" not in repr(report)
+
+    # bool is an int subclass in Python, but is not a valid HTTP status.
+    report = asyncio.run(run(ProviderHTTPError(True)))
+    assert report["failure_categories"] == {"request_error": 1}
+
+
 def test_streaming_benchmark_rejects_non_integer_and_ambiguous_workload_values():
     async def run(**overrides):
         client, _ = _client()
