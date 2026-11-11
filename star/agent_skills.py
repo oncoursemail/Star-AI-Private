@@ -292,7 +292,11 @@ class SkillLibrary:
                 try:
                     if file.stat().st_size > _MAX_FILE:
                         continue
-                    fields, _ = _frontmatter(file.read_text(encoding="utf-8"))
+                    # Only read the bounded frontmatter prefix during catalog/search.
+                    # Full instructions and references remain behind explicit load().
+                    with file.open("r", encoding="utf-8") as handle:
+                        metadata = handle.read(8007)
+                    fields, _ = _frontmatter(metadata)
                     name, description = fields.get("name", ""), fields.get("description", "")
                     if (name != directory.name or not _NAME.fullmatch(name)
                             or not 1 <= len(description) <= 1024
