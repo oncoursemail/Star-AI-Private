@@ -288,11 +288,6 @@ Only after CI, host acceptance, and private rehearsal should a human consider en
 - The host must independently enforce permissions and confirm worker termination before releasing a lease.
 
 ## References
-9. MemoryArena — https://arxiv.org/abs/2602.16313
-10. Mem2ActBench — https://aclanthology.org/2026.acl-long.370/
-11. APEX-MEM — https://aclanthology.org/2026.acl-long.749/
-12. LifeBench — https://arxiv.org/abs/2603.03781
-
 1. LOLPlay, 2026-10-25 — https://arxiv.org/abs/2611.03685
 2. MechEval/WARC, 2026-11-09 — https://arxiv.org/abs/2611.12324
 3. SIMA 2 — https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
@@ -301,3 +296,7 @@ Only after CI, host acceptance, and private rehearsal should a human consider en
 6. llama.cpp SPEED-Bench — https://github.com/ggml-org/llama.cpp/tree/master/tools/server/bench/speed-bench
 7. OpenGameEval — https://github.com/Roblox/open-game-eval
 8. OpenGameEval paper — https://arxiv.org/abs/2610.02563
+9. MemoryArena — https://arxiv.org/abs/2602.16313
+10. Mem2ActBench — https://aclanthology.org/2026.acl-long.370/
+11. APEX-MEM — https://aclanthology.org/2026.acl-long.749/
+12. LifeBench — https://arxiv.org/abs/2603.03781
