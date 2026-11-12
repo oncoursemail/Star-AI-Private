@@ -15,7 +15,7 @@ import re
 from statistics import fmean, median
 from typing import Callable, Sequence
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_OBSERVATIONS = 20_000
 _MAX_METRIC_MS = 1_000_000_000.0
 
