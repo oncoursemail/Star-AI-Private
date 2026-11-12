@@ -47,7 +47,7 @@ def test_one_turn_runs_every_stage_and_measures_them():
     assert metrics.asr_speculative and metrics.tokens == 13 and not metrics.interrupted
     assert metrics.first_playback_at is not None
     assert metrics.stages()["speech_end_to_first_playback"] is not None
-    assert metrics.speaker_output_callbacks is None  # the fake speaker has no hardware callback counter
+    assert metrics.speaker_output_callbacks_with_audio is None  # fake has no hardware callback counter
     assert events.of("turn_metrics")[0]["stages"]["total"] is not None
     table = latency_table(session.turns)
     assert "TOTAL" in table and "early transcript" in table
