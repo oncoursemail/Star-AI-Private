@@ -218,13 +218,17 @@ def select_and_validate_turn_policy(
         raise TypeError("holdout_ledger must be HoldoutLedger or None")
     if type(cluster_aware) is not bool:
         raise ValueError("cluster_aware must be boolean")
-    if (
-        type(cluster_bootstrap_replicates) is not int
-        or not 200 <= cluster_bootstrap_replicates <= 10_000
-    ):
-        raise ValueError("cluster_bootstrap_replicates must be in 200..10000")
-    if type(cluster_random_seed) is not int or not 0 <= cluster_random_seed <= 4_294_967_295:
-        raise ValueError("cluster_random_seed must be in 0..4294967295")
+    if cluster_aware:
+        if (
+            type(cluster_bootstrap_replicates) is not int
+            or not 200 <= cluster_bootstrap_replicates <= 10_000
+        ):
+            raise ValueError("cluster_bootstrap_replicates must be in 200..10000")
+        if (
+            type(cluster_random_seed) is not int
+            or not 0 <= cluster_random_seed <= 4_294_967_295
+        ):
+            raise ValueError("cluster_random_seed must be in 0..4294967295")
     (
         calibration_probe,
         holdout_probe,
