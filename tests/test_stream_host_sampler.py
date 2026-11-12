@@ -175,3 +175,65 @@ def test_extreme_integer_metric_is_rejected_without_overflow():
     data = inputs(gaming=obs(True), game_fps_p10=obs(10**1000))
     with pytest.raises(ValueError, match="finite number in range"):
         StreamHostSampler().build(data)
+
+
+
+def test_stream_and_game_state_use_stricter_freshness_than_metric_age():
+    data = inputs(
+        streaming=obs(False, at=9_499),
+        gaming=obs(False, at=9_900),
+        vram_free_mb=obs(3_000, at=9_900),
+    )
+    with pytest.raises(TelemetryUnavailable, match="stale"):
+        StreamHostSampler().build(data)
+
+
+def test_observations_from_different_sampling_windows_are_rejected():
+    data = inputs(
+        streaming=obs(True, at=9_900),
+        gaming=obs(True, at=9_900),
+        vram_free_mb=obs(3_000, at=9_900),
+        game_fps_p10=obs(58.5, at=9_300),
+        voice_p95_ms=obs(250.0, at=9_900),
+        obs_dropped_pct=obs(0.1, at=9_900),
+        audio_underruns=obs(0, at=9_900),
+    )
+    with pytest.raises(TelemetryUnavailable, match="sampling skew"):
+        StreamHostSampler().build(data)
+
+
+def test_exact_sampling_skew_boundary_is_accepted():
+    data = inputs(
+        streaming=obs(True, at=9_900),
+        gaming=obs(True, at=9_900),
+        vram_free_mb=obs(3_000, at=9_900),
+        game_fps_p10=obs(58.5, at=9_400),
+        voice_p95_ms=obs(250.0, at=9_900),
+        obs_dropped_pct=obs(0.1, at=9_900),
+        audio_underruns=obs(0, at=9_900),
+    )
+    sample = StreamHostSampler().build(data)
+    assert sample.captured_ms == 9_400
+
+
+def test_sampling_skew_rejection_does_not_consume_sequence():
+    sampler = StreamHostSampler()
+    bad = inputs(
+        streaming=obs(True, at=9_900),
+        gaming=obs(True, at=9_900),
+        vram_free_mb=obs(3_000, at=9_900),
+        game_fps_p10=obs(58.5, at=9_300),
+        voice_p95_ms=obs(250.0, at=9_900),
+        obs_dropped_pct=obs(0.1, at=9_900),
+        audio_underruns=obs(0, at=9_900),
+    )
+    with pytest.raises(TelemetryUnavailable, match="sampling skew"):
+        sampler.build(bad)
+    assert sampler.build(inputs()).seq == 1
+
+
+def test_sampling_freshness_configuration_is_bounded():
+    with pytest.raises(ValueError, match="max_state_age_ms"):
+        StreamHostSampler(max_age_ms=1_000, max_state_age_ms=1_001)
+    with pytest.raises(ValueError, match="max_skew_ms"):
+        StreamHostSampler(max_age_ms=1_000, max_skew_ms=1_001)
