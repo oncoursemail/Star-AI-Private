@@ -236,3 +236,127 @@ Separate stable knowledge (mathematics, physics, programming fundamentals, histo
 This branch adds a typed task-to-delivery bridge and focused tests, and repairs the exact CI-reported undefined name and retry-order bug. The next exact-head GitHub Actions run is the authority for repository test/type/lint status.
 
 No real Windows audio device, TTS engine, LiveKit room, OBS broadcast, VTube Studio model, GPU inference benchmark, Roblox Studio playthrough, or livestream was run in this change. External benchmark results above are research evidence, not STAR performance claims. The bridge is not a durable outbox; TaskLedger remains in-memory. Production `main`, model weights, routing defaults, runtime permissions, and broadcast settings remain unchanged.
+
+
+## 8. Cross-domain intelligence: generalist perception plus specialist control
+
+### SIMA 2: learn actions across unfamiliar worlds
+
+Google DeepMind's SIMA 2 combines visual observation, language instructions, high-level reasoning, and ordinary game controls. Its report describes generalization to held-out worlds and an open-ended skill-learning loop. The same report is explicit about limitations: very long-horizon tasks, short interaction memory, precise low-level keyboard/mouse control, and robust visual understanding remain difficult.
+
+Sources:
+- https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+- https://arxiv.org/abs/2512.04797
+
+STAR should borrow the architecture pattern, not assume the reported capability transfers automatically:
+- multimodal observation is a separate input stream from the planner;
+- high-level goals are decomposed into short, verifiable action horizons;
+- the controller receives explicit action bounds and stop conditions;
+- observations after each action update the world state;
+- skills are promoted only after held-out evaluation;
+- long-horizon memory is externalized into task/skill state instead of relying on one giant context window.
+
+### Agent S2: specialist tools for computer use
+
+Agent S2 studies a compositional generalist/specialist computer-use architecture with hierarchical planning and multiple grounding strategies. This suggests a useful STAR desktop pattern: a planner should decide *what* to do, a grounding component should identify the exact UI target, and a constrained executor should perform the action and verify the resulting state.
+
+Source:
+https://arxiv.org/abs/2504.00906
+
+For STAR, every desktop action should carry:
+- target application/window identity;
+- observed target evidence;
+- intended action and precondition;
+- timeout and cancellation token;
+- expected postcondition;
+- screenshot/state evidence after execution;
+- rollback or safe-stop behavior.
+
+Do not let a model invent coordinates and click blindly. Re-observe after layout changes, modal dialogs, focus changes, or unexpected results.
+
+### One reusable skill format across games and desktop tools
+
+A skill should be a small, versioned executable contract:
+
+| Field | Purpose |
+|---|---|
+| Skill ID/version | Stable identity and change tracking |
+| Domain | Game, Roblox Studio, Blender, desktop, research |
+| Preconditions | Required app/game/build/map/control mode |
+| Observation schema | What the skill must inspect first |
+| Action schema | Bounded permitted actions |
+| Expected effects | Observable success conditions |
+| Recovery branches | What to do after a known failure |
+| Evidence | Test runs, screenshots, state diffs, traces |
+| Confidence | Empirical success rate and sample count |
+| Scope | Environments where it is known to work |
+| Expiry/revalidation | When an API/game version makes it stale |
+
+This is more reliable than storing a paragraph that says "STAR knows how to play/build X." A skill should be searchable, composable, executable, and falsifiable.
+
+## 9. Natural streamer behavior: social policy, not just voice synthesis
+
+A convincing AI VTuber needs more than a human-sounding voice. The Social Director should maintain a compact, explicit conversation state:
+
+- current floor owner and whether STAR has the floor;
+- active speaker IDs scoped to the current session (not biometric identity);
+- addressee confidence: STAR, another viewer, or ambiguous;
+- current topic and unresolved questions;
+- whether a viewer is giving a backchannel or taking the floor;
+- active delivery obligations and playback progress;
+- whether a delegated task result is still relevant to the current conversation;
+- stream mode (gameplay, just chatting, tutorial, break, offline rehearsal).
+
+The director should choose among SPEAK, LISTEN, YIELD, RESUME, and SILENT. "SILENT" is a valid successful decision: it prevents constant chatter and lets viewers talk to each other.
+
+### Speech and avatar coordination
+
+- Generate short semantic speech chunks rather than one long monologue.
+- Keep the actual playback clock as the authority for mouth movement and segment completion.
+- Drive gaze and expression from the current speaker/addressee and conversational intent, not from random idle animation.
+- Use prosody (pace, pause, emphasis, pitch contour) to communicate intent; avoid inserting filler words or fake laughter on a timer.
+- Resume only the unplayed/partial segment after a confirmed false interruption; never replay already acknowledged segments.
+- Keep the AI identity transparent in the channel/about panel and when directly asked. Natural presentation must not imply a human operator is secretly speaking.
+
+### Privacy and safety for a public stream
+
+- Use ephemeral per-session speaker labels; do not build voiceprints or infer real-world identities.
+- Keep raw microphone/chat audio out of durable memory by default.
+- Store only the minimum consented viewer preferences needed for continuity, with a retention/forget policy.
+- Treat viewer chat, usernames, links, and on-screen text as untrusted input; prompt injection in chat must not grant tools or alter system policy.
+- Keep broadcast start/stop, scene switching, external messages, purchases, file deletion, and account changes behind separate explicit permissions.
+- Use a rehearsal mode with synthetic chat and prerecorded audio before public deployment.
+
+## 10. Model routing and intelligence allocation
+
+Use the cheapest reliable controller for each time scale:
+
+| Workload | Preferred control path |
+|---|---|
+| Frame-level movement / aiming | Deterministic or trained low-latency controller |
+| Audio VAD / playback clock | Native real-time audio pipeline |
+| Simple intent classification | Small fast model or rules |
+| Conversation response | Low-latency conversational model |
+| Strategic gameplay | Stronger planner on a bounded cadence |
+| Coding / research / game creation | Strong reasoning model plus tools and tests |
+| High-impact result verification | Independent checker, deterministic tests, or second model |
+| Knowledge retrieval | Search/index first; model synthesizes with provenance |
+
+Escalate when the fast path reports low confidence, conflicting evidence, a failed postcondition, or an unfamiliar environment. Do not use one model for every task, and do not let a slow strategic planner block the audio or input loop.
+
+For every route, log model/runtime revision, task class, input/output token counts, cache hit, queue wait, first-token latency, completion latency, tool success, verification result, and memory use. Keep raw prompts/audio out of telemetry unless the user explicitly enables a protected diagnostic capture.
+
+## 11. Final acceptance matrix
+
+| Capability | Minimum evidence before calling it ready |
+|---|---|
+| Natural conversation | Paired backchannel/barge-in cases, false interruption rate, omission rate, p95 stop latency |
+| Avatar synchronization | Mouth/viseme follows captured output; expression/gaze tests; reconnect behavior |
+| Streaming | Authenticated OBS telemetry, dropped-frame/audio-underflow monitoring, safe-stop behavior |
+| Gaming | Held-out maps/seeds, repeated success, action latency, recovery traces |
+| Roblox creation | Inspect-before-edit trace, scene assertions, simulated play session |
+| Game creation | Real engine launch, playable core loop, endings, save/reopen, regression replay |
+| General knowledge | Provenance, freshness, calibrated uncertainty, delayed practical transfer |
+| Desktop autonomy | Target grounding, preconditions, postconditions, cancellation, rollback/safe-stop |
+| Faster inference | Paired p50/p95/p99 improvements with unchanged quality and no game/audio/OBS regression |
+| Self-improvement | Offline experiment, independent verification, versioned result, rollback, no automatic production promotion |
