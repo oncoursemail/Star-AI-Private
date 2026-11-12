@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from pathlib import Path
 
 import pytest
 
@@ -52,7 +53,7 @@ def add_trial(
 
 def enabled_store(
     bank: GameplaySkillBank,
-    database: str = ":memory:",
+    database: str | Path = ":memory:",
     *,
     max_records: int = 5_000,
     retention_seconds: int = 30 * 86400,
@@ -264,7 +265,7 @@ def test_sqlite_persistence_survives_reopening(tmp_path):
     bank = make_bank()
     trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
     database = tmp_path / "continuity.sqlite"
-    first = enabled_store(bank, str(database))
+    first = enabled_store(bank, database)
     first.remember(trial, session_id="session-1", now_unix_s=NOW, owner_approved=True)
     first.close()
     second = enabled_store(bank, str(database))
@@ -404,3 +405,20 @@ def test_multiple_pending_callbacks_are_bounded_and_disable_cancels_them():
     assert not store.complete_callback(
         offer.ticket, now_unix_s=NOW, playback_confirmed=True
     )
+
+
+
+def test_stream_end_releases_ephemeral_replay_state_without_deleting_memory():
+    bank = make_bank()
+    trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
+    store = enabled_store(bank)
+    store.remember(trial, session_id="practice-session", now_unix_s=NOW, owner_approved=True)
+    offer = packet(store, stream_session_id="broadcast-1")
+    assert offer is not None
+    assert store.complete_callback(
+        offer.ticket, now_unix_s=NOW, playback_confirmed=True
+    )
+    assert store.metrics()["retained"] == 1
+    assert store.end_stream_session("broadcast-1") == 1
+    assert store.metrics()["retained"] == 1
+    assert store.metrics()["pending_callbacks"] == 0
