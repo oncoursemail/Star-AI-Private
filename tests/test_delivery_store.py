@@ -189,6 +189,26 @@ def test_deadline_expires_across_restart_using_wall_clock(tmp_path):
         second.close()
 
 
+def test_expired_deadline_remains_consistent_on_a_second_restart(tmp_path):
+    path = tmp_path / "delivery.sqlite3"
+    wall = WallClock()
+    first = open_store(path, wall)
+    record = create_one(first, deadline_ms=200)
+    first.close()
+
+    wall.value += 100
+    second = open_store(path, wall, now=500, epoch="host-b")
+    assert second.get(record.delivery_id).state is DeliveryState.EXPIRED
+    second.close()
+
+    third = open_store(path, wall, now=900, epoch="host-c")
+    try:
+        assert third.get(record.delivery_id).state is DeliveryState.EXPIRED
+        assert third.integrity_check() == "ok"
+    finally:
+        third.close()
+
+
 def test_wall_clock_rollback_expires_deadline_bound_obligations(tmp_path):
     path = tmp_path / "delivery.sqlite3"
     wall = WallClock(1_000_000)
