@@ -16,7 +16,10 @@ class TurnMetrics:
     transcript_at: float | None = None   # transcript ready
     first_token_at: float | None = None  # first text from the brain
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
-    first_audio_at: float | None = None  # first audio handed to the speaker
+    first_audio_at: float | None = None  # first reply audio submitted to the speaker queue
+    first_playback_at: float | None = None  # estimated DAC time; callback-time fallback, not acoustic arrival
+    speaker_output_callbacks_with_audio: int | None = None
+    speaker_output_underflows: int | None = None
     first_ack_at: float | None = None    # acknowledgement clip handed to the speaker (star/voice/acks.py)
     ack_text: str = ""
     last_token_at: float | None = None   # last text from the brain
@@ -37,8 +40,11 @@ class TurnMetrics:
         return None if a is None or b is None else max(0.0, b - a)
 
     def stages(self) -> dict:
-        """The latency breakdown in seconds. `total` is what the user feels: stop talking -> hear Star."""
+        """Latency breakdown in seconds; total ends at queue submission, not acoustic arrival."""
         generation = self._gap(self.first_token_at, self.last_token_at)
+        submitted = [t for t in (self.first_ack_at, self.first_audio_at) if t is not None]
+        first_submitted_at = min(submitted) if submitted else None
+        first_output_at = self.first_playback_at if self.first_playback_at is not None else first_submitted_at
         return {
             "endpoint": self._gap(self.speech_end, self.turn_end),
             "asr": self._gap(self.turn_end, self.transcript_at),
@@ -46,9 +52,11 @@ class TurnMetrics:
             "transcript_to_first_token": self._gap(self.transcript_at, self.first_token_at),
             "first_token_to_first_audio": self._gap(self.first_token_at, self.first_audio_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
-            # what the user waits for until Star makes a sound: the acknowledgement clip when one played
-            "perceived": self._gap(self.speech_end, min((t for t in (self.first_ack_at, self.first_audio_at)
-                                                         if t is not None), default=None)),
+            "speech_end_to_first_submission": self._gap(self.speech_end, first_submitted_at),
+            "speech_end_to_first_playback": self._gap(self.speech_end, self.first_playback_at),
+            "speaker_queue_to_playback": self._gap(first_submitted_at, self.first_playback_at),
+            # Prefer the backend playback clock; fall back to queue submission when unavailable.
+            "perceived": self._gap(self.speech_end, first_output_at),
             "tokens_per_second": ((self.tokens - 1) / generation) if generation and self.tokens > 2 else None,
         }
 
@@ -59,23 +67,28 @@ class TurnMetrics:
 
 
 def latency_summary(turns: list[TurnMetrics]) -> dict:
-    """Report tail latency from real voice-clock stamps without capturing user text.
+    """Report tail latency without retaining user text or overstating acoustic timing.
 
-    The first-audio stamp means a PCM chunk was *submitted* to the speaker; it
-    cannot prove when the user physically heard it. An errored, missing, or
-    clock-invalid turn must never silently improve p95. Nearest-rank percentiles
-    are descriptive and are not a quality or deployment promotion gate.
+    first_playback_at is PortAudio's estimated DAC time for the first non-empty
+    output buffer, mapped to monotonic time (or a simulated speaker's scheduled
+    start). It is not a room/listener measurement. Missing or
+    invalid timestamps remain incomplete/invalid instead of improving p95.
     """
     if len(turns) > 10000 or any(not isinstance(t, TurnMetrics) for t in turns):
         raise ValueError("Expected at most 10000 voice turns")
     pairs = {
-        "speech_end_to_audio_submitted": ("speech_end", "first_audio_at"),
         "endpointer": ("speech_end", "turn_end"),
         "transcription": ("turn_end", "transcript_at"),
         "brain_first_token": ("transcript_at", "first_token_at"),
         "tts_and_queue": ("first_token_at", "first_audio_at"),
     }
-    samples: dict[str, list[float]] = {key: [] for key in pairs}
+    samples: dict[str, list[float]] = {
+        "speech_end_to_audio_submitted": [],
+        "speech_end_to_first_submission": [],
+        "speech_end_to_first_playback": [],
+        "speaker_queue_to_playback": [],
+        **{key: [] for key in pairs},
+    }
     failed = invalid = incomplete = 0
 
     def valid(value) -> bool:
@@ -85,18 +98,37 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
         if turn.error:
             failed += 1
             continue
-        a, b = turn.speech_end, turn.first_audio_at
-        if a is None or b is None:
+        start = turn.speech_end
+        submitted_values = [value for value in (turn.first_ack_at, turn.first_audio_at) if value is not None]
+        playback = turn.first_playback_at
+        if start is None or (not submitted_values and playback is None):
             incomplete += 1
             continue
-        if not valid(a) or not valid(b) or b < a or (
-            turn.first_token_at is not None and
-            (not valid(turn.first_token_at) or turn.first_token_at > b)
+        present = [value for value in (start, *submitted_values, playback, turn.first_token_at) if value is not None]
+        if any(not valid(value) for value in present):
+            invalid += 1
+            continue
+        first_submitted = min(submitted_values) if submitted_values else None
+        if (
+            (first_submitted is not None and first_submitted < start)
+            or (playback is not None and (
+                playback < start or (first_submitted is not None and playback < first_submitted)
+            ))
+            or (turn.first_token_at is not None and turn.first_audio_at is not None
+                and turn.first_token_at > turn.first_audio_at)
         ):
             invalid += 1
             continue
-        for key, (begin, end) in pairs.items():
-            x, y = getattr(turn, begin), getattr(turn, end)
+        if turn.first_audio_at is not None:
+            samples["speech_end_to_audio_submitted"].append((turn.first_audio_at - start) * 1000)
+        if first_submitted is not None:
+            samples["speech_end_to_first_submission"].append((first_submitted - start) * 1000)
+        if playback is not None:
+            samples["speech_end_to_first_playback"].append((playback - start) * 1000)
+        if first_submitted is not None and playback is not None:
+            samples["speaker_queue_to_playback"].append((playback - first_submitted) * 1000)
+        for key, (begin, finish) in pairs.items():
+            x, y = getattr(turn, begin), getattr(turn, finish)
             if valid(x) and valid(y) and y >= x:
                 samples[key].append((y - x) * 1000)
 
@@ -112,7 +144,6 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
             "incomplete_turns": incomplete, "invalid_clock_turns": invalid,
             "interrupted_turns": sum(t.interrupted for t in turns),
             "latency": {key: quantiles(values) for key, values in samples.items()}}
-
 
 def _cell(value: float | None, width: int, digits: int = 2) -> str:
     return ("-" if value is None else f"{value:.{digits}f}").rjust(width)

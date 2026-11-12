@@ -5,6 +5,7 @@ import threading
 import time
 
 from star.voice.pcm import FRAME_BYTES, samples
+from star.voice.playback import PlaybackSnapshot
 
 SILENCE = b"\x00\x00" * (FRAME_BYTES // 2)
 
@@ -110,12 +111,16 @@ class FakeSpeaker:
         self.queued = 0.0
         self.queue_end = 0.0
         self.stops = 0
+        self.first_playback_at: float | None = None
 
     def play(self, pcm: bytes, sample_rate: int) -> None:
         with self.lock:
             now = time.monotonic()
+            start = max(now, self.queue_end)
             duration = len(pcm) / 2 / sample_rate
-            self.queue_end = max(now, self.queue_end) + duration
+            if pcm and self.first_playback_at is None:
+                self.first_playback_at = start
+            self.queue_end = start + duration
             self.queued += duration
             self.log.append(("play", now))
 
@@ -131,6 +136,11 @@ class FakeSpeaker:
         with self.lock:
             self.queued = 0.0
             self.queue_end = time.monotonic()
+            self.first_playback_at = None
+
+    def playback_snapshot(self) -> PlaybackSnapshot:
+        with self.lock:
+            return PlaybackSnapshot(self.first_playback_at, None, None)
 
     def pending_seconds(self) -> float:
         with self.lock:

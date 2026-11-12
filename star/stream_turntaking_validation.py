@@ -313,10 +313,18 @@ def select_and_validate_turn_policy(
         selected_metrics.timeout_ms,
     )
 
+    # Keep only holdout turns when handing the mapping to holdout-only consumers.
+    # The full split mapping is required above to prove partition disjointness,
+    # but the cluster evaluator requires an exact mapping for its own spans.
+    holdout_turn_ids = {span.turn_id for span in holdout_spans}
+    holdout_group_ids = {
+        turn_id: group_ids_by_turn[turn_id] for turn_id in holdout_turn_ids
+    }
+
     # Claim before scoring: even a crash after this point must not make the
     # same holdout available for repeated adaptive tuning.
     if holdout_ledger is not None:
-        holdout_ledger.claim(holdout_spans, group_ids_by_turn)
+        holdout_ledger.claim(holdout_spans, holdout_group_ids)
 
     # This is the only holdout evaluation performed by this call. The same
     # frozen action delay/timeout are used for a silence-only reference.
@@ -342,7 +350,7 @@ def select_and_validate_turn_policy(
         cluster_metrics = evaluate_clustered_turn_policy(
             holdout_spans,
             selected_policy,
-            group_ids_by_turn=group_ids_by_turn,
+            group_ids_by_turn=holdout_group_ids,
             bootstrap_replicates=cluster_bootstrap_replicates,
             confidence_level=constraints.confidence_level,
             random_seed=cluster_random_seed,

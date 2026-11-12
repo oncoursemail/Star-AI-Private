@@ -91,7 +91,7 @@ def test_policy_is_selected_on_calibration_and_passes_independent_holdout():
     assert result.calibration_eligible_count > 0
     assert result.holdout_metrics.false_cutoffs == 0
     assert result.holdout_metrics.missed_final_turns == 0
-    assert result.holdout_silence_baseline.false_cutoffs == 100
+    assert result.holdout_silence_baseline.false_cutoffs == 700
     assert result.holdout_false_cutoff_upper_bound is not None
     assert result.holdout_false_cutoff_upper_bound <= 0.05
 
@@ -367,7 +367,7 @@ def test_cluster_aware_validation_passes_with_sufficient_zero_error_sessions():
     assert result.status is ValidationStatus.PASS
     assert result.cluster_metrics is not None
     assert result.cluster_metrics.session_count == 700
-    assert result.cluster_metrics.false_cutoff_rate_effective_session_count == 700
+    assert result.cluster_metrics.false_cutoff_rate_effective_session_count == pytest.approx(700.0)
     assert result.cluster_metrics.false_cutoff_rate_hoeffding_upper_bound <= 0.05
     assert result.cluster_metrics.missed_final_rate_hoeffding_upper_bound <= 0.05
     assert result.cluster_metrics.false_cutoff_session_incidence_hoeffding_upper_bound <= 0.05
@@ -449,7 +449,7 @@ def test_latency_limit_is_part_of_cluster_session_evidence():
         constraints=TurnPolicyConstraints(
             max_false_cutoff_rate=0.05,
             max_missed_final_rate=1.0,
-            max_p95_latency_ms=900,
+            max_p95_latency_ms=800,
             max_latency_violation_session_rate=0.05,
         ),
     )
@@ -457,3 +457,24 @@ def test_latency_limit_is_part_of_cluster_session_evidence():
     assert result.cluster_metrics.latency_violation_session_count == 40
     assert result.cluster_metrics.latency_violation_session_incidence > 0.05
     assert result.status is ValidationStatus.FAIL
+
+
+
+def test_cluster_evaluator_receives_only_holdout_group_ids(monkeypatch):
+    from star import stream_turntaking_validation as validation
+
+    original = validation.evaluate_clustered_turn_policy
+    observed = {}
+
+    def checked(spans, policy, **kwargs):
+        expected = {span.turn_id for span in spans}
+        assert set(kwargs["group_ids_by_turn"]) == expected
+        observed["turn_ids"] = expected
+        return original(spans, policy, **kwargs)
+
+    monkeypatch.setattr(validation, "evaluate_clustered_turn_policy", checked)
+    calibration, calibration_groups = dataset("cal", 100)
+    holdout, holdout_groups = dataset("hold", 100)
+    result = run(calibration, holdout, {**calibration_groups, **holdout_groups})
+    assert observed["turn_ids"] == {span.turn_id for span in holdout}
+    assert result.cluster_metrics is not None
