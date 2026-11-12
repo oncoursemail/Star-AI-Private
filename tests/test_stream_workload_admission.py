@@ -169,10 +169,15 @@ def test_expired_lease_releases_capacity_and_cannot_be_released_twice():
     controller = WorkloadAdmissionController(make_budget(cpu=10, reserve=0), lease_ttl_ms=100)
     controller.submit(make_request("voice", WorkloadLane.VOICE, cpu=10))
     lease = controller.schedule(1_000, health=healthy())[0]
-    assert controller.release(lease.lease_id, 1_100) is False
+    controller.submit(make_request("next", WorkloadLane.VOICE, cpu=10))
+    with pytest.raises(PermissionError, match="confirmed"):
+        controller.release(lease.lease_id, 1_100, host_confirmed_stopped=False)
     snapshot = controller.snapshot(1_100, health=healthy(now=1_100))
-    assert snapshot.active == 0
-    assert snapshot.expired_leases == 1
+    assert snapshot.active == 1
+    assert snapshot.expired_active_leases == 1
+    assert controller.schedule(1_100, health=healthy(now=1_100)) == ()
+    assert controller.release(lease.lease_id, 1_101, host_confirmed_stopped=True) is True
+    assert controller.schedule(1_102, health=healthy(now=1_102))[0].request_id == "next"
 
 
 def test_explicit_release_frees_capacity_for_next_request():
@@ -181,7 +186,7 @@ def test_explicit_release_frees_capacity_for_next_request():
     first = controller.schedule(1_000, health=healthy())[0]
     controller.submit(make_request("second", WorkloadLane.VOICE, cpu=10))
     assert controller.schedule(1_001, health=healthy(now=1_001)) == ()
-    assert controller.release(first.lease_id, 1_002) is True
+    assert controller.release(first.lease_id, 1_002, host_confirmed_stopped=True) is True
     assert controller.schedule(1_003, health=healthy(now=1_003))[0].request_id == "second"
 
 
@@ -190,7 +195,7 @@ def test_request_id_cannot_be_replayed_after_release():
     request = make_request("once", WorkloadLane.VOICE, cpu=1)
     controller.submit(request)
     lease = controller.schedule(1_000, health=healthy())[0]
-    assert controller.release(lease.lease_id, 1_001) is True
+    assert controller.release(lease.lease_id, 1_001, host_confirmed_stopped=True) is True
     assert controller.submit(request).status == "duplicate"
 
 
@@ -271,7 +276,7 @@ def test_invalid_health_and_lease_identifiers_are_rejected():
         controller.schedule(1_000, health=object())
     lease = controller.schedule(1_000, health=healthy())[0]
     with pytest.raises(ValueError, match="lease_id"):
-        controller.release("../not-a-lease", 1_001)
+        controller.release("../not-a-lease", 1_001, host_confirmed_stopped=True)
     assert controller.release(lease.lease_id, 1_001) is True
 
 
