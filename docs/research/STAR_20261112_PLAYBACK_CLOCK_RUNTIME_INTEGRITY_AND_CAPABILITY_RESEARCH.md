@@ -88,6 +88,33 @@ Source: [IAudioClient3::GetSharedModeEnginePeriod](https://learn.microsoft.com/e
 
 The current implementation still uses the existing PortAudio/sounddevice path. A native WASAPI adapter is a future measured experiment, not part of this patch.
 
+
+### Avatar Director and expressive VTuber behavior
+
+VTube Studio's official API supports feeding Live2D parameter values, triggering hotkeys and subscribing to events. Live2D Cubism documents audio-driven lip-sync parameters and motion-linked lip-sync.
+
+Sources: [VTube Studio API](https://github.com/DenchiSoft/VTubeStudio) · [Live2D lip-sync manual](https://docs.live2d.com/4.2/en/cubism-sdk-manual/lipsync/)
+
+STAR should use one **Avatar Director** with independent, composable layers rather than letting every subsystem issue conflicting avatar commands:
+
+- **Mouth layer:** driven by the exact PCM blocks being played, using the same playback clock as voice telemetry.
+- **Expression layer:** emotion/context chooses a bounded expression target (happy, amused, surprised, confused, focused, concerned, calm); smoothing prevents abrupt jumps.
+- **Eye layer:** blink scheduler and gaze/attention target; do not let a gaze update override a blink already in progress.
+- **Body/idle layer:** low-amplitude idle motion and breathing, paused or reduced during deliberate gestures.
+- **Gesture layer:** authored hotkeys/animations for wave, nod, laugh, point, celebrate and game reactions.
+- **State arbitration:** idle → listening → thinking → speaking → reacting/game-focused, with explicit priorities and interruption recovery.
+
+The mouth must follow the audio that is actually being played, not text generation or TTS enqueue time. Expression and gesture timing may be predicted, but the mouth clock must be output-driven. VTube Studio API access and any higher-risk permissions must be explicitly enabled by the owner; do not silently load models/items or request permissions that the current feature does not need.
+
+For a natural stream, use conversational turn-taking and social context to decide whether a reaction is warranted. Do not fill every silence, manufacture a laugh on every message, or claim real-world experiences the system did not have. The goal is expressive, coherent AI-character performance, not deceiving viewers about being human.
+
+### OBS signal separation
+
+The OBS WebSocket protocol exposes output congestion, bytes sent, skipped frames and total output frames. Keep these separate from render-thread frame loss and from STAR's own audio callback metrics.
+
+Source: [OBS WebSocket protocol](https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.json)
+
+
 ---
 
 ## 3. Roblox gameplay and game-creation research
