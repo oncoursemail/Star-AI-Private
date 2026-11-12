@@ -90,7 +90,7 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
     failed = invalid = incomplete = 0
 
     def valid(value) -> bool:
-        return type(value) in (float, int) and math.isfinite(value)
+        return type(value) in (float, int) and isfinite(value)
 
     for turn in turns:
         if turn.error:
@@ -98,16 +98,17 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
             continue
         start = turn.speech_end
         submitted_values = [value for value in (turn.first_ack_at, turn.first_audio_at) if value is not None]
-        first_submitted = min(submitted_values) if submitted_values else None
         playback = turn.first_playback_at
-        if start is None or (first_submitted is None and playback is None):
+        if start is None or (not submitted_values and playback is None):
             incomplete += 1
             continue
-        present = [value for value in (start, first_submitted, playback, turn.first_token_at,
-                                       turn.first_audio_at) if value is not None]
+        present = [value for value in (start, *submitted_values, playback, turn.first_token_at) if value is not None]
+        if any(not valid(value) for value in present):
+            invalid += 1
+            continue
+        first_submitted = min(submitted_values) if submitted_values else None
         if (
-            any(not valid(value) for value in present)
-            or (first_submitted is not None and first_submitted < start)
+            (first_submitted is not None and first_submitted < start)
             or (playback is not None and (
                 playback < start or (first_submitted is not None and playback < first_submitted)
             ))
