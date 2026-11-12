@@ -856,8 +856,8 @@ class CallSession:
 
     def _finish_reply(self, reply: _Reply) -> None:
         metrics = reply.metrics
-        # A speaker backend can report when its output callback first received
-        # queued audio. This is closer to playback than queue submission, but
+        # The speaker can report its estimated DAC time for the first queued
+        # output buffer. This is closer to playback than queue submission, but
         # still does not prove acoustic arrival at the listener.
         try:
             playback = self.speaker.playback_snapshot()
