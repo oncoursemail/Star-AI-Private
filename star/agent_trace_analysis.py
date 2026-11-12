@@ -38,12 +38,12 @@ _MAX_EVENTS = 16384
 
 
 def _number(value: object, label: str) -> float:
-    if type(value) not in (int, float):
-        raise ValueError(f"{label} must be a finite nonnegative number")
-    try:
+    if type(value) is int:
         result = float(value)
-    except (OverflowError, ValueError) as exc:
-        raise ValueError(f"{label} must be a finite nonnegative number") from exc
+    elif type(value) is float:
+        result = value
+    else:
+        raise ValueError(f"{label} must be a finite nonnegative number")
     if not math.isfinite(result) or not 0 <= result <= _MAX_CLOCK_MS:
         raise ValueError(f"{label} is outside the supported clock range")
     return result
