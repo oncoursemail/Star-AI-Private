@@ -53,17 +53,23 @@ def add_trial(
 def enabled_store(
     bank: GameplaySkillBank,
     database: str = ":memory:",
-    **kwargs: object,
+    **kwargs: int,
 ) -> StreamContinuityStore:
     store = StreamContinuityStore(database, bank, **kwargs)
     store.enable(owner_approved=True)
     return store
 
 
-def packet(store: StreamContinuityStore, *, now: int = NOW, **kwargs: object):
+def packet(
+    store: StreamContinuityStore,
+    *,
+    now: int = NOW,
+    stream_session_id: str = "current-stream",
+):
     return store.packet(
         game_id="obby",
         game_version="v1",
+        stream_session_id=stream_session_id,
         now_unix_s=now,
         public_action_labels={"jump": "Gap jump"},
         broadcast_approved=True,
@@ -173,11 +179,11 @@ def test_exact_game_and_version_scope_prevents_stale_callbacks():
     store = enabled_store(bank)
     store.remember(trial, session_id="session-1", now_unix_s=NOW, owner_approved=True)
     assert store.packet(
-        game_id="different-game", game_version="v1", now_unix_s=NOW,
+        game_id="different-game", game_version="v1", stream_session_id="stream-1", now_unix_s=NOW,
         public_action_labels={"jump": "Gap jump"}, broadcast_approved=True,
     ) is None
     assert store.packet(
-        game_id="obby", game_version="v2", now_unix_s=NOW,
+        game_id="obby", game_version="v2", stream_session_id="stream-1", now_unix_s=NOW,
         public_action_labels={"jump": "Gap jump"}, broadcast_approved=True,
     ) is None
 
@@ -219,7 +225,7 @@ def test_public_labels_are_strict_curated_plain_text():
     store.remember(trial, session_id="session-1", now_unix_s=NOW, owner_approved=True)
     with pytest.raises(ValueError):
         store.packet(
-            game_id="obby", game_version="v1", now_unix_s=NOW,
+            game_id="obby", game_version="v1", stream_session_id="stream-1", now_unix_s=NOW,
             public_action_labels={"jump": "<script>alert(1)</script>"},
             broadcast_approved=True,
         )
@@ -317,12 +323,81 @@ def test_empty_or_oversized_public_label_map_is_rejected():
     store = enabled_store(bank)
     with pytest.raises(ValueError):
         store.packet(
-            game_id="obby", game_version="v1", now_unix_s=NOW,
+            game_id="obby", game_version="v1", stream_session_id="stream-1", now_unix_s=NOW,
             public_action_labels={}, broadcast_approved=True,
         )
     with pytest.raises(ValueError):
         store.packet(
-            game_id="obby", game_version="v1", now_unix_s=NOW,
+            game_id="obby", game_version="v1", stream_session_id="stream-1", now_unix_s=NOW,
             public_action_labels={f"a{i}": "Action" for i in range(33)},
             broadcast_approved=True,
         )
+
+
+
+def test_callback_ticket_is_host_only_and_prevents_repetition_after_audible_ack():
+    bank = make_bank()
+    trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
+    store = enabled_store(bank)
+    store.remember(trial, session_id="practice-session", now_unix_s=NOW, owner_approved=True)
+
+    first = packet(store, stream_session_id="broadcast-1")
+    assert first is not None
+    assert first.ticket not in first.context_record
+    assert packet(store, stream_session_id="broadcast-1") is None
+    assert not store.complete_callback(
+        first.ticket, now_unix_s=NOW, playback_confirmed=False
+    )
+
+    second = packet(store, stream_session_id="broadcast-1")
+    assert second is not None
+    assert store.complete_callback(
+        second.ticket, now_unix_s=NOW, playback_confirmed=True
+    )
+    assert packet(store, stream_session_id="broadcast-1") is None
+    assert packet(store, stream_session_id="broadcast-2") is not None
+
+
+def test_pending_callback_expiry_releases_the_offer():
+    bank = make_bank()
+    trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
+    store = enabled_store(bank)
+    store.remember(trial, session_id="practice-session", now_unix_s=NOW, owner_approved=True)
+    first = packet(store, stream_session_id="broadcast-1")
+    assert first is not None
+    second = packet(store, now=NOW + 901, stream_session_id="broadcast-1")
+    assert second is not None
+    assert second.ticket != first.ticket
+    assert store.metrics()["callbacks_expired"] == 1
+    assert not store.complete_callback(
+        first.ticket, now_unix_s=NOW + 901, playback_confirmed=True
+    )
+
+
+def test_callback_completion_requires_valid_host_receipt_shape():
+    bank = make_bank()
+    trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
+    store = enabled_store(bank)
+    store.remember(trial, session_id="practice-session", now_unix_s=NOW, owner_approved=True)
+    offer = packet(store)
+    assert offer is not None
+    with pytest.raises(ValueError):
+        store.complete_callback("not-a-ticket", now_unix_s=NOW, playback_confirmed=True)
+    with pytest.raises(ValueError):
+        store.complete_callback(offer.ticket, now_unix_s=NOW, playback_confirmed=1)  # type: ignore[arg-type]
+
+
+def test_multiple_pending_callbacks_are_bounded_and_disable_cancels_them():
+    bank = make_bank()
+    trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
+    store = enabled_store(bank)
+    store.remember(trial, session_id="practice-session", now_unix_s=NOW, owner_approved=True)
+    offer = packet(store)
+    assert offer is not None
+    assert store.metrics()["pending_callbacks"] == 1
+    store.disable()
+    assert store.metrics()["pending_callbacks"] == 0
+    assert store.metrics()["callbacks_cancelled"] == 1
+    assert not store.complete_callback(
+        offer.ticket, now_unix_s=NOW, playback_confirmed=True
+    )
