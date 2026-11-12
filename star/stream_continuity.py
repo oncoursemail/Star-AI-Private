@@ -304,7 +304,8 @@ class StreamContinuityStore:
         _identifier(game_id, "game_id")
         _identifier(game_version, "game_version")
         _identifier(stream_session_id, "stream_session_id")
-        if type(public_action_labels) is not dict or not 1 <= len(public_action_labels) <= _MAX_LABELS:
+        if (type(public_action_labels) is not dict
+                or not 1 <= len(public_action_labels) <= _MAX_LABELS):
             raise ValueError("provide 1..32 owner-curated public action labels")
         labels: dict[str, str] = {}
         for action_id, label in public_action_labels.items():
