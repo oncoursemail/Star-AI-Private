@@ -97,7 +97,7 @@ class StreamContinuityStore:
     ) -> None:
         if not isinstance(bank, GameplaySkillBank):
             raise TypeError("expected an existing GameplaySkillBank")
-        if type(database) not in (str, Path):
+        if not isinstance(database, (str, Path)):
             raise TypeError("database must be a path or ':memory:'")
         db_path = str(database)
         if not db_path:
@@ -188,6 +188,7 @@ class StreamContinuityStore:
             self._enabled = False
             self._counts["callbacks_cancelled"] += len(self._pending_callbacks)
             self._pending_callbacks.clear()
+            self._used_callbacks.clear()
 
     def remember(
         self,
@@ -442,6 +443,31 @@ class StreamContinuityStore:
             self._used_callbacks.update((session_digest, action) for action in actions)
             self._counts["callbacks_completed"] += 1
             return True
+
+    def end_stream_session(self, stream_session_id: str) -> int:
+        """Release ephemeral callback/replay state when a broadcast session ends.
+
+        This does not delete durable practice memory. The host must never reuse
+        a stream-session ID after shutdown or restart.
+        """
+        _identifier(stream_session_id, "stream_session_id")
+        session_digest = sha256(
+            _SESSION_TAG + stream_session_id.encode("ascii")
+        ).hexdigest()
+        with self._lock:
+            self._thread()
+            tickets = [
+                ticket for ticket, (session, _, _) in self._pending_callbacks.items()
+                if session == session_digest
+            ]
+            for ticket in tickets:
+                del self._pending_callbacks[ticket]
+            before = len(self._used_callbacks)
+            self._used_callbacks = {
+                item for item in self._used_callbacks if item[0] != session_digest
+            }
+            self._counts["callbacks_cancelled"] += len(tickets)
+            return (before - len(self._used_callbacks)) + len(tickets)
 
     def clear(self, *, owner_approved: bool = False) -> int:
         """Explicitly clear this store; the source GameplaySkillBank is untouched."""
