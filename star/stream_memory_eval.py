@@ -95,6 +95,7 @@ class MemoryTrial:
     trial_id: str
     case_id: str
     variant: str
+    revision: str
     run_id: str
     result: str
     memory_applied: bool
@@ -113,6 +114,7 @@ class MemoryTrial:
             _identifier(getattr(self, name), name)
         if type(self.variant) is not str or self.variant not in {"baseline", "candidate"}:
             raise ValueError("variant must be baseline or candidate")
+        _identifier(self.revision, "revision")
         if type(self.result) is not str or self.result not in {"success", "failure", "error"}:
             raise ValueError("result must be success, failure, or error")
         for name in (
@@ -322,6 +324,9 @@ def evaluate_memory_transfer(
         trial = signed.trial
         if trial.case_id not in by_case:
             raise ValueError("trial references a case outside the sealed roster")
+        expected_revision = baseline_revision if trial.variant == "baseline" else candidate_revision
+        if trial.revision != expected_revision:
+            raise ValueError("trial revision does not match its declared variant")
         if trial.trial_id in trial_ids:
             raise ValueError("duplicate trial ID")
         trial_ids.add(trial.trial_id)
