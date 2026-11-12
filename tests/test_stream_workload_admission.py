@@ -228,6 +228,28 @@ def test_active_background_work_is_not_preempted_for_late_critical_request():
     assert research.request_id == "research"
 
 
+
+def test_blocked_higher_priority_work_fences_lower_priority_admission():
+    controller = WorkloadAdmissionController(make_budget(cpu=100, reserve=30))
+    controller.submit(make_request("chat", WorkloadLane.INTERACTIVE, cpu=70))
+    controller.schedule(1_000, health=healthy())
+    controller.submit(make_request("voice", WorkloadLane.VOICE, cpu=50))
+    controller.submit(make_request("research", WorkloadLane.RESEARCH, cpu=10))
+    assert controller.schedule(1_001, health=healthy(now=1_001)) == ()
+    snapshot = controller.snapshot(1_001, health=healthy(now=1_001))
+    assert snapshot.queued == 2
+    assert snapshot.active == 1
+
+
+def test_same_priority_alternative_can_fit_when_an_earlier_request_cannot():
+    controller = WorkloadAdmissionController(
+        ResourceBudget(ResourceVector(cpu_millicores=100, ram_mb=100), ResourceVector())
+    )
+    controller.submit(make_request("too-large", WorkloadLane.VOICE, cpu=100, ram=101))
+    controller.submit(make_request("fits", WorkloadLane.VOICE, cpu=100, ram=100))
+    leases = controller.schedule(1_000, health=healthy())
+    assert [lease.request_id for lease in leases] == ["fits"]
+
 def test_future_enqueued_request_waits_until_its_monotonic_time():
     controller = WorkloadAdmissionController(make_budget(cpu=100, reserve=0))
     controller.submit(make_request("future", WorkloadLane.AUDIO, cpu=1, enqueued=1_100))
