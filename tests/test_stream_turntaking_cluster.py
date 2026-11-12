@@ -1,11 +1,15 @@
 """Tests for session-clustered STAR turn-policy uncertainty."""
 from dataclasses import replace
 
+import math
+
 import pytest
 
 from star.stream_turntaking_cluster import (
     evaluate_clustered_turn_policy,
+    hoeffding_upper_bound,
     minimum_groups_for_zero_event_incidence,
+    weighted_hoeffding_upper_bound,
 )
 from star.stream_turntaking_eval import (
     EndOfTurnScore,
@@ -100,8 +104,8 @@ def test_sessions_without_hold_pauses_remain_in_missed_turn_denominator():
 
 
 def test_zero_error_session_count_requirement_is_derived_from_confidence_and_budget():
-    assert minimum_groups_for_zero_event_incidence(0.05, 0.95) == 52
-    assert minimum_groups_for_zero_event_incidence(0.10, 0.95) < 52
+    assert minimum_groups_for_zero_event_incidence(0.05, 0.95) == 600
+    assert minimum_groups_for_zero_event_incidence(0.10, 0.95) == 150
     assert minimum_groups_for_zero_event_incidence(0.0, 0.95) is None
 
 
@@ -136,3 +140,69 @@ def test_no_raw_group_identifiers_are_returned():
     assert "rare-session" not in serialized
     assert "many-session" not in serialized
     assert "rare-turn" not in serialized
+
+
+
+def test_weighted_hoeffding_matches_equal_weight_effective_group_count():
+    upper, effective = weighted_hoeffding_upper_bound([0, 0, 0], [10, 10, 10], 0.95)
+    assert effective == pytest.approx(3.0)
+    assert upper == pytest.approx((math.log(20.0) / 6.0) ** 0.5)
+
+
+def test_unequal_session_sizes_reduce_effective_group_count():
+    upper, effective = weighted_hoeffding_upper_bound([0, 0, 0], [1, 1, 100], 0.95)
+    assert 1.0 < effective < 1.1
+    assert upper > 0.9
+
+
+def test_hoeffding_bound_covers_zero_event_small_sample_conservatively():
+    assert hoeffding_upper_bound(0, 20, 0.95) > 0.05
+    assert hoeffding_upper_bound(0, 700, 0.95) < 0.05
+
+
+def test_cluster_metrics_include_latency_violation_session_rate():
+    rows = []
+    groups = {}
+    for index in range(3):
+        hold, final = make_turn("latency", index, false_hold=False)
+        if index == 0:
+            final = replace(final, scores=(EndOfTurnScore(100, 0.10),))
+        rows.extend((hold, final))
+        groups[f"latency-turn-{index}"] = f"latency-session-{index}"
+    metrics = evaluate_clustered_turn_policy(
+        rows,
+        TurnPolicy(0.8, 200, 900),
+        group_ids_by_turn=groups,
+        bootstrap_replicates=200,
+        latency_limit_ms=350,
+    )
+    assert metrics.latency_limit_ms == 350
+    assert metrics.latency_violation_session_count == 1
+    assert metrics.latency_violation_session_incidence == pytest.approx(1 / 3)
+    assert metrics.latency_violation_session_incidence_hoeffding_upper_bound == 1.0
+
+
+def test_invalid_latency_limit_is_rejected():
+    rows, groups = clustered_dataset()
+    with pytest.raises(ValueError, match="latency_limit_ms"):
+        evaluate_clustered_turn_policy(
+            rows,
+            TurnPolicy(0.8, 200, 900),
+            group_ids_by_turn=groups,
+            latency_limit_ms=0,
+        )
+
+
+@pytest.mark.parametrize(
+    "successes,opportunities",
+    [
+        ([0, 1], [0, 2]),
+        ([0], [1, 2]),
+        ([True], [1]),
+        ([2], [1]),
+        ([0], [True]),
+    ],
+)
+def test_weighted_hoeffding_rejects_invalid_group_counts(successes, opportunities):
+    with pytest.raises(ValueError):
+        weighted_hoeffding_upper_bound(successes, opportunities)

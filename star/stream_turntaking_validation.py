@@ -45,11 +45,12 @@ class ValidationStatus(str, Enum):
 
 @dataclass(frozen=True)
 class TurnPolicyConstraints:
-    """Predeclared acceptance limits for pause- and session-level error rates."""
+    """Predeclared acceptance limits for pause, session, and latency rates."""
 
     max_false_cutoff_rate: float = 0.05
     max_missed_final_rate: float = 0.05
     max_p95_latency_ms: int = 900
+    max_latency_violation_session_rate: float = 0.05
     min_hold_pauses: int = 100
     min_final_turns: int = 100
     min_calibration_groups: int = 20
@@ -57,7 +58,11 @@ class TurnPolicyConstraints:
     confidence_level: float = 0.95
 
     def __post_init__(self) -> None:
-        for name in ("max_false_cutoff_rate", "max_missed_final_rate"):
+        for name in (
+            "max_false_cutoff_rate",
+            "max_missed_final_rate",
+            "max_latency_violation_session_rate",
+        ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{name} must be a finite fraction in 0..1")
@@ -341,6 +346,7 @@ def select_and_validate_turn_policy(
             bootstrap_replicates=cluster_bootstrap_replicates,
             confidence_level=constraints.confidence_level,
             random_seed=cluster_random_seed,
+            latency_limit_ms=constraints.max_p95_latency_ms,
         )
 
     enough_basic_holdout = (
@@ -359,20 +365,31 @@ def select_and_validate_turn_policy(
             constraints.max_missed_final_rate,
             constraints.confidence_level,
         )
+        latency_required_groups = minimum_groups_for_zero_event_incidence(
+            constraints.max_latency_violation_session_rate,
+            constraints.confidence_level,
+        )
         cluster_evidence_sufficient = (
             false_required_groups is not None
             and missed_required_groups is not None
-            and holdout_group_count >= max(
-                constraints.min_holdout_groups,
-                false_required_groups,
-                missed_required_groups,
-            )
+            and latency_required_groups is not None
+            and cluster_metrics.false_cutoff_rate_effective_session_count
+            >= false_required_groups
+            and cluster_metrics.missed_final_rate_effective_session_count
+            >= missed_required_groups
+            and cluster_metrics.sessions_with_hold_pauses
+            >= false_required_groups
+            and cluster_metrics.session_count
+            >= max(missed_required_groups, latency_required_groups)
+            and holdout_group_count >= constraints.min_holdout_groups
         )
         cluster_point_violation = (
             cluster_metrics.pooled_false_cutoff_rate > constraints.max_false_cutoff_rate
             or cluster_metrics.pooled_missed_final_rate > constraints.max_missed_final_rate
             or cluster_metrics.false_cutoff_session_incidence > constraints.max_false_cutoff_rate
             or cluster_metrics.missed_final_session_incidence > constraints.max_missed_final_rate
+            or cluster_metrics.latency_violation_session_incidence
+            > constraints.max_latency_violation_session_rate
         )
 
     if (
@@ -386,16 +403,16 @@ def select_and_validate_turn_policy(
         status = ValidationStatus.INCONCLUSIVE_HOLDOUT
     elif cluster_metrics is not None:
         cluster_pass = (
-            cluster_metrics.bootstrap_false_cutoff_rate_upper_bound
+            cluster_metrics.false_cutoff_rate_hoeffding_upper_bound
             <= constraints.max_false_cutoff_rate
-            and cluster_metrics.bootstrap_missed_final_rate_upper_bound
+            and cluster_metrics.missed_final_rate_hoeffding_upper_bound
             <= constraints.max_missed_final_rate
-            and cluster_metrics.false_cutoff_session_incidence_upper_bound
+            and cluster_metrics.false_cutoff_session_incidence_hoeffding_upper_bound
             <= constraints.max_false_cutoff_rate
-            and cluster_metrics.missed_final_session_incidence_upper_bound
+            and cluster_metrics.missed_final_session_incidence_hoeffding_upper_bound
             <= constraints.max_missed_final_rate
-            and cluster_metrics.mean_session_p95_latency_upper_bound_ms
-            <= constraints.max_p95_latency_ms
+            and cluster_metrics.latency_violation_session_incidence_hoeffding_upper_bound
+            <= constraints.max_latency_violation_session_rate
         )
         status = (
             ValidationStatus.PASS

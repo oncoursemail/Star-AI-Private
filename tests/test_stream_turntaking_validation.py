@@ -74,12 +74,13 @@ def permissive_small_constraints():
         min_final_turns=1,
         min_calibration_groups=1,
         min_holdout_groups=1,
+        max_latency_violation_session_rate=1.0,
     )
 
 
 def test_policy_is_selected_on_calibration_and_passes_independent_holdout():
     calibration, cal_groups = dataset("cal")
-    holdout, hold_groups = dataset("hold")
+    holdout, hold_groups = dataset("hold", 700)
     result = run(calibration, holdout, {**cal_groups, **hold_groups})
     assert result.status is ValidationStatus.PASS
     assert result.selected_policy is not None
@@ -361,29 +362,38 @@ def test_cluster_aware_acceptance_requires_enough_independent_sessions():
 
 def test_cluster_aware_validation_passes_with_sufficient_zero_error_sessions():
     calibration, cal_groups = dataset("cal")
-    holdout, hold_groups = dataset("hold", 100)
+    holdout, hold_groups = dataset("hold", 700)
     result = run(calibration, holdout, {**cal_groups, **hold_groups})
     assert result.status is ValidationStatus.PASS
     assert result.cluster_metrics is not None
-    assert result.cluster_metrics.session_count == 100
-    assert result.cluster_metrics.false_cutoff_session_incidence_upper_bound <= 0.05
-    assert result.cluster_metrics.missed_final_session_incidence_upper_bound <= 0.05
+    assert result.cluster_metrics.session_count == 700
+    assert result.cluster_metrics.false_cutoff_rate_effective_session_count == 700
+    assert result.cluster_metrics.false_cutoff_rate_hoeffding_upper_bound <= 0.05
+    assert result.cluster_metrics.missed_final_rate_hoeffding_upper_bound <= 0.05
+    assert result.cluster_metrics.false_cutoff_session_incidence_hoeffding_upper_bound <= 0.05
+    assert result.cluster_metrics.missed_final_session_incidence_hoeffding_upper_bound <= 0.05
+    assert result.cluster_metrics.latency_violation_session_incidence_hoeffding_upper_bound <= 0.05
 
 
 def test_cluster_incidence_guard_detects_errors_concentrated_in_few_sessions():
     calibration, cal_groups = dataset("cal")
-    holdout, hold_groups = dataset("hold", 100)
+    holdout, hold_groups = dataset("hold", 700)
+    bad_turns = {f"hold-turn-{index}" for index in range(40)}
     holdout = [
-        replace(span, duration_ms=1200)
-        if span.turn_id in {"hold-turn-0", "hold-turn-1"} and span.kind is PauseKind.HOLD
+        replace(
+            span,
+            duration_ms=1200,
+            scores=(EndOfTurnScore(250, 0.99),),
+        )
+        if span.turn_id in bad_turns and span.kind is PauseKind.HOLD
         else span
         for span in holdout
     ]
     result = run(calibration, holdout, {**cal_groups, **hold_groups})
     assert result.status is ValidationStatus.FAIL
     assert result.cluster_metrics is not None
-    assert result.cluster_metrics.false_cutoff_session_count == 2
-    assert result.cluster_metrics.false_cutoff_session_incidence_upper_bound > 0.05
+    assert result.cluster_metrics.false_cutoff_session_count == 40
+    assert result.cluster_metrics.false_cutoff_session_incidence > 0.05
 
 
 def test_cluster_aware_can_be_disabled_for_legacy_pause_level_evaluation():
@@ -414,3 +424,36 @@ def test_invalid_cluster_bootstrap_settings_are_rejected_before_holdout_use():
             constraints=permissive_small_constraints(),
             cluster_bootstrap_replicates=100,
         )
+
+
+
+def test_invalid_latency_violation_session_budget_is_rejected():
+    with pytest.raises(ValueError):
+        TurnPolicyConstraints(max_latency_violation_session_rate=float("nan"))
+
+
+def test_latency_limit_is_part_of_cluster_session_evidence():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold", 700)
+    slow_turns = {f"hold-turn-{index}" for index in range(40)}
+    holdout = [
+        replace(span, scores=(EndOfTurnScore(100, 0.10),))
+        if span.turn_id in slow_turns and span.kind is PauseKind.END_OF_TURN
+        else span
+        for span in holdout
+    ]
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=TurnPolicyConstraints(
+            max_false_cutoff_rate=0.05,
+            max_missed_final_rate=1.0,
+            max_p95_latency_ms=900,
+            max_latency_violation_session_rate=0.05,
+        ),
+    )
+    assert result.cluster_metrics is not None
+    assert result.cluster_metrics.latency_violation_session_count == 40
+    assert result.cluster_metrics.latency_violation_session_incidence > 0.05
+    assert result.status is ValidationStatus.FAIL
