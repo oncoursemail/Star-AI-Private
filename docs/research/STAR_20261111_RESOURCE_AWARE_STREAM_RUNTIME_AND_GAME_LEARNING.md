@@ -53,7 +53,7 @@ The controller provides:
 - Strict deterministic priority and FIFO ordering within a priority.
 - Bounded queues, active leases and replay-ID history.
 - Request deadlines and lease expiry.
-- Explicit release and queued cancellation.
+- Explicit release and queued cancellation; an expired lease continues reserving capacity until the host confirms the worker has stopped.
 - A fresh host-health requirement before non-protected work is admitted.
 - Fail-closed behavior for missing, stale, future-dated or degraded health.
 - Aggregate snapshots with no request IDs, task text, prompts or user content.
