@@ -111,9 +111,9 @@ class MemoryTrial:
     def __post_init__(self) -> None:
         for name in ("trial_id", "case_id", "run_id"):
             _identifier(getattr(self, name), name)
-        if self.variant not in {"baseline", "candidate"}:
+        if type(self.variant) is not str or self.variant not in {"baseline", "candidate"}:
             raise ValueError("variant must be baseline or candidate")
-        if self.result not in {"success", "failure", "error"}:
+        if type(self.result) is not str or self.result not in {"success", "failure", "error"}:
             raise ValueError("result must be success, failure, or error")
         for name in (
             "memory_applied",
