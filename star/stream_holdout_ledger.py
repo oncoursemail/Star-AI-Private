@@ -70,7 +70,7 @@ class HoldoutLedger:
             raise ValueError("ledger path must name a file, not a directory")
         if not resolved.parent.exists():
             raise FileNotFoundError("ledger parent directory must already exist")
-        self._path = str(resolved)
+        self._path = str(resolved.resolve())
         self._timeout_seconds = timeout
         self._initialize()
 
@@ -86,28 +86,35 @@ class HoldoutLedger:
     def _initialize(self) -> None:
         connection = self._connect()
         try:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS holdout_claims (
-                    dataset_digest TEXT PRIMARY KEY
-                        CHECK(length(dataset_digest) = 64),
-                    claimed_at_ms INTEGER NOT NULL
-                        CHECK(claimed_at_ms >= 0),
-                    evaluator_version TEXT NOT NULL
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS holdout_claims (
+                        dataset_digest TEXT PRIMARY KEY
+                            CHECK(length(dataset_digest) = 64),
+                        claimed_at_ms INTEGER NOT NULL
+                            CHECK(claimed_at_ms >= 0),
+                        evaluator_version TEXT NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS holdout_groups (
-                    group_digest TEXT PRIMARY KEY
-                        CHECK(length(group_digest) = 64),
-                    dataset_digest TEXT NOT NULL
-                        REFERENCES holdout_claims(dataset_digest)
-                        ON DELETE CASCADE
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS holdout_groups (
+                        group_digest TEXT PRIMARY KEY
+                            CHECK(length(group_digest) = 64),
+                        dataset_digest TEXT NOT NULL
+                            REFERENCES holdout_claims(dataset_digest)
+                            ON DELETE CASCADE
+                    )
+                    """
                 )
-                """
-            )
+                connection.execute("COMMIT")
+            except Exception:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise
         finally:
             connection.close()
 
