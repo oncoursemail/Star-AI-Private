@@ -135,7 +135,10 @@ class ExperimentPolicy:
 
 
 def _margin(value: object, label: str) -> None:
-    if type(value) not in (int, float) or not math.isfinite(float(value)) or not 0 <= value <= 1:
+    if type(value) not in (int, float):
+        raise ValueError(f"{label} must be a finite fraction in 0..1")
+    numeric = float(value)
+    if not math.isfinite(numeric) or not 0 <= numeric <= 1:
         raise ValueError(f"{label} must be a finite fraction in 0..1")
 
 
