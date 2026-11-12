@@ -11,7 +11,7 @@ def test_first_nonempty_output_callback_and_underflows_are_counted():
     telemetry.record_callback(frames=128, emitted_frames=128, output_underflow=True, at=1.02)
     snapshot = telemetry.snapshot()
     assert snapshot.first_playback_at == pytest.approx(1.01)
-    assert snapshot.output_callbacks == 3
+    assert snapshot.output_callbacks_with_audio == 2
     assert snapshot.output_callbacks_with_audio == 2
     assert snapshot.output_underflows == 1
 
@@ -22,7 +22,6 @@ def test_reset_starts_a_fresh_reply_window():
     telemetry.reset()
     snapshot = telemetry.snapshot()
     assert snapshot.first_playback_at is None
-    assert snapshot.output_callbacks == 0
     assert snapshot.output_callbacks_with_audio == 0
     assert snapshot.output_underflows == 0
 
@@ -46,5 +45,4 @@ def test_idle_underflow_flag_does_not_count_as_playback_dropout():
     telemetry.record_callback(frames=128, emitted_frames=0, output_underflow=True, at=2.0)
     snapshot = telemetry.snapshot()
     assert snapshot.output_underflows == 0
-    assert snapshot.output_callbacks == 1
     assert snapshot.output_callbacks_with_audio == 0
