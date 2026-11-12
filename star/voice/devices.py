@@ -12,6 +12,7 @@ import threading
 import time
 
 from .pcm import FRAME_SAMPLES, SAMPLE_RATE
+from .playback import PlaybackSnapshot, PlaybackTelemetry
 
 log = logging.getLogger(__name__)
 
@@ -102,22 +103,29 @@ class SoundSpeaker:
         self._buffer = bytearray()
         self._played = 0                    # samples played since reset()
         self._levels: collections.deque = collections.deque(maxlen=64)     # (time, rms) of recent output blocks
+        self._playback = PlaybackTelemetry()
         self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16", device=_device(device),
                                           callback=self._callback)
 
-    def _callback(self, out, frames, _time, _status) -> None:
+    def _callback(self, out, frames, _time, status) -> None:
+        callback_at = time.monotonic()
         wanted = frames * 2
+        underflow = getattr(status, "output_underflow", False) is True
         with self._lock:
             chunk = bytes(self._buffer[:wanted])
             del self._buffer[:wanted]
             self._played += len(chunk) // 2
+            self._playback.record_callback(
+                at=callback_at, frames=frames, emitted_frames=len(chunk) // 2,
+                output_underflow=underflow,
+            )
         out[:len(chunk)] = chunk
         if len(chunk) < wanted:
             out[len(chunk):] = b"\x00" * (wanted - len(chunk))
         if chunk:
             import numpy as np
             block = np.frombuffer(chunk, dtype="<i2").astype(np.float32)
-            self._levels.append((time.monotonic(), float(np.sqrt(np.mean(block * block))) / 32768.0))
+            self._levels.append((callback_at, float(np.sqrt(np.mean(block * block))) / 32768.0))
 
     def __enter__(self) -> "SoundSpeaker":
         self._stream.start()
@@ -148,6 +156,7 @@ class SoundSpeaker:
     def reset(self) -> None:
         with self._lock:
             self._played = 0
+            self._playback.reset()
 
     def pending_seconds(self) -> float:
         with self._lock:
@@ -156,6 +165,10 @@ class SoundSpeaker:
     def played_seconds(self) -> float:
         with self._lock:
             return self._played / self.sample_rate
+
+    def playback_snapshot(self) -> PlaybackSnapshot:
+        """Return callback timing and PortAudio underflow counters for the current reply."""
+        return self._playback.snapshot()
 
     def level(self) -> float:
         """Loudest output block of the last 0.4 s (peak-held so the echo gate can compare against it)."""
