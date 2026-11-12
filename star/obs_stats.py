@@ -114,7 +114,6 @@ def parse_get_stats_response(
     missing = _REQUIRED - set(response_data)
     if missing:
         raise ValueError("GetStats responseData is missing required fields")
-    optional = {"cpuUsage", "memoryUsage"}
     return ObsStatsSnapshot(
         obs_epoch=obs_epoch,
         stream_epoch=stream_epoch,
