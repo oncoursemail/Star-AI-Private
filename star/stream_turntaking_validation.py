@@ -197,6 +197,10 @@ def select_and_validate_turn_policy(
     groups. All turns from one group must stay in one partition. The holdout is
     evaluated only after calibration selects a policy; callers must keep the
     holdout sealed and must not repeatedly tune against it.
+
+    When a HoldoutLedger is supplied, the dataset and all holdout session groups
+    are atomically consumed before scoring. A crash after that claim still burns
+    the holdout. Without a ledger, one-use enforcement remains the caller's job.
     """
     if not isinstance(constraints, TurnPolicyConstraints):
         raise TypeError("constraints must be TurnPolicyConstraints")
