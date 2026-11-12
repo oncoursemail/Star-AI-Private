@@ -170,7 +170,7 @@ def test_cluster_metrics_include_latency_violation_session_rate():
         TurnPolicy(0.8, 200, 900),
         group_ids_by_turn=groups,
         bootstrap_replicates=200,
-        latency_limit_ms=250,
+        latency_limit_ms=350,
     )
     assert metrics.latency_limit_ms == 250
     assert metrics.latency_violation_session_count == 1
