@@ -18,7 +18,6 @@ class PlaybackSnapshot:
     """Per-reply playback evidence; None counters mean the backend cannot report them."""
 
     first_playback_at: float | None
-    output_callbacks: int | None
     output_callbacks_with_audio: int | None
     output_underflows: int | None  # PortAudio underflows observed while non-empty audio was emitted
 
@@ -33,7 +32,6 @@ class PlaybackTelemetry:
 
     def reset(self) -> None:
         with self._lock:
-            self._callbacks = 0
             self._callbacks_with_audio = 0
             self._output_underflows = 0
             self._first_playback_at: float | None = None
@@ -57,7 +55,6 @@ class PlaybackTelemetry:
         if type(stamp) not in (int, float) or not math.isfinite(stamp):
             raise ValueError("callback timestamp must be finite")
         with self._lock:
-            self._callbacks += 1
             if emitted_frames:
                 self._callbacks_with_audio += 1
                 if self._first_playback_at is None:
@@ -69,7 +66,6 @@ class PlaybackTelemetry:
         with self._lock:
             return PlaybackSnapshot(
                 first_playback_at=self._first_playback_at,
-                output_callbacks=self._callbacks,
                 output_callbacks_with_audio=self._callbacks_with_audio,
                 output_underflows=self._output_underflows,
             )
