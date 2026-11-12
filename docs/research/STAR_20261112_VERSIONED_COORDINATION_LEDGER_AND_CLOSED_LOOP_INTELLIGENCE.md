@@ -1,7 +1,7 @@
 # STAR AI: Versioned Task Coordination, Closed-Loop Learning, and Runtime Research
 
 **Research date:** 2026-11-12  
-**Implementation branch:** \`feat/versioned-task-ledger-20261112-auto11\`  
+**Implementation branch:** `feat/versioned-task-ledger-20261112-auto11`  
 **Parent:** draft PR #1153, stacked on the current stream/voice runtime work  
 **Scope:** add a bounded control-plane primitive for coordinating STAR's concurrent tasks, then define how it should connect to streaming, local inference, game learning, creator workflows, and general knowledge.
 
@@ -9,7 +9,7 @@
 
 STAR already has separate components for asynchronous agent execution, dependency planning, mission checkpoints, stream workload admission, host telemetry, interruption handling, game-skill evidence, and memory evaluation. The missing primitive identified in this audit is a small, shared task-lifecycle record that can reject stale worker results when a task is cancelled, refined, retried, or superseded.
 
-This branch adds \`star/task_ledger.py\` and focused tests. It is deliberately a **control-plane ledger**, not a process manager or permission system:
+This branch adds `star/task_ledger.py` and focused tests. It is deliberately a **control-plane ledger**, not a process manager or permission system:
 
 - Every mutation advances a monotonically increasing task version.
 - A worker claims a task with a bounded lease and receives the exact version/attempt it may complete.
@@ -19,25 +19,25 @@ This branch adds \`star/task_ledger.py\` and focused tests. It is deliberately a
 - Capacity is bounded and does not silently evict active work.
 - Monotonic timestamps are scoped to one host clock epoch and must not be restored across reboot.
 
-The implementation does **not** yet wire the ledger into \`agent_runtime.run_plan\`, Windows process supervision, OBS, VTube Studio, or game controls. Those integrations are staged below so the first change stays testable and does not silently change runtime permissions or production behavior.
+The implementation does **not** yet wire the ledger into `agent_runtime.run_plan`, Windows process supervision, OBS, VTube Studio, or game controls. Those integrations are staged below so the first change stays testable and does not silently change runtime permissions or production behavior.
 
 ## 1. Implementation: versioned task ledger
 
 ### New module
 
-\`star/task_ledger.py\`
+`star/task_ledger.py`
 
 ### Public types
 
-- \`TaskState\`: queued, running, completed, failed, cancelled, expired.
-- \`TaskRecord\`: immutable, content-free current state.
-- \`TaskLease\`: host-internal attempt handle, not an authorization credential.
-- \`ReapReport\`: counts of requeued expired leases and expired task deadlines.
-- \`TaskLedger\`: bounded, thread-safe compare-and-swap lifecycle coordinator.
+- `TaskState`: queued, running, completed, failed, cancelled, expired.
+- `TaskRecord`: immutable, content-free current state.
+- `TaskLease`: host-internal attempt handle, not an authorization credential.
+- `ReapReport`: counts of requeued expired leases and expired task deadlines.
+- `TaskLedger`: bounded, thread-safe compare-and-swap lifecycle coordinator.
 
 ### Lifecycle
 
-\`\`\`text
+```text
 CREATE
   |
   v
@@ -57,11 +57,11 @@ QUEUED --claim(expected_version)--> RUNNING
   |
   +--cancel--------------------------> CANCELLED
   +--deadline expires----------------> EXPIRED
-\`\`\`
+```
 
 ### Race protection
 
-A task's \`version\` changes whenever its meaning or lifecycle changes. The worker can commit only if all of these still match:
+A task's `version` changes whenever its meaning or lifecycle changes. The worker can commit only if all of these still match:
 
 1. task ID;
 2. current task version;
@@ -81,14 +81,14 @@ The same rule applies after cancellation or lease expiry. A reaper returns an ab
 
 ### Important boundaries
 
-- \`cancel()\` invalidates a worker's ability to commit; it does **not** kill an operating-system process. A trusted supervisor must request termination and verify that the process actually stopped before releasing resource reservations.
-- \`stop speaking\` is not \`cancel task\`. Audio playback has its own playback-generation/epoch boundary. A user may stop STAR's current speech while allowing research or game-building work to continue.
+- `cancel()` invalidates a worker's ability to commit; it does **not** kill an operating-system process. A trusted supervisor must request termination and verify that the process actually stopped before releasing resource reservations.
+- `stop speaking` is not `cancel task`. Audio playback has its own playback-generation/epoch boundary. A user may stop STAR's current speech while allowing research or game-building work to continue.
 - A lease is not a credential and does not authorize a tool. Tool authorization must be checked by the trusted host immediately before the side effect.
 - The ledger is in-memory. Durable recovery should use the repository's existing mission/task checkpoint formats and revalidate task contract, worker revision, source revision, and clock epoch. Do not persist raw monotonic timestamps and pretend they remain valid after restart.
 
 ### Focused tests
 
-\`tests/test_task_ledger.py\` covers:
+`tests/test_task_ledger.py` covers:
 
 - concurrent claim race (exactly one winner);
 - compare-and-swap version checks;
@@ -111,23 +111,23 @@ Do not create a second agent framework, scheduler, memory database, or stream co
 
 | Existing component | Correct responsibility | Ledger integration |
 |---|---|---|
-| \`star/orchestration.py\` | Validate task DAG, dependencies, read/write conflicts | Hash the validated task contract; do not duplicate dependency planning |
-| \`star/agent_runtime.py\` | Execute trusted async workers, timeouts, result isolation | Later add an optional ledger observer/adapter for start/finish events |
-| \`star/mission_checkpoint.py\` | Resume completed read-only mission nodes when revisions match | Restore only independently validated completed state |
-| \`star/task_checkpoint.py\` | Atomic step-level checkpointing | Keep detailed resumable step data here, not in the coordination ledger |
-| \`star/stream_workload_runtime.py\` | Admission, queueing, resource leases, health freshness | Link task ID to workload request/lease without treating one as the other |
-| \`star/stream_hardware_telemetry.py\` | Off-hot-path host CPU/RAM/VRAM/frame/audio observations | Use real, fresh host telemetry before scheduling; unknown is not zero |
-| \`star/stream_interrupt_host.py\` | Playback epoch invalidation, physical stop acknowledgement, avatar flush | Keep playback cancellation independent from task cancellation |
-| \`star/game_skill_memory.py\` | Store host-scored game episodes | Store verified skill evidence there; task ledger tracks the attempt lifecycle only |
-| \`star/game_skill_promotion.py\` / \`star/game_transfer_eval.py\` | Holdout evidence and manual promotion eligibility | Never promote a skill merely because a task completed |
+| `star/orchestration.py` | Validate task DAG, dependencies, read/write conflicts | Hash the validated task contract; do not duplicate dependency planning |
+| `star/agent_runtime.py` | Execute trusted async workers, timeouts, result isolation | Later add an optional ledger observer/adapter for start/finish events |
+| `star/mission_checkpoint.py` | Resume completed read-only mission nodes when revisions match | Restore only independently validated completed state |
+| `star/task_checkpoint.py` | Atomic step-level checkpointing | Keep detailed resumable step data here, not in the coordination ledger |
+| `star/stream_workload_runtime.py` | Admission, queueing, resource leases, health freshness | Link task ID to workload request/lease without treating one as the other |
+| `star/stream_hardware_telemetry.py` | Off-hot-path host CPU/RAM/VRAM/frame/audio observations | Use real, fresh host telemetry before scheduling; unknown is not zero |
+| `star/stream_interrupt_host.py` | Playback epoch invalidation, physical stop acknowledgement, avatar flush | Keep playback cancellation independent from task cancellation |
+| `star/game_skill_memory.py` | Store host-scored game episodes | Store verified skill evidence there; task ledger tracks the attempt lifecycle only |
+| `star/game_skill_promotion.py` / `star/game_transfer_eval.py` | Holdout evidence and manual promotion eligibility | Never promote a skill merely because a task completed |
 
 ### Recommended future adapter
 
-An optional adapter should subscribe to the existing \`agent_started\`, \`agent_finished\`, \`agent_blocked\`, and \`agent_resumed\` events. It should:
+An optional adapter should subscribe to the existing `agent_started`, `agent_finished`, `agent_blocked`, and `agent_resumed` events. It should:
 
 - namespace task IDs by a host-created run ID;
 - derive a canonical digest from the validated task contract;
-- claim the ledger task on \`agent_started\`;
+- claim the ledger task on `agent_started`;
 - commit only a digest of validated result content on successful finish;
 - mark failures with bounded error codes, never raw exception messages;
 - reconcile checkpoint-resumed nodes explicitly;
@@ -212,14 +212,14 @@ Track separately:
 
 Recommended states:
 
-- \`LISTENING\`
-- \`DIRECTED_TO_STAR\`
-- \`VIEWER_TO_VIEWER\`
-- \`BACKCHANNEL\`
-- \`INTERRUPTION_CANDIDATE\`
-- \`YIELDING\`
-- \`RESUME_CANDIDATE\`
-- \`RECOVERING\`
+- `LISTENING`
+- `DIRECTED_TO_STAR`
+- `VIEWER_TO_VIEWER`
+- `BACKCHANNEL`
+- `INTERRUPTION_CANDIDATE`
+- `YIELDING`
+- `RESUME_CANDIDATE`
+- `RECOVERING`
 
 Do not infer real identity from voice similarity. Do not answer every utterance. If diarization or addressee detection is uncertain, silence or a short neutral acknowledgement is safer than inventing who said what.
 
@@ -317,7 +317,7 @@ Each reusable skill should include:
 - known failure modes;
 - last verified revision.
 
-Practice evidence and held-out transfer evidence must remain separate. One win is not mastery. Promotion should remain manual and use the existing \`game_skill_memory\`, \`game_skill_promotion\`, and \`game_transfer_eval\` evidence gates.
+Practice evidence and held-out transfer evidence must remain separate. One win is not mastery. Promotion should remain manual and use the existing `game_skill_memory`, `game_skill_promotion`, and `game_transfer_eval` evidence gates.
 
 ## 7. STAR Creator: finish games, not just scripts
 
@@ -360,7 +360,7 @@ Cover mathematics, physics, computing, engineering, biology, history, geography,
 | Phase | Deliverable | Acceptance evidence |
 |---|---|---|
 | 0 | Versioned task ledger (this branch) | deterministic concurrency, stale-result, deadline, and lease tests |
-| 1 | Optional adapter for \`agent_runtime\` events | exact-head full suite; no duplicate/out-of-order event commits |
+| 1 | Optional adapter for `agent_runtime` events | exact-head full suite; no duplicate/out-of-order event commits |
 | 2 | Supervisor reconciliation | process exit confirmed before resource lease release |
 | 3 | Windows telemetry collector hardening | real CPU/RAM/VRAM and frame-time samples; bounded probe timeouts |
 | 4 | OBS read-only transport | authenticated loopback connection, reconnect epochs, no secret logging |
@@ -388,4 +388,4 @@ Cover mathematics, physics, computing, engineering, biology, history, geography,
 
 ## Validation boundary
 
-The new task-ledger module is an in-memory control-plane primitive with no external side effects. The 28 focused tests passed in an isolated local run. The exact repository branch still needs GitHub Actions validation. This branch does not add a Windows collector, OBS transport, WASAPI capture, VTube Studio connector, game controller, durable ledger store, or automatic process termination. It does not change model weights, routing defaults, runtime permissions, production \`main\`, or release artifacts.
+The new task-ledger module is an in-memory control-plane primitive with no external side effects. The 28 focused tests passed in an isolated local run. The exact repository branch still needs GitHub Actions validation. This branch does not add a Windows collector, OBS transport, WASAPI capture, VTube Studio connector, game controller, durable ledger store, or automatic process termination. It does not change model weights, routing defaults, runtime permissions, production `main`, or release artifacts.
