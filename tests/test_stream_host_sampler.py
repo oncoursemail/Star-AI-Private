@@ -168,3 +168,10 @@ def test_assembled_sample_timestamp_must_increase():
                   vram_free_mb=obs(3_000, at=9_800))
     with pytest.raises(ValueError, match="sample timestamp must increase"):
         sampler.build(data)
+
+
+
+def test_extreme_integer_metric_is_rejected_without_overflow():
+    data = inputs(gaming=obs(True), game_fps_p10=obs(10**1000))
+    with pytest.raises(ValueError, match="finite number in range"):
+        StreamHostSampler().build(data)
