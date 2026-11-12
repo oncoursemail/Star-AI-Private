@@ -17,7 +17,7 @@ class TurnMetrics:
     first_token_at: float | None = None  # first text from the brain
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
     first_audio_at: float | None = None  # first reply audio submitted to the speaker queue
-    first_playback_at: float | None = None  # first non-empty output callback (not acoustic arrival)
+    first_playback_at: float | None = None  # estimated DAC time; callback-time fallback, not acoustic arrival
     speaker_output_callbacks_with_audio: int | None = None
     speaker_output_underflows: int | None = None
     first_ack_at: float | None = None    # acknowledgement clip handed to the speaker (star/voice/acks.py)
@@ -69,8 +69,9 @@ class TurnMetrics:
 def latency_summary(turns: list[TurnMetrics]) -> dict:
     """Report tail latency without retaining user text or overstating acoustic timing.
 
-    first_playback_at is the first non-empty output callback (or a simulated
-    speaker's scheduled start), not a DAC/room/listener measurement. Missing or
+    first_playback_at is PortAudio's estimated DAC time for the first non-empty
+    output buffer, mapped to monotonic time (or a simulated speaker's scheduled
+    start). It is not a room/listener measurement. Missing or
     invalid timestamps remain incomplete/invalid instead of improving p95.
     """
     if len(turns) > 10000 or any(not isinstance(t, TurnMetrics) for t in turns):
