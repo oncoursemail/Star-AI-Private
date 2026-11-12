@@ -1,8 +1,8 @@
 # STAR AI: Delivery Continuity, Playback Receipts, and Unified Intelligence
 
 **Research date:** 2026-11-12  
-**Implementation branch:** \`feat/delivery-ledger-20261112\`  
-**Parent:** draft PR #1155 (\`fix/task-ledger-deadline-retry-20261112\`)  
+**Implementation branch:** `feat/delivery-ledger-20261112`  
+**Parent:** draft PR #1155 (`fix/task-ledger-deadline-retry-20261112`)  
 **Scope:** add a bounded, content-free delivery ledger so completed work remains an outstanding obligation until each spoken segment has a trusted local playback acknowledgement. Translate current voice, workflow, observability, inference, gaming, and game-creation research into concrete STAR integration requirements.
 
 ## Executive summary
@@ -11,7 +11,7 @@ STAR now has a versioned task ledger that can tell whether work was queued, runn
 
 A research task can complete while its result is still waiting to be spoken. A TTS request can finish generating while audio is still queued. Playback can be interrupted after only part of a response was heard locally. Treating any of those earlier events as "delivered" creates dropped explanations, duplicate speech, or false claims that STAR has finished communicating.
 
-This change adds \`star/delivery_ledger.py\`, a separate control-plane primitive for ordered speech segments and playback receipts.
+This change adds `star/delivery_ledger.py`, a separate control-plane primitive for ordered speech segments and playback receipts.
 
 ### Implemented now
 
@@ -42,7 +42,7 @@ Keep four independent state domains:
 
 Recommended flow:
 
-\`\`\`text
+```text
 USER REQUEST
     |
 TASK LEDGER ----> verified result digest
@@ -62,7 +62,7 @@ TASK LEDGER ----> verified result digest
             acknowledge segment / retry tail
                          |
               delivery obligation closed
-\`\`\`
+```
 
 Do not merge these states. A completed task is not a spoken result; generated TTS is not played audio; local playback completion is not proof of remote audience reception.
 
@@ -90,14 +90,14 @@ A repeated create with exactly the same contract is idempotent. Reusing a delive
 
 The delivery is split at semantic boundaries (normally sentence or short clause boundaries), not arbitrary byte counts. A host claims only the next unacknowledged segment.
 
-- \`READY\`: waiting for a segment worker.
-- \`CLAIMED\`: a worker owns a bounded lease; playback has not started.
-- \`PLAYING\`: the host has reported the matching playback ID started.
-- \`PARTIAL\`: the current segment was interrupted or did not reach its completion boundary.
-- \`FAILED\`: an attempt failed but can be retried within the deadline.
-- \`DELIVERED\`: every segment has a complete local playback acknowledgement.
-- \`CANCELLED\`: explicitly superseded/cancelled.
-- \`EXPIRED\`: the absolute delivery deadline passed.
+- `READY`: waiting for a segment worker.
+- `CLAIMED`: a worker owns a bounded lease; playback has not started.
+- `PLAYING`: the host has reported the matching playback ID started.
+- `PARTIAL`: the current segment was interrupted or did not reach its completion boundary.
+- `FAILED`: an attempt failed but can be retried within the deadline.
+- `DELIVERED`: every segment has a complete local playback acknowledgement.
+- `CANCELLED`: explicitly superseded/cancelled.
+- `EXPIRED`: the absolute delivery deadline passed.
 
 Only a non-interrupted receipt whose playback position reaches the segment duration (within a small, explicit host-calibrated tolerance) advances the cursor. A partial segment is retried from its beginning; previously acknowledged segments are not replayed. This bounds repetition to the currently interrupted segment. The host should therefore use natural, reasonably short speech chunks and measure duplicate replay rate rather than choosing a universal fixed chunk duration.
 
@@ -118,13 +118,13 @@ These rules prevent overlapping audio and stale callback races. The trusted host
 
 ### LiveKit playback completion is a separate event
 
-LiveKit's official voice I/O API exposes a \`PlaybackFinishedEvent\` with \`interrupted\`, \`playbackPosition\`, and optional \`synchronizedTranscript\`. The event reports how much audio actually played. Its guidance explicitly distinguishes final transcription from playback completion.
+LiveKit's official voice I/O API exposes a `PlaybackFinishedEvent` with `interrupted`, `playbackPosition`, and optional `synchronizedTranscript`. The event reports how much audio actually played. Its guidance explicitly distinguishes final transcription from playback completion.
 
 Sources:
 - https://docs.livekit.io/reference/agents-js/interfaces/agents.voice.PlaybackFinishedEvent.html
 - https://kb.livekit.io/articles/8142160213-how-to-detect-when-an-agent-has-finished-speaking
 
-**STAR application:** wire the actual playback-finished event to \`acknowledge_playback\`; do not close a delivery when text generation or a final transcript event arrives. When interrupted, use the host's playback position and synchronized transcript as diagnostics, but only acknowledge complete semantic segments. Keep the existing playback clock's first-submission and first-playback measurements separate.
+**STAR application:** wire the actual playback-finished event to `acknowledge_playback`; do not close a delivery when text generation or a final transcript event arrives. When interrupted, use the host's playback position and synchronized transcript as diagnostics, but only acknowledge complete semantic segments. Keep the existing playback clock's first-submission and first-playback measurements separate.
 
 ### Turn-taking and delivery must remain separate
 
@@ -157,7 +157,7 @@ Source:
 
 ### Local inference speed must be tested against real concurrency
 
-The llama.cpp SPEED-Bench client measures prompt throughput, generation throughput, end-to-end latency, and speculative draft acceptance. Its instructions say to match benchmark client concurrency to the server's configured slot count (\`--np\`) for meaningful throughput comparisons.
+The llama.cpp SPEED-Bench client measures prompt throughput, generation throughput, end-to-end latency, and speculative draft acceptance. Its instructions say to match benchmark client concurrency to the server's configured slot count (`--np`) for meaningful throughput comparisons.
 
 Sources:
 - https://github.com/ggml-org/llama.cpp/blob/master/tools/server/bench/speed-bench/README.md
@@ -192,7 +192,7 @@ The next Social Director should consume:
 - outstanding delivery count and age;
 - active segment and local playback state.
 
-The director should be allowed to choose \`SPEAK\`, \`YIELD\`, \`WAIT\`, \`RESUME\`, or \`REMAIN_SILENT\`. It should not be allowed to mark a delivery complete. Only the trusted playback host can provide the receipt.
+The director should be allowed to choose `SPEAK`, `YIELD`, `WAIT`, `RESUME`, or `REMAIN_SILENT`. It should not be allowed to mark a delivery complete. Only the trusted playback host can provide the receipt.
 
 The Avatar Director should subscribe to the same playback generation and actual playback clock. Mouth visemes should follow audio playback, not TTS text arrival. On interruption, stop mouth movement at the confirmed playback boundary and preserve the current expression/gaze state long enough to avoid abrupt visual snapping. The VTube Studio adapter remains owner-authorized and revocable.
 
@@ -230,9 +230,9 @@ A natural streaming persona is not simply constant talking or simulated emotion.
 
 ## 6. Current validation boundary
 
-The new module is a pure, in-memory state machine. It has 34 focused tests covering idempotency, ordered segments, interruption, partial playback, stale receipts, lease recovery, cancellation, deadlines, privacy-oriented schema limits, bounded capacity, clock epochs, and concurrent claims. Local validation performed before commit: \`pytest -q\` (34 passed) and Python compile/smoke check.
+The new module is a pure, in-memory state machine. It has 34 focused tests covering idempotency, ordered segments, interruption, partial playback, stale receipts, lease recovery, cancellation, deadlines, privacy-oriented schema limits, bounded capacity, clock epochs, and concurrent claims. Local validation performed before commit: `pytest -q` (34 passed) and Python compile/smoke check.
 
-The implementation does **not** yet connect to STAR's TTS, LiveKit, PortAudio, Windows audio, OBS, VTube Studio, chat, or agent runtime. It does not persist across process restarts and does not prove remote audience reception. No physical Windows, RTX, game, or livestream test is claimed. No model weights, routing defaults, runtime permissions, broadcast settings, or production \`main\` are changed.
+The implementation does **not** yet connect to STAR's TTS, LiveKit, PortAudio, Windows audio, OBS, VTube Studio, chat, or agent runtime. It does not persist across process restarts and does not prove remote audience reception. No physical Windows, RTX, game, or livestream test is claimed. No model weights, routing defaults, runtime permissions, broadcast settings, or production `main` are changed.
 
 ## 7. Research references
 
