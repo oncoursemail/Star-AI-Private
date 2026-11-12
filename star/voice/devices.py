@@ -193,7 +193,7 @@ class SoundSpeaker:
 
         out[:len(chunk)] = chunk
         if len(chunk) < wanted:
-            out[len(chunk):] = b"\\x00" * (wanted - len(chunk))
+            out[len(chunk):] = b"\x00" * (wanted - len(chunk))
 
         if chunk:
             # Metering is best-effort and bounded. A full queue drops only an old meter
