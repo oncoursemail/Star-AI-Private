@@ -38,3 +38,13 @@ def test_invalid_callback_observations_are_rejected(kwargs):
     telemetry = PlaybackTelemetry()
     with pytest.raises(ValueError):
         telemetry.record_callback(**kwargs)
+
+
+
+def test_idle_underflow_flag_does_not_count_as_playback_dropout():
+    telemetry = PlaybackTelemetry()
+    telemetry.record_callback(frames=128, emitted_frames=0, output_underflow=True, at=2.0)
+    snapshot = telemetry.snapshot()
+    assert snapshot.output_underflows == 0
+    assert snapshot.output_callbacks == 1
+    assert snapshot.output_callbacks_with_audio == 0
