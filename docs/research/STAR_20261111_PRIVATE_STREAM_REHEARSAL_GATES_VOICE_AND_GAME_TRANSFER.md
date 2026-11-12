@@ -140,6 +140,15 @@ Use session-local speaker labels only where the platform provides them. Do not i
 
 A good streamer sometimes listens, reacts nonverbally or remains quiet. Constant speech is not a naturalness metric.
 
+### Synthetic social rehearsal: Concordia
+
+Google DeepMind's Concordia is a component-based framework for generative agent-based simulations. It combines language-model reasoning, associative memory and a Game Master that applies actions to a simulated environment.
+
+Source:
+- https://deepmind.google/research/publications/64717/
+
+**STAR application:** use a local synthetic rehearsal room to generate controlled group-chat situations before a public stream: multiple viewer personas, side conversations, jokes, backchannels, direct questions, corrections, interruptions and topic changes. The evaluator should score whether Star speaks, yields or stays silent at the right time. Synthetic conversations are useful for coverage and regression, but they are not a substitute for consented human evaluation or real stream testing. Do not use private viewer conversations as training material without explicit permission.
+
 ## 4. Avatar embodiment and synchronization
 
 ### VTube Studio
