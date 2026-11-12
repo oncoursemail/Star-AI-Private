@@ -77,12 +77,13 @@ At a 95% one-sided Wilson confidence level and a 5% maximum session-incidence bu
 For a 10% budget, fewer independent sessions are required. A zero-risk budget of exactly 0% cannot be demonstrated from a finite sample, so cluster-aware evaluation remains inconclusive unless an observed violation already establishes failure.
 
 A cluster-aware PASS requires all of the following:
-1. Existing pause-level Wilson bounds satisfy their predeclared budgets.
-2. Session-cluster bootstrap upper bounds for false-cutoff and missed-final rates satisfy their budgets.
-3. Session-incidence Wilson upper bounds satisfy their budgets.
-4. The existing overall p95 endpointing latency satisfies its limit.
-5. The bootstrap upper bound for mean session p95 latency satisfies the same latency limit.
-6. The independent-session count is large enough for the configured zero-event incidence budgets.
+1. Session-cluster bootstrap upper bounds for false-cutoff and missed-final rates satisfy their budgets.
+2. Session-incidence Wilson upper bounds satisfy their budgets.
+3. The existing overall p95 endpointing latency satisfies its limit.
+4. The bootstrap upper bound for mean session p95 latency satisfies the same latency limit.
+5. The independent-session count is large enough for the configured zero-event incidence budgets.
+
+The old pause-level Wilson bounds remain available as diagnostics, but cluster-aware acceptance does not treat pauses as independent evidence. They remain the acceptance gate only when callers explicitly select legacy `cluster_aware=False` mode.
 
 If the session count is too small and no observed point estimate already violates a budget, the result is INCONCLUSIVE rather than PASS.
 
