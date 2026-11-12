@@ -33,7 +33,7 @@ The adapter deliberately does **not** open a WebSocket, read a password, start/s
 | `outputSkippedFrames` | `output_skipped_frames` | Output-thread skipped-frame counter |
 | `outputTotalFrames` | `output_total_frames` | Output-thread total-frame counter |
 | `cpuUsage` | `cpu_usage_percent` | Optional OBS CPU percentage |
-| `memoryUsage` | `memory_usage_mib` | Optional OBS memory in MiB |
+| `memoryUsage` | `memory_usage_mb` | Optional OBS memory in MB |
 
 Unknown fields are ignored and never copied. Values must be finite and bounded; booleans are not numbers; counters must be nonnegative integer-valued JSON numbers within the exactly representable integer range. No scene names, source names, chat, stream keys, passwords, URLs, or media are accepted.
 
