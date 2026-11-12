@@ -68,7 +68,7 @@ The host should apply both the cross-workload resource lease and the inference-s
 | Learning | Deferred | Deferred | Consolidation should not compete with a live session |
 | Asset generation | Deferred | Deferred | Rendering/generation is expensive and nonurgent |
 
-When the machine is idle and healthy, all lanes can compete under the explicit resource budget. During an active stream or game, only the latency-sensitive lanes and chat can use the scheduler. When pressure or telemetry staleness is detected, all nonprotected lanes are blocked. The protected classification only affects resource reservation; it does not grant microphone, game, OBS, VTube Studio, file, network, or broadcast permissions.
+When the machine is idle and healthy, all lanes can compete under the explicit resource budget. During an active stream or game, only the latency-sensitive lanes and chat can use the scheduler. When pressure or telemetry staleness is detected, all nonprotected lanes are blocked. Chat is protected from health gating but cannot consume the hard real-time reserve; only audio, game control, voice, and avatar lanes can use that reserved slice. These classifications do not grant microphone, game, OBS, VTube Studio, file, network, or broadcast permissions.
 
 The two diagnostic counts `deferred_for_health` and `deferred_for_active_session` can overlap. They answer different questions: one is blocked by degraded/stale measurements, the other by an active stream/game policy.
 
