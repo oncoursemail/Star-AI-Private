@@ -101,7 +101,9 @@ def test_zero_denominators_are_inconclusive():
     report = evaluate_rehearsal(
         snapshot(
             audio_playback_chunks=0,
+            obs_render_skipped_frames=0,
             obs_render_total_frames=0,
+            obs_output_skipped_frames=0,
             obs_output_total_frames=0,
             turn_true_positives=0,
             turn_false_positives=0,
