@@ -112,6 +112,7 @@ This is an explicit trade-off. The current evaluator consumes sample arrays and 
 - Counter regressions are rejected without changing the last valid baseline.
 - Event and epoch ledgers have hard caps; the recorder fails closed instead of silently evicting replay protection.
 - Independent labels/scoring are required for turn-taking and held-out game outcomes.
+- The independently_labeled and independently_scored arguments are host-adapter assertions, not cryptographic proofs. Never expose the recorder as an agent tool or let model-generated content call these methods. For game outcomes, prefer the existing signed GameplaySkillBank/game_transfer_eval path; for turn labels, use a trusted human-reviewed or sealed synthetic test harness.
 
 ## 2. Research: metric temporality and resets
 
@@ -267,6 +268,10 @@ STAR already has a signed GameplaySkillBank, a separate game_transfer_eval and a
 - a skill suggestion is not permission to control a live game;
 - transfer must be measured on unseen levels/seeds/situations;
 - creation benchmarks and gameplay mastery benchmarks remain separate.
+
+Sources:
+- https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+- https://arxiv.org/abs/2305.16291
 
 ## 6. Research: long-horizon memory and intelligence
 
