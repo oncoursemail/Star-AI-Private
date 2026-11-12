@@ -510,6 +510,9 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
+            record = self._expire_deadline(record, now)
+            if record.state is DeliveryState.EXPIRED:
+                raise DeliveryDeadlineExpired("delivery deadline expired before restart fencing")
             if record.state not in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
                 raise DeliveryConflict("only an active claim or playback can require restart recovery")
             recovered = replace(
@@ -545,6 +548,9 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
+            record = self._expire_deadline(record, now)
+            if record.state is DeliveryState.EXPIRED:
+                raise DeliveryDeadlineExpired("delivery deadline expired before restart reconciliation")
             if record.state is not DeliveryState.RECOVERY_REQUIRED:
                 raise DeliveryConflict("delivery does not require restart reconciliation")
             if record.failure_code == "restart_playing":
