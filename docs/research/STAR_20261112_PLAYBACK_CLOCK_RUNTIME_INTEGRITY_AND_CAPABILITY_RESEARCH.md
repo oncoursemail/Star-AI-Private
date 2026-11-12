@@ -27,7 +27,7 @@ The new `star/voice/playback.py` provides a small thread-safe `PlaybackTelemetry
 
 ### New measurements
 
-- `first_playback_at`: first non-empty output callback timestamp.
+- `first_playback_at`: PortAudio's `outputBufferDacTime` for the first non-empty output buffer, mapped to Python monotonic time using the callback's `currentTime`; if time info is missing or implausible, the callback-invocation timestamp is used.
 - `output_callbacks_with_audio`: number of output callbacks that actually copied queued audio.
 - `output_underflows`: PortAudio output-underflow flags observed on callbacks that also emitted audio.
 - `speech_end_to_first_submission`: earliest acknowledgement or TTS submission; the legacy `speech_end_to_audio_submitted` retains its TTS-only meaning.
@@ -38,7 +38,7 @@ The new `star/voice/playback.py` provides a small thread-safe `PlaybackTelemetry
 
 ### Measurement limits
 
-A PortAudio callback timestamp means the backend handed a non-empty PCM block to the output callback. It does **not** prove when a listener physically heard it. Driver buffers, DAC latency, Bluetooth, speakers, room acoustics and listener position remain outside this measurement.
+PortAudio documents `outputBufferDacTime` as the estimated time when the first sample of the output buffer will reach the DAC, while `currentTime` is the callback invocation time. STAR maps their difference onto Python's monotonic clock. This is a better backend timing estimate than queue submission or callback invocation alone. It still does **not** prove when a listener physically heard it: Bluetooth transport, downstream device processing, speakers, room acoustics and listener position remain outside this measurement. If the time info is missing, reversed or implausibly far in the future, STAR falls back to callback invocation time.
 
 The file-driven `VirtualSpeaker` reports its scheduled simulated playback start. That is useful for deterministic pipeline tests, but it is not a hardware callback and must not be mixed with physical-device measurements without tagging the backend.
 
@@ -62,7 +62,7 @@ Two recent benchmarks reinforce why voice quality must be measured as several in
 
 The benchmark uses 100 human-recorded spoken requests across 79 scenarios and 12 speakers, with disfluencies and chained tool calls. It evaluates task/tool accuracy, turn-taking and latency separately.
 
-Source: [Full-Duplex-Bench v3](https://www.full-duplex.ai/benchmarks/fdb-v3) · [paper](https://arxiv.org/abs/2604.04847)
+Source: [Full-Duplex-Bench v3](https://www.full-duplex.ai/benchmarks/fdb-v3) · [paper](https://arxiv.org/abs/2604.04847) · [PortAudio callback time info](https://files.portaudio.com/docs/v19-doxydocs/structPaStreamCallbackTimeInfo.html) · [python-sounddevice callback documentation](https://python-sounddevice.readthedocs.io/en/latest/)
 
 **STAR application:** replay real recorded conversations through the same ASR/turn/brain/TTS/speaker pipeline and separately score:
 - interruption precision and recall;
