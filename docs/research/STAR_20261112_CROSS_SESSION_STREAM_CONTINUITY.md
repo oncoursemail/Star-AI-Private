@@ -236,7 +236,7 @@ A later host integration should:
 3. call `remember()` only for owner-approved signed practice trials;
 4. retrieve a packet only for the exact current game/version and an owner-approved public label map;
 5. add `packet.user_message()` as isolated USER-priority context;
-6. pass the model's proposed response through the existing StreamDirector, multiparty floor, interruption, moderation and voice gates;
+6. pass the model's proposed response through the existing StreamDirector, turn-taking/interruption, moderation and voice gates; when the separate multiparty-floor controller is integrated, include it in this same arbitration path;
 7. complete the ticket only after the existing playback owner confirms the audible response;
 8. call `end_stream_session()` when a stream ends, then create a fresh stream-session ID after every stream restart.
 
