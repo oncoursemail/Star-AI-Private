@@ -15,9 +15,9 @@ import math
 import re
 from typing import Sequence
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
-_SHA = re.compile(r"[0-9a-f]{64}\\Z")
-_DOMAIN = b"star.stream-memory-trial.v1\\x00"
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
+_SHA = re.compile(r"[0-9a-f]{64}\Z")
+_DOMAIN = b"star.stream-memory-trial.v1\x00"
 _MAX_CASES = 512
 _MAX_TRIALS = 1024
 _MAX_AGE_S = 30 * 86400
@@ -274,7 +274,7 @@ def roster_digest(cases: Sequence[MemoryCase]) -> str:
         for case in cases
     )
     payload = json.dumps(rows, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-    return hashlib.sha256(b"star.stream-memory-roster.v1\\x00" + payload).hexdigest()
+    return hashlib.sha256(b"star.stream-memory-roster.v1\x00" + payload).hexdigest()
 
 
 def evaluate_memory_transfer(
