@@ -251,3 +251,51 @@ def test_terminal_task_is_not_reaped_or_mutated():
     assert report.requeued_leases == 0
     assert report.expired_deadlines == 0
     assert book.get(done.task_id) == done
+
+
+@pytest.mark.parametrize("terminalize", ["failed", "cancelled"])
+def test_refine_after_absolute_deadline_expires_retryable_task(terminalize):
+    book = ledger()
+    created = book.create(
+        f"retry-deadline-{terminalize}", "research", H1,
+        now_ms=1, deadline_ms=20,
+    )
+    if terminalize == "failed":
+        lease = book.claim(created.task_id, created.version, "attempt-a", now_ms=2)
+        prior = book.fail(lease, "worker_error", now_ms=3)
+    else:
+        prior = book.cancel(created.task_id, created.version, now_ms=3)
+
+    with pytest.raises(TaskDeadlineExpired):
+        book.refine(prior.task_id, prior.version, H2, now_ms=20)
+
+    current = book.get(created.task_id)
+    assert current.state is TaskState.EXPIRED
+    assert current.failure_code == "deadline_expired"
+    assert current.spec_sha256 == H1
+
+
+def test_reap_expires_failed_and_cancelled_tasks_when_retry_window_closes():
+    book = ledger()
+    failed = book.create("reap-failed", "research", H1, now_ms=1, deadline_ms=20)
+    failed_lease = book.claim(failed.task_id, failed.version, "attempt-f", now_ms=2)
+    book.fail(failed_lease, "worker_error", now_ms=3)
+
+    cancelled = book.create("reap-cancelled", "voice", H1, now_ms=4, deadline_ms=20)
+    book.cancel(cancelled.task_id, cancelled.version, now_ms=5)
+
+    report = book.reap(now_ms=20)
+
+    assert report.requeued_leases == 0
+    assert report.expired_deadlines == 2
+    assert book.get("reap-failed").state is TaskState.EXPIRED
+    assert book.get("reap-cancelled").state is TaskState.EXPIRED
+
+
+def test_cancelled_task_without_deadline_can_still_be_refined():
+    book = ledger()
+    created = book.create("cancel-reopen", "creator", H1, now_ms=1)
+    cancelled = book.cancel(created.task_id, created.version, now_ms=2)
+    refined = book.refine(cancelled.task_id, cancelled.version, H2, now_ms=3)
+    assert refined.state is TaskState.QUEUED
+    assert refined.spec_sha256 == H2
