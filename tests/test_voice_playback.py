@@ -59,6 +59,7 @@ def test_portaudio_dac_time_is_mapped_to_python_monotonic_time():
     (float("nan"), 2.0),
     (2.0, float("inf")),
     (2.0, 1.9),
+    (2.0, 2.6),
     (2.0, 4.0),
 ])
 def test_invalid_or_implausible_portaudio_time_info_falls_back(current, dac):
