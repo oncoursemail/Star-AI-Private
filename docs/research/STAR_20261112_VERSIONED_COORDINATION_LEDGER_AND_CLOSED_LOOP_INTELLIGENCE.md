@@ -168,6 +168,19 @@ Sources:
 
 Do not publish a speedup until the exact model, quantization, prompt, sampler, context, concurrency, GPU backend, and warm/cold state are recorded.
 
+### Hardware-aware target profile
+
+For STAR's current 8 GB VRAM / 32 GB RAM desktop target, benchmark the actual mixed session rather than a model in isolation:
+
+- establish a no-model baseline with the game, OBS, avatar, audio, and desktop services running;
+- measure the VRAM/RAM headroom that remains under the heaviest expected stream scene and game;
+- compare GPU layers, CPU/RAM offload, and quantization with identical prompts and context;
+- keep a measured reserve for render spikes, voice playback, and driver allocations instead of allocating all reported free VRAM to inference;
+- reject a configuration if it improves tokens/second but worsens game frame-time p99, audio underruns, OBS output skips, or first-audible latency;
+- keep the fast model for bounded routing/classification and short replies, and send complex coding/research/planning to a stronger model only when the extra latency is justified by held-out quality gains.
+
+Do not hard-code one universal VRAM reserve: measure the target game, OBS encoder, avatar renderer, driver, and model together, then record the resulting per-profile budget.
+
 ### End-to-end latency contract
 
 Measure separate stages rather than one vague "response time":
