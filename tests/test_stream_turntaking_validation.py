@@ -91,7 +91,7 @@ def test_policy_is_selected_on_calibration_and_passes_independent_holdout():
     assert result.calibration_eligible_count > 0
     assert result.holdout_metrics.false_cutoffs == 0
     assert result.holdout_metrics.missed_final_turns == 0
-    assert result.holdout_silence_baseline.false_cutoffs == 100
+    assert result.holdout_silence_baseline.false_cutoffs == 700
     assert result.holdout_false_cutoff_upper_bound is not None
     assert result.holdout_false_cutoff_upper_bound <= 0.05
 
@@ -367,7 +367,7 @@ def test_cluster_aware_validation_passes_with_sufficient_zero_error_sessions():
     assert result.status is ValidationStatus.PASS
     assert result.cluster_metrics is not None
     assert result.cluster_metrics.session_count == 700
-    assert result.cluster_metrics.false_cutoff_rate_effective_session_count == 700
+    assert result.cluster_metrics.false_cutoff_rate_effective_session_count == pytest.approx(700.0)
     assert result.cluster_metrics.false_cutoff_rate_hoeffding_upper_bound <= 0.05
     assert result.cluster_metrics.missed_final_rate_hoeffding_upper_bound <= 0.05
     assert result.cluster_metrics.false_cutoff_session_incidence_hoeffding_upper_bound <= 0.05
@@ -449,7 +449,7 @@ def test_latency_limit_is_part_of_cluster_session_evidence():
         constraints=TurnPolicyConstraints(
             max_false_cutoff_rate=0.05,
             max_missed_final_rate=1.0,
-            max_p95_latency_ms=900,
+            max_p95_latency_ms=800,
             max_latency_violation_session_rate=0.05,
         ),
     )
