@@ -21,6 +21,7 @@ from .stream_turntaking_eval import (
     evaluate_turn_policy,
     sweep_turn_policies,
 )
+from .stream_holdout_ledger import HoldoutLedger
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SPANS = 20_000
@@ -91,6 +92,7 @@ class TurnPolicyValidation:
     holdout_group_count: int
     holdout_false_cutoff_upper_bound: float | None
     holdout_missed_final_upper_bound: float | None
+    holdout_ledger_claimed: bool = False
 
 
 def _probe_partition(spans: Sequence[SilenceSpan], label: str) -> TurnPolicyResult:
@@ -187,6 +189,7 @@ def select_and_validate_turn_policy(
     action_delays_ms: Sequence[int],
     timeouts_ms: Sequence[int],
     constraints: TurnPolicyConstraints,
+    holdout_ledger: HoldoutLedger | None = None,
 ) -> TurnPolicyValidation:
     """Choose a policy using calibration only, then evaluate it on held-out turns.
 
@@ -197,6 +200,8 @@ def select_and_validate_turn_policy(
     """
     if not isinstance(constraints, TurnPolicyConstraints):
         raise TypeError("constraints must be TurnPolicyConstraints")
+    if holdout_ledger is not None and not isinstance(holdout_ledger, HoldoutLedger):
+        raise TypeError("holdout_ledger must be HoldoutLedger or None")
     (
         calibration_probe,
         holdout_probe,
@@ -274,6 +279,11 @@ def select_and_validate_turn_policy(
         selected_metrics.timeout_ms,
     )
 
+    # Claim before scoring: even a crash after this point must not make the
+    # same holdout available for repeated adaptive tuning.
+    if holdout_ledger is not None:
+        holdout_ledger.claim(holdout_spans, group_ids_by_turn)
+
     # This is the only holdout evaluation performed by this call. The same
     # frozen action delay/timeout are used for a silence-only reference.
     holdout_metrics = evaluate_turn_policy(tuple(holdout_spans), selected_policy)
@@ -323,6 +333,7 @@ def select_and_validate_turn_policy(
         holdout_group_count=holdout_group_count,
         holdout_false_cutoff_upper_bound=false_upper,
         holdout_missed_final_upper_bound=missed_upper,
+        holdout_ledger_claimed=holdout_ledger is not None,
     )
 
 
