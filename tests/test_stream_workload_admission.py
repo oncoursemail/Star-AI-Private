@@ -219,7 +219,7 @@ def test_active_background_work_is_not_preempted_for_late_critical_request():
     assert controller.schedule(1_001, health=healthy(now=1_001)) == ()
     snapshot = controller.snapshot(1_001, health=healthy(now=1_001))
     assert snapshot.active == 1
-    assert snapshot.active_by_lane[5] == ("research", 1)
+    assert dict(snapshot.active_by_lane)["research"] == 1
     assert research.request_id == "research"
 
 
