@@ -6,6 +6,7 @@ import pytest
 
 from star.delivery_ledger import (
     DeliveryConflict,
+    DeliveryDeadlineExpired,
     DeliveryLeaseExpired,
     DeliveryState,
 )
@@ -207,6 +208,31 @@ def test_expired_deadline_remains_consistent_on_a_second_restart(tmp_path):
         assert third.integrity_check() == "ok"
     finally:
         third.close()
+
+
+def test_overdue_active_playback_stays_fenced_until_host_stop_is_confirmed(tmp_path):
+    path = tmp_path / "delivery.sqlite3"
+    wall = WallClock()
+    first = open_store(path, wall)
+    record = create_one(first, deadline_ms=200)
+    start_one(first, record)
+    first.close()
+
+    wall.value += 100
+    second = open_store(path, wall, now=500, epoch="host-b")
+    try:
+        recovered = second.get(record.delivery_id)
+        assert recovered.state is DeliveryState.RECOVERY_REQUIRED
+        assert second.reap(now_ms=501).expired_deadlines == 0
+        assert second.get(record.delivery_id).state is DeliveryState.RECOVERY_REQUIRED
+        with pytest.raises(DeliveryDeadlineExpired):
+            second.reconcile_after_restart(
+                recovered.delivery_id, recovered.version, now_ms=502,
+                host_confirmed_stopped=True,
+            )
+        assert second.get(record.delivery_id).state is DeliveryState.EXPIRED
+    finally:
+        second.close()
 
 
 def test_wall_clock_rollback_expires_deadline_bound_obligations(tmp_path):
