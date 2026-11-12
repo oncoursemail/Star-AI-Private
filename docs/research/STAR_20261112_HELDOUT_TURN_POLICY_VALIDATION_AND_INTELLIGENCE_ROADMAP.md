@@ -22,7 +22,17 @@ The evaluator does not tune a detector, call a model, access audio, or promote r
 
 ---
 
-## 1. Repository audit and why this is the next useful step
+## 1. Production shipping boundary
+
+The production `main` README identifies STAR v1.0.0 as a Windows 11 chat-first release. Basic optional voice calls exist, but the warmer Star voice/read-aloud and richer voice path are marked coming soon; Studio Lab is also marked coming soon. Night-school practice is available server-side. The README explicitly states that PRs, CI artifacts, and passing tests do not mean a feature is in the installer or website deployment.
+
+Source: https://github.com/oncoursemail/Star-AI-Project/blob/main/README.md
+
+This branch adds offline evaluation infrastructure only. It does not change the published installer, turn on voice, add live streaming, or authorize game/OBS/avatar control.
+
+---
+
+## 2. Repository audit and why this is the next useful step
 
 The current development chain contains:
 
@@ -40,7 +50,7 @@ A policy grid can contain many combinations. Selecting the lowest-latency point 
 
 ---
 
-## 2. Research findings
+## 3. Research findings
 
 ### 2.1 LiveKit eot-bench: evaluate the decision policy, not only a classifier
 
@@ -84,7 +94,7 @@ Source: https://docs.livekit.io/agents/logic/turns/turn-detector/
 
 ---
 
-## 3. Implementation details
+## 4. Implementation details
 
 ### Data split contract
 
@@ -133,7 +143,7 @@ The function does not persist a one-use holdout ledger. The orchestration layer 
 
 ---
 
-## 4. Research: faster local inference without damaging the stream
+## 5. Research: faster local inference without damaging the stream
 
 ### llama.cpp SPEED-Bench
 
@@ -154,7 +164,7 @@ Do not equate aggregate throughput with conversational speed. More slots can inc
 
 ---
 
-## 5. Research: Star as a gamer and game creator
+## 6. Research: Star as a gamer and game creator
 
 ### GameDevBench (ICML 2026)
 
@@ -186,7 +196,7 @@ The strategic model must not block the reactive control loop. A skill is not “
 
 ---
 
-## 6. Research: general knowledge that transfers into useful actions
+## 7. Research: general knowledge that transfers into useful actions
 
 ### Mem2ActBench (ACL 2026)
 
@@ -211,7 +221,7 @@ Separate factual knowledge from procedural skills and environment-specific game 
 
 ---
 
-## 7. VTuber behavior: make the experience natural and transparent
+## 8. VTuber behavior: make the experience natural and transparent
 
 The goal is conversational competence, expressive timing, and consistent character behavior—not pretending to be a human or inventing lived experiences.
 
@@ -241,7 +251,7 @@ Do not collapse these into one “human-likeness” score. Keep owner identity v
 
 ---
 
-## 8. Next integration phases
+## 9. Next integration phases
 
 ### Phase A — offline validation (this change)
 - grouped calibration/holdout split;
@@ -283,7 +293,7 @@ Do not collapse these into one “human-likeness” score. Keep owner identity v
 
 ---
 
-## 9. Sources
+## 10. Sources
 
 1. LiveKit eot-bench: https://github.com/livekit/eot-bench
 2. LiveKit EoT leaderboard: https://livekit.com/benchmarks/eot-bench
@@ -293,7 +303,7 @@ Do not collapse these into one “human-likeness” score. Keep owner identity v
 6. GameDevBench project and results: https://waynechi.com/gamedevbench/
 7. Mem2ActBench, ACL 2026: https://aclanthology.org/2026.acl-long.370/
 
-## 10. Validation boundary
+## 11. Validation boundary
 
 - This is a pure/offline evaluation module.
 - It does not capture audio, call an EoT model, operate TTS/playback, OBS, VTube Studio, Windows APIs, or game input.
