@@ -52,6 +52,7 @@ class TurnMetrics:
             "transcript_to_first_token": self._gap(self.transcript_at, self.first_token_at),
             "first_token_to_first_audio": self._gap(self.first_token_at, self.first_audio_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
+            "speech_end_to_first_submission": self._gap(self.speech_end, first_submitted_at),
             "speech_end_to_first_playback": self._gap(self.speech_end, self.first_playback_at),
             "speaker_queue_to_playback": self._gap(first_submitted_at, self.first_playback_at),
             # Prefer the backend playback clock; fall back to queue submission when unavailable.
