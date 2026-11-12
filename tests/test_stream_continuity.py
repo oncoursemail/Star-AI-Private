@@ -388,10 +388,12 @@ def test_callback_completion_requires_valid_host_receipt_shape():
     with pytest.raises(ValueError):
         store.complete_callback("not-a-ticket", now_unix_s=NOW, playback_confirmed=True)
     with pytest.raises(ValueError):
-        store.complete_callback(offer.ticket, now_unix_s=NOW, playback_confirmed=1)  # type: ignore[arg-type]
+        store.complete_callback(
+            offer.ticket, now_unix_s=NOW, playback_confirmed=1  # type: ignore[arg-type]
+        )
 
 
-def test_multiple_pending_callbacks_are_bounded_and_disable_cancels_them():
+def test_pending_callback_is_bounded_and_disable_cancels_it():
     bank = make_bank()
     trial = add_trial(bank, trial_id="trial-1", run_id="run-1")
     store = enabled_store(bank)
