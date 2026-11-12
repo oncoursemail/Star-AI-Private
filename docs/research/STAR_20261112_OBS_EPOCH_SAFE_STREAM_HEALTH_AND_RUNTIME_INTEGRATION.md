@@ -62,7 +62,7 @@ OBS Studio 28+ includes obs-websocket by default. The v5 server normally listens
 
 `GetStats` is a read-only request with no request fields. The official protocol documents current FPS, average frame render time, render skipped/total frames, output skipped/total frames, CPU, memory and WebSocket message counts.
 
-`GetStreamStatus` is a separate read-only request and exposes output-active, reconnecting, congestion, bytes, skipped frames and total frames. STAR should use it to distinguish network/output state from renderer health. Stream and recording counters should be scoped to the specific output being evaluated.
+`GetStreamStatus` is a separate read-only request and exposes output-active, reconnecting, congestion, bytes, skipped frames and total frames. STAR should use it to distinguish network/output state from renderer health. Stream and recording counters should be scoped to the specific output being evaluated. Treat nullable `outputCongestion` as unknown, not zero: the OBS project has documented a protocol response where this field can be null when a stream server connection fails. Do not use `outputDuration` as the sole timing clock; OBS has tracked Enhanced Broadcasting cases where duration/timecode scale with multiple video tracks. Use STAR's local monotonic clock for interval timing and treat OBS duration as a display hint only.
 
 **Host integration rules**
 
@@ -313,15 +313,17 @@ This PR is based on #1148's head and adds a narrow OBS adapter. It does not modi
 1. OBS WebSocket project and security guidance: https://github.com/obsproject/obs-websocket
 2. OBS WebSocket v5 protocol schema, including `GetStats` and `GetStreamStatus`: https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.json
 3. OBS `GetStats` request implementation and field descriptions: https://github.com/obsproject/obs-websocket/blob/master/src/requesthandler/RequestHandler_General.cpp
-4. VTube Studio official API implementation and authentication: https://github.com/DenchiSoft/VTubeStudio
-5. VTube Studio plugin permissions and events: https://github.com/DenchiSoft/VTubeStudio/tree/master/Events
-6. VTube Studio plugin/API manual: https://github.com/DenchiSoft/VTubeStudio/wiki
-7. Live2D Cubism SDK lip-sync manual: https://docs.live2d.com/en/cubism-sdk-manual/lipsync/
-8. FastTurn (2026), *Unifying Acoustic and Streaming Semantic Cues for Low-Latency and Robust Turn Detection*: https://arxiv.org/abs/2604.01897
-9. Sesame TurnBench: https://turnbench.sesame.com/
-10. llama.cpp SPEED-Bench documentation: https://github.com/ggml-org/llama.cpp/tree/master/tools/server/bench/speed-bench
-11. OpenTelemetry GenAI metric semantic conventions: https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md
-12. OpenTelemetry semantic conventions overview: https://opentelemetry.io/docs/concepts/semantic-conventions/
-13. Google DeepMind SIMA 2 (13 November 2025): https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
-14. Voyager lifelong-learning game agent: https://github.com/MineDojo/Voyager
-15. GameDevBench: https://github.com/waynchi/gamedevbench
+4. OBS WebSocket issue #1176: nullable `outputCongestion` behavior: https://github.com/obsproject/obs-websocket/issues/1176
+5. OBS WebSocket issue #1234: Enhanced Broadcasting duration/timecode caveat: https://github.com/obsproject/obs-websocket/issues/1234
+6. VTube Studio official API implementation and authentication: https://github.com/DenchiSoft/VTubeStudio
+7. VTube Studio plugin permissions and events: https://github.com/DenchiSoft/VTubeStudio/tree/master/Events
+8. VTube Studio plugin/API manual: https://github.com/DenchiSoft/VTubeStudio/wiki
+9. Live2D Cubism SDK lip-sync manual: https://docs.live2d.com/en/cubism-sdk-manual/lipsync/
+10. FastTurn (2026), *Unifying Acoustic and Streaming Semantic Cues for Low-Latency and Robust Turn Detection*: https://arxiv.org/abs/2604.01897
+11. Sesame TurnBench: https://turnbench.sesame.com/
+12. llama.cpp SPEED-Bench documentation: https://github.com/ggml-org/llama.cpp/tree/master/tools/server/bench/speed-bench
+13. OpenTelemetry GenAI metric semantic conventions: https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md
+14. OpenTelemetry semantic conventions overview: https://opentelemetry.io/docs/concepts/semantic-conventions/
+15. Google DeepMind SIMA 2 (13 November 2025): https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+16. Voyager lifelong-learning game agent: https://github.com/MineDojo/Voyager
+17. GameDevBench: https://github.com/waynchi/gamedevbench
