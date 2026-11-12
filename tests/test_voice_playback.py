@@ -12,7 +12,6 @@ def test_first_nonempty_output_callback_and_underflows_are_counted():
     snapshot = telemetry.snapshot()
     assert snapshot.first_playback_at == pytest.approx(1.01)
     assert snapshot.output_callbacks_with_audio == 2
-    assert snapshot.output_callbacks_with_audio == 2
     assert snapshot.output_underflows == 1
 
 
