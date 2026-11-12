@@ -258,7 +258,7 @@ def test_cancel_only_removes_queued_work():
     controller.submit(make_request("active", WorkloadLane.AUDIO))
     lease = controller.schedule(1_000, health=healthy())[0]
     assert controller.cancel_queued("active") is False
-    assert controller.release(lease.lease_id, 1_001) is True
+    assert controller.release(lease.lease_id, 1_001, host_confirmed_stopped=True) is True
 
 
 def test_seen_request_ledger_is_bounded():
