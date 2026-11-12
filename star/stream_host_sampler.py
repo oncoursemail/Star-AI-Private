@@ -79,7 +79,10 @@ def _number_value(observation: MetricObservation | None, *, label: str, inputs: 
     captured = _metadata(observation, label=label, inputs=inputs, max_age_ms=max_age_ms)
     value = observation.value
     if type(value) is int:
-        number = float(value)
+        try:
+            number = float(value)
+        except OverflowError as exc:
+            raise ValueError(f"{label} must be a finite number in range") from exc
     elif type(value) is float:
         number = value
     else:
