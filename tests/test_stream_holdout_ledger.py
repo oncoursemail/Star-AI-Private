@@ -1,6 +1,5 @@
 """Tests for STAR's transactional single-use holdout ledger."""
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 
 import pytest
 
@@ -256,7 +255,7 @@ def test_inconclusive_opened_holdout_is_still_consumed(tmp_path):
         )
 
 
-def test_without_ledger_preserves_legacy_behavior(tmp_path):
+def test_without_ledger_preserves_legacy_behavior():
     calibration, calibration_groups = dataset("cal", 100)
     holdout, holdout_groups = dataset("hold", 100)
     result = evaluate(
