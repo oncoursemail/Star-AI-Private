@@ -53,9 +53,13 @@ def add_trial(
 def enabled_store(
     bank: GameplaySkillBank,
     database: str = ":memory:",
-    **kwargs: int,
+    *,
+    max_records: int = 5_000,
+    retention_seconds: int = 30 * 86400,
 ) -> StreamContinuityStore:
-    store = StreamContinuityStore(database, bank, **kwargs)
+    store = StreamContinuityStore(
+        database, bank, max_records=max_records, retention_seconds=retention_seconds
+    )
     store.enable(owner_approved=True)
     return store
 
