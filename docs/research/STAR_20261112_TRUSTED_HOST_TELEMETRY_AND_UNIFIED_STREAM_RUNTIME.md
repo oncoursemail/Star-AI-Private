@@ -426,3 +426,76 @@ The builder is hardware-free. These tests do not prove that Windows, OBS, VTube 
 This branch adds a fail-closed assembly contract and offline tests. It does **not** add the actual Windows collector, OBS WebSocket client, WASAPI loopback client, VTube Studio connector, game FPS collector, or scheduler-to-process-supervisor execution path. It does not claim a measured speedup, improved model intelligence, natural-human equivalence, game mastery, or production readiness.
 
 Production `main`, the published installer, model weights, and default permissions remain unchanged. The child PR remains draft and is stacked on PR #1151.
+
+
+## 13. New research discovery: the coordination brain (Jarvis, 2026-10-16)
+
+A particularly relevant paper appeared on October 16, 2026:
+
+- Paper: https://arxiv.org/abs/2610.23804
+- Open-source reference implementation: https://github.com/JensenYX/Jarvis
+- Project design: full-duplex front model + asynchronous workers + a typed decision model (JEV) + a versioned Task Ledger + playback delivery control.
+
+The central idea is **models judge; code enforces**. The coordinator does not ask a model to invent arbitrary task IDs or free-form actions. The runtime constructs a finite set of legal operations from the current task state; the decision model selects one; code validates the task ID and version before applying it.
+
+The paper reports, under its own experimental setup:
+
+- on tau-Voice, a controlled same-front/same-backend comparison improved task success from 29/278 to 192/278;
+- on Full-Duplex-Bench v3, Jarvis-Audio reported 69% Pass@1 versus 60% for GPT-Realtime;
+- a scripted race suite tested stale task versions, stale plans, and false delivery records.
+
+These are paper-reported results for the authors' models, tools, tasks, and infrastructure. They are not a prediction of STAR's performance and should not be used as an apples-to-apples comparison with STAR.
+
+### Why this is unusually relevant to STAR
+
+STAR already has a bounded async DAG executor in `star/agent_runtime.py` and playback timing in `star/voice/playback.py`. The current host telemetry assembler provides another part of the picture. What remains is a reliable coordinator that can see both the live conversation and long-running work at the same time.
+
+A streamer must be able to say “keep building the game, but change the menu,” “cancel only the screenshot task,” or “stop talking while you finish the research.” Without a shared, versioned task record, a late worker result can answer an old request, an obsolete plan can still execute, or an answer can be marked delivered even though playback was interrupted.
+
+### Proposed STAR Coordination Brain
+
+Implement this as an adapter around existing task execution, not as a second independent agent framework:
+
+1. **Task Ledger:** each task has an opaque ID, monotonically increasing version, objective, scope, dependencies, status, creation/update time, and evidence references.
+2. **Typed operation set:** the runtime generates only legal options for the current turn: `ANSWER`, `MEMORY_LOOKUP`, `CREATE`, `REFINE(task_id, version)`, `CANCEL(task_id, version)`, `STATUS(task_id, version)`, `CLARIFY`, `STOP_SPEAKING`, `WAIT`, or `IGNORE`.
+3. **Compare-and-swap:** every operation names the exact current task version. A decision against version 2 becomes a no-op after version 3 supersedes it.
+4. **Plan freshness:** revalidate the task version, authorization, inputs, and evidence immediately before any side effect. Do not rely on the version that was current when planning began.
+5. **Result freshness:** accept a worker result only if it belongs to the live task version and its required evidence remains valid.
+6. **Separate speech from work:** `STOP_SPEAKING` advances the playback generation epoch and discards queued stale audio; it does not cancel the task. `CANCEL` stops the task and invalidates its version.
+7. **Playback receipt:** `COMPLETED` becomes `DELIVERED` only after a receipt confirms that the full answer was emitted in the current playback epoch. A TTS response or queue submission is not a delivery receipt.
+8. **Evidence timeline:** screen/game observations carry capture time, source, and a validity window. Recheck them before advice is generated and again before/during playback. A death, respawn, camera switch, map transition, or new game state can invalidate old claims.
+9. **Uncertain decision fallback:** if the coordinator cannot select a legal operation confidently, preserve the ledger and route to a safe worker or one focused clarification. Never guess a task target.
+10. **Durable memory gate:** only write long-term viewer facts when they are explicit, useful, and within the project's consent/retention policy. Task-specific instructions expire with the task.
+
+### STAR-specific adaptation: do not copy the entire model stack
+
+The reference implementation is a useful design and code-audit target, but its documented quick start expects Linux, Python 3.11, NVIDIA BF16-capable GPU hardware, separate model services, and API configuration. That is not a safe assumption for STAR's Windows-first, 8 GB VRAM target.
+
+Port the **control-plane invariants**, not the whole model deployment:
+
+- use the existing async DAG workers;
+- use the existing playback clock and add generation/receipt semantics;
+- keep the coordinator small and fast, with a deterministic typed schema;
+- reuse STAR's existing authorization boundary;
+- make the ledger local-first and restart-safe;
+- use one owner-controlled task identity across voice, gaming, creator, browser, and background research;
+- keep model choice replaceable behind the same typed operation contract.
+
+### New acceptance tests for the coordinator
+
+Before enabling it in streaming:
+
+- refine a task while its worker is running; the old result must be rejected;
+- cancel one task while independent tasks continue;
+- stop speech without cancelling the underlying task;
+- interrupt playback halfway through; no delivery receipt is issued;
+- restart the audio device; old playback receipts cannot complete the new epoch;
+- change a game scene while a response is queued; expired screen evidence is not spoken as current;
+- issue an ambiguous correction that could target two tasks; no task changes without a valid typed choice;
+- return a worker result after cancellation; it is ignored;
+- race two refinements against the same task version; only one compare-and-swap succeeds;
+- restart STAR with a persisted ledger; task IDs, versions, and cancellation state remain consistent.
+
+Measure coordinator decision latency, stale-operation rejection, false-delivery rate, task completion, and end-to-end voice latency. The goal is to make the conversation feel immediate while background work remains correct—not to add another LLM call to every utterance.
+
+**Decision:** treat Jarvis as a high-priority architecture reference for STAR's next coordination milestone. Do not import it wholesale or claim its benchmark results for STAR.
