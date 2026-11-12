@@ -165,7 +165,13 @@ class DeliveryLedger:
         if type(expected_version) is not int or expected_version != record.version:
             raise DeliveryConflict("delivery version changed; refresh the snapshot")
 
-    def _expire_deadline(self, record: DeliveryRecord, now: int) -> DeliveryRecord:
+    def _expire_deadline(
+        self,
+        record: DeliveryRecord,
+        now: int,
+        *,
+        allow_recovery_required: bool = False,
+    ) -> DeliveryRecord:
         if (
             record.deadline_ms is not None
             and now >= record.deadline_ms
@@ -174,6 +180,7 @@ class DeliveryLedger:
                 DeliveryState.CANCELLED,
                 DeliveryState.EXPIRED,
             )
+            and (record.state is not DeliveryState.RECOVERY_REQUIRED or allow_recovery_required)
         ):
             updated = replace(
                 record,
@@ -267,7 +274,10 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
-            record = self._expire_deadline(record, now)
+            record = self._expire_deadline(
+                record, now,
+                allow_recovery_required=(host_confirmed_stopped is True),
+            )
             if record.state is DeliveryState.EXPIRED:
                 raise DeliveryDeadlineExpired("delivery deadline has expired")
             if record.state not in (
@@ -510,9 +520,6 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
-            record = self._expire_deadline(record, now)
-            if record.state is DeliveryState.EXPIRED:
-                raise DeliveryDeadlineExpired("delivery deadline expired before restart fencing")
             if record.state not in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
                 raise DeliveryConflict("only an active claim or playback can require restart recovery")
             recovered = replace(
@@ -548,7 +555,7 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
-            record = self._expire_deadline(record, now)
+            record = self._expire_deadline(record, now, allow_recovery_required=True)
             if record.state is DeliveryState.EXPIRED:
                 raise DeliveryDeadlineExpired("delivery deadline expired before restart reconciliation")
             if record.state is not DeliveryState.RECOVERY_REQUIRED:
