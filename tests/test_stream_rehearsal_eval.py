@@ -14,7 +14,7 @@ def snapshot(**changes):
         "first_audible_latency_ms": [420.0] * 20,
         "game_frame_time_ms": [16.7] * 20,
         "avatar_sync_error_ms": [24.0] * 20,
-        "audio_underruns": 0,
+        "audio_underrun_chunks": 0,
         "audio_playback_chunks": 1000,
         "obs_render_skipped_frames": 2,
         "obs_render_total_frames": 10000,
@@ -73,7 +73,7 @@ def test_any_measured_regression_fails_the_run():
         snapshot(
             first_audible_latency_ms=[900.0] * 20,
             game_frame_time_ms=[25.0] * 20,
-            audio_underruns=5,
+            audio_underrun_chunks=5,
         ),
         limits(),
     )
@@ -177,7 +177,7 @@ def test_unexpected_private_payload_fields_are_rejected():
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("audio_underruns", -1),
+        ("audio_underrun_chunks", -1),
         ("audio_playback_chunks", True),
         ("obs_render_skipped_frames", 10_001),
         ("task_recovery_successes", 21),
