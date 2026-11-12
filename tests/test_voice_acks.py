@@ -72,3 +72,17 @@ def test_off_by_config_and_on_in_the_app_settings():
     session, _events, _tts = session_for(["Sure."], acknowledgements=False)
     assert session.acks is None and turn(session, 1).ack_text == ""
     assert VoiceSettings().acknowledgements is True and VoiceSettings().call_config().acknowledgements is True
+
+
+def test_failed_acknowledgement_prerender_is_contained_and_disables_clips():
+    class BrokenTTS:
+        def synthesize(self, text):
+            raise RuntimeError("synthetic engine failure")
+
+    clips = acks.AckClips(BrokenTTS())
+    clips.render()
+
+    assert clips.ready.is_set()
+    assert clips.error == "RuntimeError"
+    assert clips.pick("can you help me build a game") is None
+    assert clips.backchannel() is None
