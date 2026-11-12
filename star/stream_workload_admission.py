@@ -352,10 +352,10 @@ class WorkloadAdmissionController:
             active_leases = list(self._active.values())
             used = _sum_resources(active_leases)
             available = _subtract(self._budget.capacity, used)
-            protected_used = _sum_resources(
+            reserve_used = _sum_resources(
                 [lease for lease in active_leases if lease.lane in _REALTIME_RESERVE_LANES]
             )
-            reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+            reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
             ordered = sorted(
                 self._queued.items(),
                 key=lambda item: (
@@ -400,8 +400,8 @@ class WorkloadAdmissionController:
                 self._active_by_request[request_id] = lease.lease_id
                 available = _subtract(available, request.resources)
                 if request.lane in _REALTIME_RESERVE_LANES:
-                    protected_used = _add(protected_used, request.resources)
-                    reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+                    reserve_used = _add(reserve_used, request.resources)
+                    reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
                 admitted.append(lease)
             return tuple(admitted)
 
@@ -444,10 +444,10 @@ class WorkloadAdmissionController:
             active = list(self._active.values())
             used = _sum_resources(active)
             available = _subtract(self._budget.capacity, used)
-            protected_used = _sum_resources(
-                [lease for lease in active if lease.lane in _PROTECTED_LANES]
+            reserve_used = _sum_resources(
+                [lease for lease in active if lease.lane in _REALTIME_RESERVE_LANES]
             )
-            reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+            reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
             queued_counts = tuple(
                 (lane.value, sum(1 for _, request in self._queued.values() if request.lane == lane))
                 for lane in WorkloadLane
