@@ -62,6 +62,18 @@ def run(calibration, holdout, groups, **kwargs):
     )
 
 
+def permissive_small_constraints():
+    return TurnPolicyConstraints(
+        max_false_cutoff_rate=1.0,
+        max_missed_final_rate=1.0,
+        max_p95_latency_ms=900,
+        min_hold_pauses=1,
+        min_final_turns=1,
+        min_calibration_groups=1,
+        min_holdout_groups=1,
+    )
+
+
 def test_policy_is_selected_on_calibration_and_passes_independent_holdout():
     calibration, cal_groups = dataset("cal")
     holdout, hold_groups = dataset("hold")
@@ -182,18 +194,58 @@ def test_invalid_group_identifier_is_rejected():
         run(calibration, holdout, groups)
 
 
+def test_insufficient_distinct_calibration_groups_cannot_select_a_policy():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold")
+    for turn_id in cal_groups:
+        cal_groups[turn_id] = "cal-one-session"
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=TurnPolicyConstraints(min_calibration_groups=10),
+    )
+    assert result.status is ValidationStatus.INSUFFICIENT_CALIBRATION
+    assert result.calibration_group_count == 1
+
+
+def test_insufficient_distinct_holdout_groups_is_inconclusive():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold")
+    for turn_id in hold_groups:
+        hold_groups[turn_id] = "hold-one-session"
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=TurnPolicyConstraints(min_holdout_groups=10),
+    )
+    assert result.status is ValidationStatus.INCONCLUSIVE_HOLDOUT
+    assert result.holdout_group_count == 1
+
+
 def test_grouped_turns_are_allowed_within_one_partition():
     calibration, cal_groups = dataset("cal", 2)
     holdout, hold_groups = dataset("hold", 2)
     cal_groups["cal-turn-1"] = cal_groups["cal-turn-0"]
-    result = run(calibration, holdout, {**cal_groups, **hold_groups})
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=permissive_small_constraints(),
+    )
     assert result.status is ValidationStatus.PASS
 
 
 def test_calibration_and_holdout_can_share_environment_label():
     calibration, cal_groups = dataset("cal", 2)
     holdout, hold_groups = dataset("hold", 2)
-    result = run(calibration, holdout, {**cal_groups, **hold_groups})
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=permissive_small_constraints(),
+    )
     assert result.status is ValidationStatus.PASS
 
 
@@ -214,10 +266,14 @@ def test_invalid_latency_limit_is_rejected(value):
         TurnPolicyConstraints(max_p95_latency_ms=value)
 
 
+@pytest.mark.parametrize("field", [
+    "min_hold_pauses", "min_final_turns",
+    "min_calibration_groups", "min_holdout_groups",
+])
 @pytest.mark.parametrize("value", [True, 0, -1, 20001])
-def test_invalid_minimum_sample_counts_are_rejected(value):
+def test_invalid_minimum_sample_counts_are_rejected(field, value):
     with pytest.raises(ValueError):
-        TurnPolicyConstraints(min_hold_pauses=value)
+        TurnPolicyConstraints(**{field: value})
 
 
 @pytest.mark.parametrize("value", [True, 0.5, 1.0, float("nan"), "0.95"])
