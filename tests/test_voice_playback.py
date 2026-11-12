@@ -1,7 +1,7 @@
 """Unit tests for callback-level playback telemetry without an audio device."""
 import pytest
 
-from star.voice.playback import PlaybackTelemetry
+from star.voice.playback import PlaybackTelemetry, estimate_output_time
 
 
 def test_first_nonempty_output_callback_and_underflows_are_counted():
@@ -45,3 +45,23 @@ def test_idle_underflow_flag_does_not_count_as_playback_dropout():
     snapshot = telemetry.snapshot()
     assert snapshot.output_underflows == 0
     assert snapshot.output_callbacks_with_audio == 0
+
+
+
+def test_portaudio_dac_time_is_mapped_to_python_monotonic_time():
+    assert estimate_output_time(
+        100.0, current_time=12.0, output_buffer_dac_time=12.025
+    ) == pytest.approx(100.025)
+
+
+@pytest.mark.parametrize("current,dac", [
+    (None, None),
+    (float("nan"), 2.0),
+    (2.0, float("inf")),
+    (2.0, 1.9),
+    (2.0, 4.0),
+])
+def test_invalid_or_implausible_portaudio_time_info_falls_back(current, dac):
+    assert estimate_output_time(
+        100.0, current_time=current, output_buffer_dac_time=dac
+    ) == pytest.approx(100.0)
