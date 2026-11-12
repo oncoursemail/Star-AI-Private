@@ -5,18 +5,18 @@
 
 ## Executive finding
 
-The current turn-policy evaluator correctly separates calibration from holdout and groups turns by conversation/session. Its documentation also identifies two remaining statistical risks:
+The current turn-policy evaluator separates calibration from holdout and groups turns by conversation/session. Its documentation also identifies two remaining statistical risks:
 
 1. A caller can accidentally inspect the same holdout repeatedly while tuning future policies.
-2. The Wilson interval currently treats pause-level outcomes as independent Bernoulli trials, even though multiple pauses from one conversation/session can be correlated.
+2. The Wilson interval treats pause-level outcomes as independent Bernoulli trials, even though pauses from one conversation/session can be correlated.
 
-This change addresses the first risk with an atomic, local, one-use ledger. It does not claim to solve clustered uncertainty; that remains an explicit next-stage statistical improvement.
+This change addresses the first risk with an atomic, local, one-use ledger. It does not solve clustered uncertainty; that remains an explicit next-stage improvement.
 
 ## Research findings
 
 ### 1. Adaptive reuse can overfit a holdout
 
-Dwork et al., *Generalization in Adaptive Data Analysis and Holdout Reuse* (NeurIPS 2015), describe how repeated, adaptive hypothesis testing against the same holdout can leak information and lead to overfitting. They study methods for safely reusing holdouts, including privacy- and description-length-based approaches.
+Dwork et al., *Generalization in Adaptive Data Analysis and Holdout Reuse* (NeurIPS 2015), describe how repeated, adaptive testing against the same holdout can leak information and cause overfitting. They study safer reuse methods, including privacy- and description-length-based approaches.
 
 STAR does not currently implement a differentially private reusable holdout. The simpler conservative policy is to consume a holdout once after a candidate is frozen. Any future tuning requires a new holdout partition.
 
@@ -24,7 +24,7 @@ Source: https://research.ibm.com/publications/generalization-in-adaptive-data-an
 
 ### 2. Voice turn-taking needs causal, policy-level evaluation
 
-LiveKit's open eot-bench evaluates complete turns at real pauses, distinguishes mid-turn pauses from true turn endings, and compares policy operating points under explicit false-cutoff and latency budgets. Its public dataset covers 14 languages and includes streaming/batch adapter interfaces.
+LiveKit's open eot-bench evaluates complete turns at real pauses, distinguishes mid-turn pauses from true turn endings, and compares policy operating points under explicit false-cutoff and latency budgets. Its public dataset covers 14 languages.
 
 The STAR evaluator uses a content-free schema for causal scores and pause labels. A future adapter should preserve the source dataset revision, license, language, adapter version and conversation/session group boundaries. It must not feed future audio or transcript context into earlier pause scores.
 
@@ -40,7 +40,7 @@ Source: https://turnbench.sesame.com/
 
 ### 4. SQLite can serialize local claims
 
-SQLite documents that `BEGIN IMMEDIATE` starts a write transaction immediately and can fail with `SQLITE_BUSY` if another writer is active. STAR uses this transaction mode plus unique constraints to make dataset and session-group claims atomic across concurrent processes using the same ledger file.
+SQLite documents that `BEGIN IMMEDIATE` starts a write transaction immediately and may return `SQLITE_BUSY` if another writer is active. STAR combines this transaction mode with unique constraints to make dataset and session-group claims atomic across processes sharing one ledger file.
 
 Sources:
 - https://www.sqlite.org/lang_transaction.html
@@ -48,9 +48,9 @@ Sources:
 
 ### 5. Clustered observations need cluster-aware uncertainty
 
-Huang (2016), *Using Cluster Bootstrapping to Analyze Nested Data With a Few Clusters*, studies cluster bootstrap behavior when observations are nested inside a relatively small number of groups. The STAR turn-taking data have this same structural concern: multiple pauses can come from one conversation/session.
+Huang (2016), *Using Cluster Bootstrapping to Analyze Nested Data With a Few Clusters*, studies bootstrap behavior when observations are nested in relatively few groups. STAR has the same structural concern: multiple pauses can come from one conversation/session.
 
-The current Wilson bounds remain useful as a transparent event-level diagnostic, but their independence assumption is not fixed merely by splitting train/calibration and holdout by group. A future change should add session-resampled uncertainty and a conservative group-level error-incidence measure, with simulation tests over different intra-session correlations and cluster counts.
+The current Wilson bounds remain useful as event-level diagnostics, but group-based splitting does not remove their independence assumption. A future change should add session-resampled uncertainty and a conservative group-level error-incidence measure, with simulations across different intra-session correlations and cluster counts.
 
 Source: https://journals.sagepub.com/doi/full/10.1177/0013164416678980
 
