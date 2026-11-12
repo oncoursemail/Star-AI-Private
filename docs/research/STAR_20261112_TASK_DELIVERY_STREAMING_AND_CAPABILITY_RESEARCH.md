@@ -360,3 +360,63 @@ For every route, log model/runtime revision, task class, input/output token coun
 | Desktop autonomy | Target grounding, preconditions, postconditions, cancellation, rollback/safe-stop |
 | Faster inference | Paired p50/p95/p99 improvements with unchanged quality and no game/audio/OBS regression |
 | Self-improvement | Offline experiment, independent verification, versioned result, rollback, no automatic production promotion |
+
+
+## 12. Existing STAR runtime audit — extend, do not duplicate
+
+The branch already contains substantial streaming, avatar, telemetry, and game-control primitives. The next work should wire these together rather than create parallel "Social Director", "Avatar Director", or "Gamer Brain" modules.
+
+| Existing module | Verified responsibility | Remaining boundary |
+|---|---|---|
+| `star/stream_director.py` | Bounded, consent-gated speech arbitration; priority, expiry, cooldown, untrusted viewer context, session epochs | No chat transport, speech generation, TTS, or automatic tool execution |
+| `star/stream_turntaking.py` | Deterministic VAD-frame advisor; stale/missing input fails closed; owner-yield is separate from guest hold | Host supplies preprocessed VAD and must authenticate the owner source |
+| `star/stream_interrupt_host.py` | Coordinates stage invalidation, physical audio-stop callback, animation flush, and avatar neutral reset; latches faults on missing acknowledgements | Does not capture microphones or own the audio device; callbacks are host attestations |
+| `star/vtube_local_host.py` | Local-loopback VTube Studio WebSocket, explicit owner pairing, token handling in caller memory, 14 parameter registration, stale-frame drop | Requires optional websocket transport and a real owner-configured Live2D rig; no automatic retries or model-tool access |
+| `star/stream_hardware_telemetry.py` | Off-hot-path CPU/RAM/GPU probes, host-provided frame-present intervals, speaker backlog, immutable QoS snapshots | Real FPS depends on a trusted PresentMon/engine callback; voice backlog depends on the actual local output host |
+| `star/obs_stream_status.py` | Strict parser and epoch-safe sampler for OBS GetStreamStatus, preserves unknown congestion as unknown | Authenticated OBS WebSocket connection is still a separate host transport |
+| `star/stream_workload_runtime.py` | Composes stream pressure hysteresis with CPU/RAM/VRAM admission leases | Policy only; no process start/stop, inference launch, or authorization |
+| `star/game_closed_loop.py` | One-step observe → offer → host-dispatch → verify protocol; stale/mismatched movement latches stop | Does not send game inputs or capture game frames itself |
+| `star/game_skill_promotion.py` | Held-out skill evidence, scenario/session deduplication, lower confidence bound, unsafe-trial veto, owner-review status | Host must reserve holdout scenarios and independently score trials; evidence is in-memory |
+| `star/game_skill_memory.py`, `star/game_transfer_eval.py`, `star/gameplay_skill_bank.py` | Existing reusable game-skill and transfer foundations | Need a real game adapter and repeatable held-out evaluations |
+| `star/agent_runtime.py`, `star/agent_fleet.py`, `star/agent_resource_planner.py` | Existing agent execution, fleet and resource planning | Task completion still needs durable outbox delivery and unified host supervision |
+
+### Integration graph to implement next
+
+```text
+actual OBS WebSocket -----> obs_stream_status parser
+actual OS/NVIDIA probes --> RealtimeTelemetryHost
+actual PresentMon/engine -> presented_frame()
+actual speaker host ------> report_audio_backlog()
+actual TTS playback ------> DeliveryLedger / SQLiteDeliveryLedger
+                                |
+                                v
+                        task-delivery bridge
+                                |
+                                v
+                         StreamDirector
+                                |
+                      voice generation / TTS
+                                |
+                     StreamInterruptionHost
+                          /           \
+                   audio device     VTubeLocalHost
+                                |
+                         playback receipt
+
+game screen/input adapter -> ClosedLoopPilot -> verified frame
+                                  |
+                         SkillPromotionGate
+                                  |
+                         gameplay skill bank
+```
+
+### Critical gap ranking
+
+1. **Durable task completion outbox:** TaskLedger is in-memory. Persist the task terminal transition and pending delivery row in one database transaction; dispatch to SQLiteDeliveryLedger with an idempotency key. This closes the crash gap that the new helper alone cannot close.
+2. **Single Windows host supervisor:** one trusted service owns OBS, VTube Studio, TTS/audio process epochs, telemetry, and worker start/stop acknowledgements. No model or chat event receives these callbacks directly.
+3. **Actual transport adapters:** connect OBS WebSocket with password authentication; connect actual Windows audio output/playback events; use real process/frame counters. Keep parser/policy modules pure.
+4. **Voice delivery wiring:** on task completion, enqueue only the current task version; StreamDirector chooses whether to speak; TTS produces short segments; playback-finished callbacks acknowledge them; interruption host stops and flushes the exact playback epoch.
+5. **Game adapter:** feed authoritative screen/frame and input results to ClosedLoopPilot; score with a host-owned held-out scenario inventory; only then submit evidence to SkillPromotionGate.
+6. **Cross-system trace:** correlate task ID, conversation turn, delivery ID, playback epoch, OBS stream epoch, game session, model revision, and workload lease using opaque IDs. Export timings/counters, not prompts, audio, chat text, or viewer identity.
+
+This audit is based on the code present in the PR branch. It does not assert that the host callbacks are connected to real devices in a packaged Windows run. The existing components are valuable foundations, but their class-level tests and host-supplied booleans are not a substitute for end-to-end hardware verification.
