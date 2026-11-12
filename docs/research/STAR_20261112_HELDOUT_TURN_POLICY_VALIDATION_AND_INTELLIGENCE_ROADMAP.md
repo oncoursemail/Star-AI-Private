@@ -72,7 +72,7 @@ A point estimate such as 0 false cutoffs in 20 pauses does not establish that th
 
 This is intentionally conservative: a small sample may remain inconclusive even when no errors are observed. That is preferable to promoting a policy on weak evidence.
 
-The bound is a binomial approximation and does not repair correlated samples. Grouped holdout design and enough independent sessions remain necessary. For clustered data, a future adapter should bootstrap at the session/group level rather than treating every pause as independent.
+The bound is a binomial approximation and does not repair correlated samples. The evaluator therefore requires a minimum number of distinct conversation/session groups (20 by default), not only a minimum number of pauses and turns. Grouped holdout design and enough independent sessions remain necessary. For clustered data, a future adapter should bootstrap at the session/group level rather than treating every pause as independent.
 
 ### 2.4 LiveKit production endpointing defaults are not universal STAR settings
 
@@ -102,7 +102,8 @@ The evaluator rejects:
 - group IDs shared across partitions;
 - malformed or unbounded identifiers;
 - invalid pause data;
-- insufficient calibration sample sizes.
+- insufficient calibration sample sizes;
+- too few distinct calibration or holdout conversation/session groups (20 by default).
 
 All turns from a conversation/session group must be assigned to one partition. Use keyed digests at the host boundary. Never use viewer names, account IDs, raw audio fingerprints, or voiceprints as group IDs.
 
@@ -122,7 +123,7 @@ A deterministic tie-breaker selects the lowest p95 latency, then lower confidenc
 Only after a calibration candidate is frozen does the function evaluate the holdout. It evaluates the silence-only reference at the same action delay and timeout.
 
 The holdout result is:
-- `PASS`: all sample-size and predeclared gates pass;
+- `PASS`: all turn-count, distinct-group-count, and predeclared quality/latency gates pass;
 - `FAIL`: adequate sample size exists and one or more gates fail;
 - `INCONCLUSIVE_HOLDOUT`: sample size is insufficient;
 - `NO_CALIBRATION_CANDIDATE`: no policy qualifies on calibration;
