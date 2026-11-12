@@ -290,6 +290,9 @@ class SQLiteDeliveryLedger(DeliveryLedger):
                 super().mark_recovery_required(
                     record.delivery_id, rebased.version, now_ms=now_ms
                 )
+            elif rebased.state is DeliveryState.RECOVERY_REQUIRED:
+                # Preserve an existing stop-confirmation fence across repeated restarts.
+                pass
             elif deadline_due and rebased.state not in (
                 DeliveryState.DELIVERED, DeliveryState.CANCELLED, DeliveryState.EXPIRED
             ):
