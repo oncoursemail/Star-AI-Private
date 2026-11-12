@@ -168,6 +168,7 @@ A packet also returns a random ticket to the host object. The ticket is delibera
 - A completed callback is not offered again during the same stream session.
 - Pending tickets expire after 15 minutes.
 - The replay ledger is bounded; exhaustion fails closed.
+- At stream shutdown, the host calls `end_stream_session()` to release ephemeral pending/replay state without deleting durable practice memory.
 - The host must issue a new, never-reused stream-session ID after a stream restart.
 
 The playback boolean is a host-adapter assertion, not cryptographic proof that a viewer heard the audio. The existing voice/playback gate remains authoritative for whether speech is allowed.
@@ -221,7 +222,9 @@ The new tests cover:
 - stale and future evidence;
 - one-use audible callback acknowledgement;
 - pending-ticket expiry and retry;
-- bounded pending/replay ledgers.
+- bounded pending/replay ledgers;
+- explicit stream-session cleanup without deleting durable records;
+- pathlib-based database paths.
 
 ## 8. Runtime integration plan
 
@@ -235,7 +238,7 @@ A later host integration should:
 5. add `packet.user_message()` as isolated USER-priority context;
 6. pass the model's proposed response through the existing StreamDirector, multiparty floor, interruption, moderation and voice gates;
 7. complete the ticket only after the existing playback owner confirms the audible response;
-8. create a fresh stream-session ID after every stream restart.
+8. call `end_stream_session()` when a stream ends, then create a fresh stream-session ID after every stream restart.
 
 Do not expose the store, ticket, HMAC keys, practice receipts or `complete_callback()` to model tools. Do not let model output write to the continuity database.
 
