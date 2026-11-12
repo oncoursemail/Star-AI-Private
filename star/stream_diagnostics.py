@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
+from typing import Any, cast
 
 from .agent_trace_analysis import profile_trace
 from .stream_rehearsal_eval import RehearsalLimits, evaluate_rehearsal
@@ -124,7 +124,7 @@ def _budget_map(value: object) -> dict[str, float]:
         if type(budget) not in (int, float):
             raise ValueError("component budgets must be finite positive milliseconds")
         try:
-            number = float(budget)
+            number = float(cast(int | float, budget))
         except (OverflowError, ValueError) as exc:
             raise ValueError("component budgets must be finite positive milliseconds") from exc
         if not math.isfinite(number) or not 0 < number <= _MAX_BUDGET_MS:
@@ -227,7 +227,7 @@ def diagnose_stream_rehearsal(
 
     failures = [gate for gate in rehearsal["gates"] if gate["status"] == "FAIL"]
     inconclusive = [gate for gate in rehearsal["gates"] if gate["status"] == "INCONCLUSIVE"]
-    diagnoses = []
+    diagnoses: list[dict[str, Any]] = []
     for gate in failures:
         name = gate["name"]
         mapped = _GATE_ROUTES[name]
