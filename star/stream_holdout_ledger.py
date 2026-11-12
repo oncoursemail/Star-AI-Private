@@ -179,7 +179,7 @@ class HoldoutLedger:
         dataset_digest = cls._hash(b"STAR-HOLDOUT-v1\0" + payload)
         group_digests = tuple(
             sorted(
-                cls._hash(b"STAR-GROUP-v1\\0" + group_id.encode("utf-8"))
+                cls._hash(b"STAR-GROUP-v1\0" + group_id.encode("utf-8"))
                 for group_id in unique_groups
             )
         )
