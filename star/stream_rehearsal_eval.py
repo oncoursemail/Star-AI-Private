@@ -56,6 +56,8 @@ _RATE_LIMITS = frozenset({
 def _number(value: object, label: str) -> float:
     """Convert exact JSON numeric primitives without accepting bool or strings."""
     if type(value) is int:
+        if value > _MAX_NUMBER:
+            raise ValueError(f"{label} is outside the supported range")
         result = float(cast(int, value))
     elif type(value) is float:
         result = cast(float, value)
