@@ -88,7 +88,6 @@ def test_playback_clock_separates_queue_submission_from_output_callback():
         first_ack_at=1.2,
         first_audio_at=1.4,
         first_playback_at=1.24,
-        speaker_output_callbacks=12,
         speaker_output_callbacks_with_audio=2,
         speaker_output_underflows=1,
     )
