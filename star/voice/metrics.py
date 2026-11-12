@@ -82,6 +82,7 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
     }
     samples: dict[str, list[float]] = {
         "speech_end_to_audio_submitted": [],
+        "speech_end_to_first_submission": [],
         "speech_end_to_first_playback": [],
         "speaker_queue_to_playback": [],
         **{key: [] for key in pairs},
@@ -116,8 +117,10 @@ def latency_summary(turns: list[TurnMetrics]) -> dict:
         ):
             invalid += 1
             continue
+        if turn.first_audio_at is not None:
+            samples["speech_end_to_audio_submitted"].append((turn.first_audio_at - start) * 1000)
         if first_submitted is not None:
-            samples["speech_end_to_audio_submitted"].append((first_submitted - start) * 1000)
+            samples["speech_end_to_first_submission"].append((first_submitted - start) * 1000)
         if playback is not None:
             samples["speech_end_to_first_playback"].append((playback - start) * 1000)
         if first_submitted is not None and playback is not None:
