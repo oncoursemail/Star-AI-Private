@@ -122,10 +122,24 @@ class StreamHostSampler:
     runtime when the host monotonic clock epoch changes.
     """
 
-    def __init__(self, *, max_age_ms: int = 3_000) -> None:
+    def __init__(
+        self,
+        *,
+        max_age_ms: int = 3_000,
+        max_state_age_ms: int | None = None,
+        max_skew_ms: int | None = None,
+    ) -> None:
         if type(max_age_ms) is not int or not 100 <= max_age_ms <= 60_000:
             raise ValueError("max_age_ms must be in 100..60000")
+        state_age = min(500, max_age_ms) if max_state_age_ms is None else max_state_age_ms
+        if type(state_age) is not int or not 100 <= state_age <= max_age_ms:
+            raise ValueError("max_state_age_ms must be in 100..max_age_ms")
+        skew = min(500, max_age_ms) if max_skew_ms is None else max_skew_ms
+        if type(skew) is not int or not 0 <= skew <= max_age_ms:
+            raise ValueError("max_skew_ms must be in 0..max_age_ms")
         self.max_age_ms = max_age_ms
+        self.max_state_age_ms = state_age
+        self.max_skew_ms = skew
         self._clock_epoch: str | None = None
         self._last_seq = 0
         self._last_now_ms: int | None = None
@@ -149,10 +163,10 @@ class StreamHostSampler:
             raise ValueError("sample sequence must increase")
 
         streaming, stream_at = _bool_value(
-            inputs.streaming, label="streaming", inputs=inputs, max_age_ms=self.max_age_ms
+            inputs.streaming, label="streaming", inputs=inputs, max_age_ms=self.max_state_age_ms
         )
         gaming, game_state_at = _bool_value(
-            inputs.gaming, label="gaming", inputs=inputs, max_age_ms=self.max_age_ms
+            inputs.gaming, label="gaming", inputs=inputs, max_age_ms=self.max_state_age_ms
         )
         vram_free_mb, vram_at = _integer_value(
             inputs.vram_free_mb, label="vram_free_mb", inputs=inputs,
@@ -196,6 +210,13 @@ class StreamHostSampler:
             voice_p95_ms = 0.0
             obs_dropped_pct = 0.0
             audio_underruns = 0
+
+        # Fresh observations can still describe different workload windows. In
+        # particular, an old "not streaming" state must not mask newer OBS/voice
+        # data, and a recent state must not be combined with an unrelated old FPS
+        # window. Bound the spread before constructing the scheduler sample.
+        if max(timestamps) - min(timestamps) > self.max_skew_ms:
+            raise TelemetryUnavailable("observations exceed max sampling skew")
 
         sample = StreamSample(
             seq=inputs.seq,
