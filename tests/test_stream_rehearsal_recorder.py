@@ -119,6 +119,10 @@ def test_complete_recorder_feeds_existing_rehearsal_evaluator():
         "held_out_skill_trials",
         "held_out_skill_successes",
     }
+    assert all(
+        series["exact"] is True
+        for series in recorder.health()["sample_series"].values()
+    )
     report = recorder.evaluate(configured_limits())
 
     assert report["overall"] == "PASS"
@@ -266,6 +270,7 @@ def test_reservoir_is_bounded_and_deterministic_for_same_run_and_sequence():
         "observed": 100,
         "retained": 5,
         "sampling_fraction": 0.05,
+        "exact": False,
     }
 
 
