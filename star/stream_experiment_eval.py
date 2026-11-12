@@ -135,7 +135,8 @@ class ExperimentPolicy:
 
 
 def _margin(value: object, label: str) -> None:
-    if type(value) not in (int, float):
+    # bool is an int subclass, but is not a meaningful numeric margin.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{label} must be a finite fraction in 0..1")
     numeric = float(value)
     if not math.isfinite(numeric) or not 0 <= numeric <= 1:
