@@ -126,7 +126,7 @@ class VirtualSpeaker:
     def playback_snapshot(self) -> PlaybackSnapshot:
         """Return the simulated scheduled start; virtual devices have no hardware callback counters."""
         with self._lock:
-            return PlaybackSnapshot(self._first_playback_at, None, None, None)
+            return PlaybackSnapshot(self._first_playback_at, None, None)
 
     def pending_seconds(self) -> float:
         with self._lock:
