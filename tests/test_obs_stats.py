@@ -57,7 +57,7 @@ def test_parser_reads_allowlisted_stats_and_ignores_unknown_fields():
     )
     assert result.active_fps == 60.0
     assert result.cpu_usage_percent == 12.5
-    assert result.memory_usage_mib == 512.0
+    assert result.memory_usage_mb == 512.0
     assert not hasattr(result, "secret")
 
 
@@ -69,7 +69,7 @@ def test_parser_allows_absent_optional_cpu_and_memory():
         data, obs_epoch="obs-1", stream_epoch="stream-1", sampled_at_ms=10.0
     )
     assert result.cpu_usage_percent is None
-    assert result.memory_usage_mib is None
+    assert result.memory_usage_mb is None
 
 
 def test_parser_requires_core_get_stats_fields():
