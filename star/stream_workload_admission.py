@@ -94,11 +94,13 @@ class ResourceVector:
 
 @dataclass(frozen=True)
 class ResourceBudget:
-    """Static per-session STAR budget and protected real-time reserve.
+    """Static per-session STAR budget and hard real-time reserve.
 
-    Capacity is the maximum allocation the host is willing to assign to STAR
-    after accounting for Windows, the game, OBS, drivers, and other fixed work.
-    It is not total installed hardware capacity or instantaneous free memory.
+    The hard reserve is available only to audio, game-control, voice, and
+    avatar lanes. Chat remains eligible during a stream but uses unreserved
+    capacity. Capacity is the maximum allocation the host is willing to assign
+    after accounting for Windows, the game, OBS, drivers, and fixed work; it is
+    not installed hardware capacity or instantaneous free memory.
     """
 
     capacity: ResourceVector
@@ -230,10 +232,11 @@ def _sum_resources(leases: list[WorkloadLease]) -> ResourceVector:
 class WorkloadAdmissionController:
     """Deterministic, bounded admission; the host owns all actual execution.
 
-    The controller never preempts an active lease. The real-time reserve keeps
-    background work from consuming a configured slice, but the host must size
-    that reserve for its worst expected voice/game burst and retain a separate
-    cancellation mechanism for long-running workers.
+    The controller never preempts an active lease. Only audio, game-control,
+    voice, and avatar lanes can consume the hard real-time reserve. Chat remains
+    eligible under degraded health but must fit outside that reserve. The host
+    must size the reserve for its worst expected voice/game burst and retain a
+    separate cancellation mechanism for long-running workers.
     """
 
     def __init__(
