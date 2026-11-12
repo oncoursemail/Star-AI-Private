@@ -1,7 +1,7 @@
 """Latency arithmetic and report formatting independently of live voice calls."""
 import pytest
 
-from star.voice.metrics import TurnMetrics, latency_table
+from star.voice.metrics import TurnMetrics, latency_summary, latency_table
 
 
 def test_empty_turn_has_unknown_stage_latencies_and_empty_table():
@@ -80,3 +80,41 @@ def test_latency_table_only_averages_complete_turns_and_reports_failure_reasons(
 def test_latencies_do_not_silently_accept_non_numeric_timestamps():
     with pytest.raises(TypeError):
         TurnMetrics(speech_end=0.0, first_audio_at="invalid").stages()
+
+
+def test_playback_clock_separates_queue_submission_from_output_callback():
+    metrics = TurnMetrics(
+        speech_end=1.0,
+        first_ack_at=1.2,
+        first_audio_at=1.4,
+        first_playback_at=1.24,
+        speaker_output_callbacks=12,
+        speaker_output_callbacks_with_audio=2,
+        speaker_output_underflows=1,
+    )
+    stages = metrics.stages()
+    assert stages["total"] == pytest.approx(0.4)  # existing queue-submission metric stays compatible
+    assert stages["speech_end_to_first_playback"] == pytest.approx(0.24)
+    assert stages["speaker_queue_to_playback"] == pytest.approx(0.04)
+    assert stages["perceived"] == pytest.approx(0.24)
+    data = metrics.to_dict()
+    assert data["speaker_output_underflows"] == 1
+    assert data["first_playback_at"] == 1.24
+
+
+def test_playback_summary_includes_acknowledgement_only_turns():
+    metrics = TurnMetrics(speech_end=1.0, first_ack_at=1.2, first_playback_at=1.25)
+    summary = latency_summary([metrics])
+    latency = summary["latency"]
+    assert latency["speech_end_to_audio_submitted"]["p50_ms"] == pytest.approx(200.0)
+    assert latency["speech_end_to_first_playback"]["p50_ms"] == pytest.approx(250.0)
+    assert latency["speaker_queue_to_playback"]["p50_ms"] == pytest.approx(50.0)
+    assert summary["incomplete_turns"] == 0
+
+
+def test_playback_summary_rejects_nonfinite_or_reversed_output_timestamps():
+    invalid = TurnMetrics(speech_end=1.0, first_audio_at=1.2, first_playback_at="bad")
+    reversed_clock = TurnMetrics(speech_end=1.0, first_ack_at=1.3, first_playback_at=1.2)
+    summary = latency_summary([invalid, reversed_clock])
+    assert summary["invalid_clock_turns"] == 2
+    assert summary["latency"]["speech_end_to_first_playback"]["n"] == 0
