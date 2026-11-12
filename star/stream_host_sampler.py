@@ -78,6 +78,7 @@ def _bool_value(observation: MetricObservation | None, *, label: str, inputs: St
 def _number_value(observation: MetricObservation | None, *, label: str, inputs: StreamHostInputs,
                   max_age_ms: int, maximum: float) -> tuple[float, int]:
     captured = _metadata(observation, label=label, inputs=inputs, max_age_ms=max_age_ms)
+    assert observation is not None
     value = observation.value
     if type(value) is int:
         try:
@@ -96,6 +97,7 @@ def _number_value(observation: MetricObservation | None, *, label: str, inputs: 
 def _integer_value(observation: MetricObservation | None, *, label: str, inputs: StreamHostInputs,
                    max_age_ms: int, maximum: int) -> tuple[int, int]:
     captured = _metadata(observation, label=label, inputs=inputs, max_age_ms=max_age_ms)
+    assert observation is not None
     value = observation.value
     if type(value) is not int or not 0 <= value <= maximum:
         raise ValueError(f"{label} must be a bounded nonnegative integer")
