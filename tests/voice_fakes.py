@@ -140,7 +140,7 @@ class FakeSpeaker:
 
     def playback_snapshot(self) -> PlaybackSnapshot:
         with self.lock:
-            return PlaybackSnapshot(self.first_playback_at, None, None, None)
+            return PlaybackSnapshot(self.first_playback_at, None, None)
 
     def pending_seconds(self) -> float:
         with self.lock:
