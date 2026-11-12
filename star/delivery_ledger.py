@@ -225,9 +225,6 @@ class DeliveryLedger:
             self._digest(digest, f"segment_sha256s[{index}]")
         with self._lock:
             now = self._now(now_ms)
-            if deadline_ms is not None:
-                if type(deadline_ms) is not int or not now < deadline_ms <= _MAX_CLOCK_MS:
-                    raise ValueError("deadline_ms must be after now_ms")
             existing = self._records.get(delivery_id)
             if existing is not None:
                 same_contract = (
@@ -240,6 +237,9 @@ class DeliveryLedger:
                 if same_contract:
                     return existing
                 raise DeliveryConflict("delivery IDs cannot be reused for another contract")
+            if deadline_ms is not None:
+                if type(deadline_ms) is not int or not now < deadline_ms <= _MAX_CLOCK_MS:
+                    raise ValueError("deadline_ms must be after now_ms")
             if len(self._records) >= self.max_records:
                 raise OverflowError("delivery ledger capacity reached; rotate after review")
             record = DeliveryRecord(
@@ -274,10 +274,7 @@ class DeliveryLedger:
             now = self._now(now_ms)
             record = self._get(delivery_id)
             self._cas(record, expected_version)
-            record = self._expire_deadline(
-                record, now,
-                allow_recovery_required=(host_confirmed_stopped is True),
-            )
+            record = self._expire_deadline(record, now)
             if record.state is DeliveryState.EXPIRED:
                 raise DeliveryDeadlineExpired("delivery deadline has expired")
             if record.state not in (
