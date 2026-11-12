@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
-from typing import Any
+from typing import Any, cast
 
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SAMPLES = 100_000
@@ -56,9 +56,9 @@ _RATE_LIMITS = frozenset({
 def _number(value: object, label: str) -> float:
     """Convert exact JSON numeric primitives without accepting bool or strings."""
     if type(value) is int:
-        result = float(value)
+        result = float(cast(int, value))
     elif type(value) is float:
-        result = value
+        result = cast(float, value)
     else:
         raise ValueError(f"{label} must be a finite nonnegative number")
     if not math.isfinite(result) or not 0 <= result <= _MAX_NUMBER:
@@ -67,9 +67,12 @@ def _number(value: object, label: str) -> float:
 
 
 def _count(value: object, label: str) -> int:
-    if type(value) is not int or not 0 <= value <= _MAX_COUNT:
+    if type(value) is not int:
         raise ValueError(f"{label} must be a bounded nonnegative integer")
-    return value
+    result = cast(int, value)
+    if not 0 <= result <= _MAX_COUNT:
+        raise ValueError(f"{label} must be a bounded nonnegative integer")
+    return result
 
 
 def _series(value: object, label: str) -> list[float]:
