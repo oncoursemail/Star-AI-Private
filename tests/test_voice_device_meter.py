@@ -141,13 +141,14 @@ def test_meter_overflow_drops_only_telemetry_never_pcm(monkeypatch):
             last_output = emit(speaker, pcm)
         assert last_output == pcm
         assert len(speaker._level_queue) <= devices._LEVEL_QUEUE_CAPACITY
-        assert speaker.dropped_level_blocks >= 1
         assert speaker.pending_seconds() == pytest.approx(0.0)
         assert speaker.played_seconds() == pytest.approx(66 * 8 / 24000)
         assert speaker.level() == 1.0
     finally:
         release.set()
         assert wait_for_meter(speaker, timeout=2.0)
+        assert speaker.dropped_level_blocks >= 1
+        assert speaker.level() == 1.0  # overflow remains conservative for the echo window
         speaker.close()
     assert not speaker._level_worker.is_alive()
 
