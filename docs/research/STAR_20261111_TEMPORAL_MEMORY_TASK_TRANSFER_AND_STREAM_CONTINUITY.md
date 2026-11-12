@@ -146,7 +146,7 @@ Source: https://www.microsoft.com/en-us/research/publication/human-inspired-memo
 
 - The host creates a case roster and commits its digest before either variant is evaluated.
 - The scenario text, expected answers, receipts and validation key stay outside the model and repository.
-- A trusted host independently grades the environment result and signs the content-free trial record.
+- A trusted host independently grades the environment result and signs the content-free trial record; the signed payload is bound to the exact baseline or candidate revision.
 - Baseline and candidate run the same cases with distinct run IDs.
 - Missing trials and infrastructure errors are INCONCLUSIVE, not failures or successes.
 - The report contains aggregate metrics only; it never returns per-case answers or private content.
