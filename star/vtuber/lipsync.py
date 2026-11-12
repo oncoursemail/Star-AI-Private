@@ -24,6 +24,8 @@ from typing import Callable
 
 import numpy as np
 
+from ..voice.playback import PlaybackSnapshot
+
 HOP_S = 0.02
 VISEMES = ("aa", "ih", "ou", "ee", "oh")
 NOISE_FLOOR = 0.012                 # RMS (full scale 1.0) below which the mouth is closed
@@ -289,6 +291,15 @@ class LipSyncSpeaker:
 
     def reset(self) -> None:
         self._speaker.reset()
+
+    def playback_snapshot(self) -> PlaybackSnapshot:
+        """Forward the voice backend's playback clock through the lip-sync wrapper."""
+        getter = getattr(self._speaker, "playback_snapshot", None)
+        if callable(getter):
+            snapshot = getter()
+            if isinstance(snapshot, PlaybackSnapshot):
+                return snapshot
+        return PlaybackSnapshot(None, None, None)
 
     def __getattr__(self, name):          # pending_seconds, played_seconds, level and anything else the speaker has
         return getattr(self._speaker, name)
