@@ -69,6 +69,7 @@ def _metadata(observation: MetricObservation | None, *, label: str, inputs: Stre
 def _bool_value(observation: MetricObservation | None, *, label: str, inputs: StreamHostInputs,
                 max_age_ms: int) -> tuple[bool, int]:
     captured = _metadata(observation, label=label, inputs=inputs, max_age_ms=max_age_ms)
+    assert observation is not None
     if type(observation.value) is not bool:
         raise ValueError(f"{label} must be an explicit boolean")
     return observation.value, captured
