@@ -46,6 +46,8 @@ class TurnPolicyConstraints:
     max_p95_latency_ms: int = 900
     min_hold_pauses: int = 100
     min_final_turns: int = 100
+    min_calibration_groups: int = 20
+    min_holdout_groups: int = 20
     confidence_level: float = 0.95
 
     def __post_init__(self) -> None:
@@ -58,7 +60,10 @@ class TurnPolicyConstraints:
                 raise ValueError(f"{name} must be a finite fraction in 0..1")
         if type(self.max_p95_latency_ms) is not int or not 1 <= self.max_p95_latency_ms <= _MAX_DURATION_MS:
             raise ValueError("max_p95_latency_ms must be in 1..120000")
-        for name in ("min_hold_pauses", "min_final_turns"):
+        for name in (
+            "min_hold_pauses", "min_final_turns",
+            "min_calibration_groups", "min_holdout_groups",
+        ):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= _MAX_SPANS:
                 raise ValueError(f"{name} must be in 1..20000")
@@ -82,6 +87,8 @@ class TurnPolicyValidation:
     calibration_eligible_count: int
     calibration_turn_count: int
     holdout_turn_count: int
+    calibration_group_count: int
+    holdout_group_count: int
     holdout_false_cutoff_upper_bound: float | None
     holdout_missed_final_upper_bound: float | None
 
@@ -103,7 +110,7 @@ def _validate_split(
     calibration_spans: Sequence[SilenceSpan],
     holdout_spans: Sequence[SilenceSpan],
     group_ids_by_turn: Mapping[str, str],
-) -> tuple[TurnPolicyResult, TurnPolicyResult]:
+) -> tuple[TurnPolicyResult, TurnPolicyResult, int, int]:
     calibration_probe = _probe_partition(calibration_spans, "calibration")
     holdout_probe = _probe_partition(holdout_spans, "holdout")
 
@@ -138,7 +145,7 @@ def _validate_split(
     if calibration_groups & holdout_groups:
         raise ValueError("calibration and holdout groups must be disjoint")
 
-    return calibration_probe, holdout_probe
+    return calibration_probe, holdout_probe, len(calibration_groups), len(holdout_groups)
 
 
 def _wilson_upper(successes: int, trials: int, confidence_level: float) -> float:
@@ -190,18 +197,32 @@ def select_and_validate_turn_policy(
     """
     if not isinstance(constraints, TurnPolicyConstraints):
         raise TypeError("constraints must be TurnPolicyConstraints")
-    calibration_probe, holdout_probe = _validate_split(
-        calibration_spans, holdout_spans, group_ids_by_turn
-    )
+    (
+        calibration_probe,
+        holdout_probe,
+        calibration_group_count,
+        holdout_group_count,
+    ) = _validate_split(calibration_spans, holdout_spans, group_ids_by_turn)
 
     if (
         calibration_probe.hold_pause_count < constraints.min_hold_pauses
         or calibration_probe.final_turn_count < constraints.min_final_turns
+        or calibration_group_count < constraints.min_calibration_groups
     ):
         return TurnPolicyValidation(
-            ValidationStatus.INSUFFICIENT_CALIBRATION,
-            None, None, None, None, 0, 0,
-            calibration_probe.turn_count, holdout_probe.turn_count, None, None,
+            status=ValidationStatus.INSUFFICIENT_CALIBRATION,
+            selected_policy=None,
+            calibration_metrics=None,
+            holdout_metrics=None,
+            holdout_silence_baseline=None,
+            calibration_policy_count=0,
+            calibration_eligible_count=0,
+            calibration_turn_count=calibration_probe.turn_count,
+            holdout_turn_count=holdout_probe.turn_count,
+            calibration_group_count=calibration_group_count,
+            holdout_group_count=holdout_group_count,
+            holdout_false_cutoff_upper_bound=None,
+            holdout_missed_final_upper_bound=None,
         )
 
     sweep = sweep_turn_policies(
@@ -217,9 +238,19 @@ def select_and_validate_turn_policy(
     ]
     if not eligible:
         return TurnPolicyValidation(
-            ValidationStatus.NO_CALIBRATION_CANDIDATE,
-            None, None, None, None, len(sweep.evaluations), 0,
-            calibration_probe.turn_count, holdout_probe.turn_count, None, None,
+            status=ValidationStatus.NO_CALIBRATION_CANDIDATE,
+            selected_policy=None,
+            calibration_metrics=None,
+            holdout_metrics=None,
+            holdout_silence_baseline=None,
+            calibration_policy_count=len(sweep.evaluations),
+            calibration_eligible_count=0,
+            calibration_turn_count=calibration_probe.turn_count,
+            holdout_turn_count=holdout_probe.turn_count,
+            calibration_group_count=calibration_group_count,
+            holdout_group_count=holdout_group_count,
+            holdout_false_cutoff_upper_bound=None,
+            holdout_missed_final_upper_bound=None,
         )
 
     # Deterministic tie-breaks are predeclared and use calibration metrics only.
@@ -265,6 +296,7 @@ def select_and_validate_turn_policy(
     enough_holdout = (
         holdout_metrics.hold_pause_count >= constraints.min_hold_pauses
         and holdout_metrics.final_turn_count >= constraints.min_final_turns
+        and holdout_group_count >= constraints.min_holdout_groups
     )
     if not enough_holdout:
         status = ValidationStatus.INCONCLUSIVE_HOLDOUT
@@ -287,6 +319,8 @@ def select_and_validate_turn_policy(
         calibration_eligible_count=len(eligible),
         calibration_turn_count=calibration_probe.turn_count,
         holdout_turn_count=holdout_probe.turn_count,
+        calibration_group_count=calibration_group_count,
+        holdout_group_count=holdout_group_count,
         holdout_false_cutoff_upper_bound=false_upper,
         holdout_missed_final_upper_bound=missed_upper,
     )
