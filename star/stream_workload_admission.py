@@ -170,7 +170,7 @@ class AdmissionSnapshot:
     realtime_degraded: bool
     deferred_for_health: int
     expired_queued: int
-    expired_leases: int
+    expired_active_leases: int
 
 
 def _fits(available: ResourceVector, requested: ResourceVector) -> bool:
@@ -250,7 +250,6 @@ class WorkloadAdmissionController:
         self._sequence = 0
         self._last_clock_ms: int | None = None
         self._expired_queued = 0
-        self._expired_leases = 0
 
     def _advance_clock(self, now_ms: int) -> int:
         now = _clock(now_ms, "now_ms")
@@ -265,11 +264,6 @@ class WorkloadAdmissionController:
             if deadline is not None and now_ms >= deadline:
                 del self._queued[request_id]
                 self._expired_queued += 1
-        for lease_id, lease in list(self._active.items()):
-            if now_ms >= lease.expires_monotonic_ms:
-                del self._active[lease_id]
-                self._active_by_request.pop(lease.request_id, None)
-                self._expired_leases += 1
 
     def submit(self, request: WorkloadRequest) -> Submission:
         """Queue one request. Duplicate IDs never create duplicate work."""
@@ -377,10 +371,22 @@ class WorkloadAdmissionController:
                 admitted.append(lease)
             return tuple(admitted)
 
-    def release(self, lease_id: str, now_monotonic_ms: int) -> bool:
-        """Release a completed host task; unknown or expired leases return False."""
+    def release(
+        self,
+        lease_id: str,
+        now_monotonic_ms: int,
+        *,
+        host_confirmed_stopped: bool,
+    ) -> bool:
+        """Release capacity only after the host confirms the worker has stopped.
+
+        Lease expiry is diagnostic, not proof of process termination. An
+        expired lease continues to reserve capacity until this host assertion.
+        """
         if type(lease_id) is not str or re.fullmatch(r"[0-9a-f]{32}", lease_id) is None:
             raise ValueError("lease_id must be a host-issued opaque lease ID")
+        if host_confirmed_stopped is not True:
+            raise PermissionError("host must confirm the worker has stopped before releasing capacity")
         with self._lock:
             now = self._advance_clock(now_monotonic_ms)
             self._expire(now)
@@ -432,5 +438,5 @@ class WorkloadAdmissionController:
                 realtime_degraded=degraded,
                 deferred_for_health=deferred,
                 expired_queued=self._expired_queued,
-                expired_leases=self._expired_leases,
+                expired_active_leases=sum(1 for lease in active if now >= lease.expires_monotonic_ms),
             )
