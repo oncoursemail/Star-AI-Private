@@ -16,7 +16,7 @@ import re
 import secrets
 from threading import RLock
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_RESOURCE = 1_000_000_000
 _MAX_CLOCK_MS = 10**15
 
