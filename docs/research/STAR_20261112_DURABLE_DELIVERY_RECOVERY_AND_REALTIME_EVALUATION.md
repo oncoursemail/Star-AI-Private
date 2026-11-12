@@ -15,8 +15,8 @@ This change adds a SQLite WAL-backed SQLiteDeliveryLedger with a conservative re
 - A database failure rolls the in-memory mutation back.
 - Records and transition history contain only opaque IDs, state/version metadata, timing metadata, and SHA-256 digests.
 - Monotonic timestamps are rebased at startup using persisted wall-clock metadata.
-- A deadline-bound obligation expires on restore if its wall deadline has passed or the wall clock moved backward.
-- Old CLAIMED/PLAYING work becomes RECOVERY_REQUIRED.
+- Non-active deadline-bound obligations expire on restore if their wall deadline has passed or the wall clock moved backward.
+- Old CLAIMED/PLAYING work always becomes RECOVERY_REQUIRED, even when overdue; the host must confirm the old worker stopped before deadline expiry can clear the fence.
 - The host must stop and confirm old synthesis/playback workers before reconciliation.
 - A claimed-but-not-playing segment returns to READY; a possibly partial playing segment returns to PARTIAL.
 - Old leases are never accepted in a new clock epoch.
@@ -71,8 +71,8 @@ At startup, the store creates a new host clock epoch and converts all old monoto
 | DELIVERED | DELIVERED | Immutable terminal result |
 | CANCELLED | CANCELLED | Terminal |
 | EXPIRED | EXPIRED | Terminal |
-| CLAIMED | RECOVERY_REQUIRED | Stop old synthesis worker, confirm, reconcile to READY |
-| PLAYING | RECOVERY_REQUIRED | Stop old audio worker, confirm, reconcile to PARTIAL |
+| CLAIMED | RECOVERY_REQUIRED | Stop old synthesis worker, confirm; reconcile to READY or EXPIRED if deadline passed |
+| PLAYING | RECOVERY_REQUIRED | Stop old audio worker, confirm; reconcile to PARTIAL or EXPIRED if deadline passed |
 
 A restart fence is deliberately not a timeout. The host must actually reconcile the old process tree/audio route. If the host cannot prove the previous worker stopped, STAR must leave the delivery blocked rather than risk overlapping speech.
 
@@ -80,7 +80,7 @@ A restart fence is deliberately not a timeout. The host must actually reconcile 
 
 The in-memory ledger uses monotonic milliseconds. Monotonic clocks are not portable across reboot. The store therefore persists a wall deadline alongside the record and reconstructs a new monotonic deadline on startup.
 
-If wall time moved backward relative to the last persisted update, a deadline-bound obligation expires conservatively rather than receiving extra time. A production host should also monitor time synchronization and record clock-health diagnostics. Wall time is used only for cross-restart deadline reconstruction; lease expiry remains monotonic and host-epoch scoped.
+If wall time moved backward relative to the last persisted update, a non-active deadline-bound obligation expires conservatively rather than receiving extra time. An active CLAIMED/PLAYING record remains RECOVERY_REQUIRED regardless of its deadline: the host must stop and confirm the old worker first, after which reconciliation applies the deadline and expires it if due. This prevents an overdue orphaned audio process from losing its stop-confirmation fence. A production host should also monitor time synchronization and record clock-health diagnostics. Wall time is used only for cross-restart deadline reconstruction; lease expiry remains monotonic and host-epoch scoped.
 
 ### Transaction and corruption behavior
 
