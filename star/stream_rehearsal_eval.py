@@ -25,7 +25,7 @@ _SERIES_FIELDS = (
     "avatar_sync_error_ms",
 )
 _COUNT_FIELDS = (
-    "audio_underruns",
+    "audio_underrun_chunks",
     "audio_playback_chunks",
     "obs_render_skipped_frames",
     "obs_render_total_frames",
@@ -175,8 +175,8 @@ def evaluate_rehearsal(
     samples = {name: _series(snapshot[name], name) for name in _SERIES_FIELDS}
     counts = {name: _count(snapshot[name], name) for name in _COUNT_FIELDS}
 
-    if counts["audio_underruns"] > counts["audio_playback_chunks"]:
-        raise ValueError("audio underruns cannot exceed playback chunks")
+    if counts["audio_underrun_chunks"] > counts["audio_playback_chunks"]:
+        raise ValueError("audio underrun chunks cannot exceed playback chunks")
     if counts["obs_render_skipped_frames"] > counts["obs_render_total_frames"]:
         raise ValueError("OBS render skips cannot exceed render frames")
     if counts["obs_output_skipped_frames"] > counts["obs_output_total_frames"]:
@@ -202,7 +202,7 @@ def evaluate_rehearsal(
         "first_audible_p95_ms": _percentile(samples["first_audible_latency_ms"], 0.95),
         "game_frame_p99_ms": _percentile(samples["game_frame_time_ms"], 0.99),
         "avatar_sync_p95_ms": _percentile(samples["avatar_sync_error_ms"], 0.95),
-        "audio_underrun_rate": _rate(counts["audio_underruns"], audio_n),
+        "audio_underrun_rate": _rate(counts["audio_underrun_chunks"], audio_n),
         "obs_render_skip_rate": _rate(counts["obs_render_skipped_frames"], render_n),
         "obs_output_skip_rate": _rate(counts["obs_output_skipped_frames"], output_n),
         "turn_precision": _rate(tp, turn_precision_n),
