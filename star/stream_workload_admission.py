@@ -339,8 +339,12 @@ class WorkloadAdmissionController:
                 ),
             )
             admitted: list[WorkloadLease] = []
+            blocked_priority: int | None = None
             for request_id, (_, request) in ordered:
                 if len(admitted) >= max_admissions or len(self._active) >= self._max_active:
+                    break
+                priority = _LANE_PRIORITY[request.lane]
+                if blocked_priority is not None and priority > blocked_priority:
                     break
                 if request.enqueued_monotonic_ms > now:
                     continue
@@ -352,6 +356,7 @@ class WorkloadAdmissionController:
                     else _subtract(available, reserve_remaining)
                 )
                 if not _fits(allocatable, request.resources):
+                    blocked_priority = priority
                     continue
                 lease = WorkloadLease(
                     lease_id=secrets.token_hex(16),
