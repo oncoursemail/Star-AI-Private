@@ -54,13 +54,13 @@ def test_simulation_reports_separate_bootstrap_and_hoeffding_coverage():
 )
 def test_invalid_simulation_settings_are_rejected(kwargs):
     scenario = CoverageScenario("invalid_test", 8, 0.05, 0.20, "equal")
+    options = {
+        "simulation_replicates": 20,
+        "bootstrap_replicates": 200,
+    }
+    options.update(kwargs)
     with pytest.raises(ValueError):
-        simulate_coverage(
-            scenario,
-            simulation_replicates=20,
-            bootstrap_replicates=200,
-            **kwargs,
-        )
+        simulate_coverage(scenario, **options)
 
 
 def test_excessive_resample_budget_is_rejected_before_work_starts():
