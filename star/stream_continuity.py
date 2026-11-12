@@ -19,15 +19,15 @@ from threading import RLock, get_ident
 
 from .gameplay_skill_bank import GameTrial, GameplaySkillBank
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\\Z")
-_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,'!?()+-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,'!?()+-]{0,79}\Z")
 _MAX_PRACTICE_AGE_S = 90 * 86400
 _DEFAULT_RETENTION_S = 30 * 86400
 _MAX_RECORDS = 50_000
 _MAX_LABELS = 32
 _MAX_PACKET_CHARS = 1_800
-_TRIAL_TAG = b"star.stream-continuity.trial.v1\\x00"
-_SESSION_TAG = b"star.stream-continuity.session.v1\\x00"
+_TRIAL_TAG = b"star.stream-continuity.trial.v1\x00"
+_SESSION_TAG = b"star.stream-continuity.session.v1\x00"
 
 
 def _identifier(value: object, field: str) -> str:
