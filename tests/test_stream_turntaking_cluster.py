@@ -172,7 +172,7 @@ def test_cluster_metrics_include_latency_violation_session_rate():
         bootstrap_replicates=200,
         latency_limit_ms=350,
     )
-    assert metrics.latency_limit_ms == 250
+    assert metrics.latency_limit_ms == 350
     assert metrics.latency_violation_session_count == 1
     assert metrics.latency_violation_session_incidence == pytest.approx(1 / 3)
     assert metrics.latency_violation_session_incidence_hoeffding_upper_bound == 1.0
