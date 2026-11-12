@@ -35,7 +35,7 @@ Latency and timing:
 - Absolute avatar/audio synchronization error p95.
 
 Realtime stability:
-- Speaker underrun rate.
+- Fraction of playback chunks affected by an audio underrun.
 - OBS render-thread skipped-frame rate.
 - OBS output-thread skipped-frame rate.
 
@@ -269,7 +269,7 @@ Record aggregate observations only. Keep consented raw recordings, if needed for
 | Avatar | Playback-to-mouth synchronization error |
 | Gameplay | Frame-time p95/p99 and held-out skill transfer |
 | OBS | Render and output skipped-frame rates separately |
-| Audio | Underrun rate and speaker backlog |
+| Audio | Fraction of playback chunks affected by underruns and speaker backlog |
 | Knowledge | Accuracy, source freshness, citation support and abstention |
 
 Use randomized paired baseline/candidate runs. Pin all relevant versions and configuration. A candidate must improve its intended metric without regressing speech continuity, game frame times, avatar synchronization or answer quality.
