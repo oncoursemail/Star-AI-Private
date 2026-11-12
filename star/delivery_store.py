@@ -264,8 +264,12 @@ class SQLiteDeliveryLedger(DeliveryLedger):
             created_mono = max(0, now_ms - age)
             rebased_deadline = None
             wall_rollback = wall_now < updated_wall
-            if deadline_wall is not None and not wall_rollback and deadline_wall > wall_now:
-                rebased_deadline = now_ms + (deadline_wall - wall_now)
+            if deadline_wall is not None:
+                rebased_deadline = (
+                    now_ms + (deadline_wall - wall_now)
+                    if not wall_rollback and deadline_wall > wall_now
+                    else now_ms
+                )
 
             rebased = replace(
                 record,
