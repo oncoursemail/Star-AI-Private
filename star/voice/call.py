@@ -31,6 +31,7 @@ from typing import Callable, Iterable, Iterator, Protocol
 from .chunker import SentenceChunker, speakable
 from .game_context import GameMomentWindow
 from .metrics import TurnMetrics
+from .playback import PlaybackSnapshot
 from .pcm import FRAME_MS, rms
 from .. import emotion as emotion_state
 from ..persona import leaked_reasoning
@@ -66,6 +67,7 @@ class Speaker(Protocol):
     def pending_seconds(self) -> float: ...                       # queued but not yet played
     def played_seconds(self) -> float: ...                        # played since reset()
     def level(self) -> float: ...                                 # loudest 32 ms played in the last 0.4 s, 0..1
+    def playback_snapshot(self) -> PlaybackSnapshot: ...
 
 
 @dataclass
@@ -854,6 +856,17 @@ class CallSession:
 
     def _finish_reply(self, reply: _Reply) -> None:
         metrics = reply.metrics
+        # A speaker backend can report when its output callback first received
+        # queued audio. This is closer to playback than queue submission, but
+        # still does not prove acoustic arrival at the listener.
+        try:
+            playback = self.speaker.playback_snapshot()
+            metrics.first_playback_at = playback.first_playback_at
+            metrics.speaker_output_callbacks = playback.output_callbacks
+            metrics.speaker_output_callbacks_with_audio = playback.output_callbacks_with_audio
+            metrics.speaker_output_underflows = playback.output_underflows
+        except Exception:
+            pass                         # telemetry must never break a voice turn
         metrics.done_at = self.clock()
         metrics.audio_seconds = reply.audio_seconds
         interrupted = reply.cancel.is_set()
