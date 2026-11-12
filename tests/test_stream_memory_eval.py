@@ -49,6 +49,7 @@ def _trial(case: MemoryCase, variant: str, index: int, *,
         trial_id=f"trial-{variant}-{case.case_id}",
         case_id=case.case_id,
         variant=variant,
+        revision="memory-v1" if variant == "baseline" else "memory-v2",
         run_id=f"run-{variant}-{case.case_id}",
         result=result,
         memory_applied=case.memory_required,
@@ -58,7 +59,7 @@ def _trial(case: MemoryCase, variant: str, index: int, *,
         stale_memory_reused=stale,
         deleted_memory_reused=deleted,
         latency_ms=latency_ms,
-        memory_tokens=memory_tokens if variant == "candidate" else 0,
+        memory_tokens=memory_tokens if variant == "candidate" and case.memory_required else 0,
         evidence_sha256=hashlib.sha256(
             f"{variant}:{case.case_id}:{result}:{stale}:{deleted}".encode()
         ).hexdigest(),
@@ -294,4 +295,18 @@ def test_paired_variants_must_use_distinct_run_ids() -> None:
             changed.append(item)
 
     with pytest.raises(ValueError, match="distinct run IDs"):
+        _evaluate(cases, changed)
+
+
+
+def test_signed_trial_is_bound_to_declared_memory_revision() -> None:
+    cases, trials = _campaign()
+    changed = []
+    for item in trials:
+        if item.trial.case_id == "case-00" and item.trial.variant == "candidate":
+            changed.append(_sign(replace(item.trial, revision="memory-v3")))
+        else:
+            changed.append(item)
+
+    with pytest.raises(ValueError, match="revision does not match"):
         _evaluate(cases, changed)
