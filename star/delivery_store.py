@@ -255,6 +255,8 @@ class SQLiteDeliveryLedger(DeliveryLedger):
                 None if row["deadline_wall_ms"] is None
                 else self._wall_value(row["deadline_wall_ms"])
             )
+            if (record.deadline_ms is None) != (deadline_wall is None):
+                raise DeliveryStoreCorrupt("monotonic and wall deadline metadata disagree")
             self._created_wall_by_id[record.delivery_id] = created_wall
             self._updated_wall_by_id[record.delivery_id] = updated_wall
             self._deadline_wall_by_id[record.delivery_id] = deadline_wall
