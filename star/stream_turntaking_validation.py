@@ -14,7 +14,6 @@ import re
 from statistics import NormalDist
 
 from .stream_turntaking_eval import (
-    PauseKind,
     ScoreSource,
     SilenceSpan,
     TurnPolicy,
@@ -23,7 +22,7 @@ from .stream_turntaking_eval import (
     sweep_turn_policies,
 )
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SPANS = 20_000
 _MAX_DURATION_MS = 120_000
 
