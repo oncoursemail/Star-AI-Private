@@ -69,16 +69,13 @@ It prints JSON with scenario manifests, coverage proportions, Monte Carlo interv
 
 ### Weighted Hoeffding bound
 
-For session (i), let (r_iin[0,1]) be its error rate and (w_i) its share of all opportunities. With independent sessions and fixed observed weights:
+For session i, let r_i in [0, 1] be its error rate and w_i its share of all pause opportunities. With independent sessions and fixed observed weights:
 
-[
-hat R=sum_i w_i r_i,qquad
-K_{eff}=rac{1}{sum_i w_i^2}
-]
-
-[
-U=minleft(1,hat R+sqrt{rac{ln(1/alpha)}{2}sum_i w_i^2}ight)
-]
+```text
+R_hat = sum_i(w_i * r_i)
+K_eff = 1 / sum_i(w_i^2)
+U = min(1, R_hat + sqrt(0.5 * ln(1 / alpha) * sum_i(w_i^2)))
+```
 
 The bound does not assume independence between pauses within one session. Unequal session sizes reduce the effective session count.
 
@@ -96,9 +93,9 @@ The last measure avoids treating a bootstrap interval for the *mean of session p
 
 For an equal-weight zero-event sample, the Hoeffding upper bound is:
 
-[
-U=sqrt{rac{ln(1/alpha)}{2K}}
-]
+```text
+U = sqrt(ln(1 / alpha) / (2 * K))
+```
 
 At 95% confidence:
 
