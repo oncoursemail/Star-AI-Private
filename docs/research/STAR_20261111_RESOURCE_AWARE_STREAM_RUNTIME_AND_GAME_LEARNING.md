@@ -50,7 +50,7 @@ Resource claims are explicit vectors of CPU millicores, RAM MiB and VRAM MiB. Th
 The controller provides:
 
 - A configurable reserve for latency-sensitive lanes.
-- Strict deterministic priority and FIFO ordering within a priority.
+- Strict deterministic priority and FIFO ordering within a priority; a blocked higher-priority request fences lower-priority lanes, while another fitting request at the same priority may still proceed.
 - Bounded queues, active leases and replay-ID history.
 - Request deadlines and lease expiry.
 - Explicit release and queued cancellation; an expired lease continues reserving capacity until the host confirms the worker has stopped.
