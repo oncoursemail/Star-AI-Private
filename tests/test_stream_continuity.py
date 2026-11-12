@@ -73,7 +73,6 @@ def packet(
         now_unix_s=now,
         public_action_labels={"jump": "Gap jump"},
         broadcast_approved=True,
-        **kwargs,
     )
 
 
