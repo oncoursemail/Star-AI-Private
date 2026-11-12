@@ -13,7 +13,7 @@ import math
 import random
 import re
 from statistics import fmean, median
-from typing import Callable, Sequence
+from typing import Callable, Sequence, cast
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_OBSERVATIONS = 20_000
@@ -138,7 +138,7 @@ def _margin(value: object, label: str) -> None:
     # bool is an int subclass, but is not a meaningful numeric margin.
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{label} must be a finite fraction in 0..1")
-    numeric = float(value)
+    numeric = float(cast(int | float, value))
     if not math.isfinite(numeric) or not 0 <= numeric <= 1:
         raise ValueError(f"{label} must be a finite fraction in 0..1")
 
