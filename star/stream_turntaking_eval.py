@@ -13,7 +13,7 @@ import math
 import re
 from typing import Sequence
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SPANS = 20_000
 _MAX_SCORE_POINTS_PER_SPAN = 2_048
 _MAX_TOTAL_SCORE_POINTS = 1_000_000
