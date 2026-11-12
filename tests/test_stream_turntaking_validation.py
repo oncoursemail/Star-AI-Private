@@ -457,3 +457,24 @@ def test_latency_limit_is_part_of_cluster_session_evidence():
     assert result.cluster_metrics.latency_violation_session_count == 40
     assert result.cluster_metrics.latency_violation_session_incidence > 0.05
     assert result.status is ValidationStatus.FAIL
+
+
+
+def test_cluster_evaluator_receives_only_holdout_group_ids(monkeypatch):
+    from star import stream_turntaking_validation as validation
+
+    original = validation.evaluate_clustered_turn_policy
+    observed = {}
+
+    def checked(spans, policy, **kwargs):
+        expected = {span.turn_id for span in spans}
+        assert set(kwargs["group_ids_by_turn"]) == expected
+        observed["turn_ids"] = expected
+        return original(spans, policy, **kwargs)
+
+    monkeypatch.setattr(validation, "evaluate_clustered_turn_policy", checked)
+    calibration, calibration_groups = dataset("cal", 100)
+    holdout, holdout_groups = dataset("hold", 100)
+    result = run(calibration, holdout, {**calibration_groups, **holdout_groups})
+    assert observed["turn_ids"] == {span.turn_id for span in holdout}
+    assert result.cluster_metrics is not None
