@@ -131,8 +131,9 @@ def test_concurrent_exact_claim_has_one_winner(tmp_path):
     rows, groups = dataset("hold", 3)
     ledger_path = tmp_path / "ledger.sqlite3"
 
+    ledger = HoldoutLedger(ledger_path)
+
     def attempt(_):
-        ledger = HoldoutLedger(ledger_path)
         try:
             ledger.claim(rows, groups)
             return "claimed"
