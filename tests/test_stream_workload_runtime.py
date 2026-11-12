@@ -214,7 +214,7 @@ def test_active_lease_requires_host_stop_confirmation():
     runtime = make_runtime()
     runtime.submit(request("voice", WorkloadLane.VOICE))
     lease = runtime.schedule(1_000)[0]
-    with pytest.raises(PermissionError, match="confirmed"):
+    with pytest.raises(PermissionError, match="confirm"):
         runtime.release(
             lease.lease_id,
             1_001,
@@ -226,6 +226,49 @@ def test_active_lease_requires_host_stop_confirmation():
         1_002,
         host_confirmed_stopped=True,
     ) is True
+
+
+def test_chat_is_protected_but_cannot_spend_the_hard_realtime_reserve():
+    budget = ResourceBudget(
+        ResourceVector(cpu_millicores=100, ram_mb=0, vram_mb=0),
+        ResourceVector(cpu_millicores=30, ram_mb=0, vram_mb=0),
+    )
+    controller = WorkloadAdmissionController(budget)
+    runtime = StreamWorkloadRuntime(
+        controller,
+        StreamLoadGovernor(GovernorPolicy(recover_windows=2)),
+    )
+    recover(runtime, streaming=False, gaming=False)
+    runtime.submit(
+        WorkloadRequest(
+            "chat-too-large",
+            WorkloadLane.CHAT,
+            ResourceVector(cpu_millicores=71),
+            1_100,
+        )
+    )
+    assert runtime.schedule(1_100) == ()
+    assert runtime.cancel_queued("chat-too-large") is True
+    runtime.submit(
+        WorkloadRequest(
+            "chat-fits",
+            WorkloadLane.CHAT,
+            ResourceVector(cpu_millicores=70),
+            1_100,
+        )
+    )
+    chat = runtime.schedule(1_100)
+    assert [lease.lane for lease in chat] == [WorkloadLane.CHAT]
+    runtime.submit(
+        WorkloadRequest(
+            "voice",
+            WorkloadLane.VOICE,
+            ResourceVector(cpu_millicores=30),
+            1_101,
+        )
+    )
+    voice = runtime.schedule(1_101)
+    assert [lease.lane for lease in voice] == [WorkloadLane.VOICE]
 
 
 def test_chat_is_protected_and_precedes_tool_and_research_lanes():
