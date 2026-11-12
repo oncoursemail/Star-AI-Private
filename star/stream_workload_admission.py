@@ -27,6 +27,7 @@ class WorkloadLane(str, Enum):
     GAME_CONTROL = "game_control"
     VOICE = "voice"
     AVATAR = "avatar"
+    CHAT = "chat"
     INTERACTIVE = "interactive"
     RESEARCH = "research"
     LEARNING = "learning"
@@ -38,16 +39,30 @@ _LANE_PRIORITY = {
     WorkloadLane.GAME_CONTROL: 0,
     WorkloadLane.VOICE: 1,
     WorkloadLane.AVATAR: 1,
-    WorkloadLane.INTERACTIVE: 2,
-    WorkloadLane.RESEARCH: 3,
-    WorkloadLane.LEARNING: 3,
-    WorkloadLane.ASSET_GENERATION: 3,
+    WorkloadLane.CHAT: 2,
+    WorkloadLane.INTERACTIVE: 3,
+    WorkloadLane.RESEARCH: 4,
+    WorkloadLane.LEARNING: 4,
+    WorkloadLane.ASSET_GENERATION: 4,
 }
 _PROTECTED_LANES = frozenset({
     WorkloadLane.AUDIO,
     WorkloadLane.GAME_CONTROL,
     WorkloadLane.VOICE,
     WorkloadLane.AVATAR,
+    WorkloadLane.CHAT,
+})
+_REALTIME_RESERVE_LANES = frozenset({
+    WorkloadLane.AUDIO,
+    WorkloadLane.GAME_CONTROL,
+    WorkloadLane.VOICE,
+    WorkloadLane.AVATAR,
+})
+_STREAM_DEFERRED_LANES = frozenset({
+    WorkloadLane.INTERACTIVE,
+    WorkloadLane.RESEARCH,
+    WorkloadLane.LEARNING,
+    WorkloadLane.ASSET_GENERATION,
 })
 
 
@@ -79,11 +94,13 @@ class ResourceVector:
 
 @dataclass(frozen=True)
 class ResourceBudget:
-    """Static per-session STAR budget and protected real-time reserve.
+    """Static per-session STAR budget and hard real-time reserve.
 
-    Capacity is the maximum allocation the host is willing to assign to STAR
-    after accounting for Windows, the game, OBS, drivers, and other fixed work.
-    It is not total installed hardware capacity or instantaneous free memory.
+    The hard reserve is available only to audio, game-control, voice, and
+    avatar lanes. Chat remains eligible during a stream but uses unreserved
+    capacity. Capacity is the maximum allocation the host is willing to assign
+    after accounting for Windows, the game, OBS, drivers, and fixed work; it is
+    not installed hardware capacity or instantaneous free memory.
     """
 
     capacity: ResourceVector
@@ -104,11 +121,15 @@ class HostHealth:
 
     observed_monotonic_ms: int
     realtime_degraded: bool
+    streaming: bool = False
+    gaming: bool = False
 
     def __post_init__(self) -> None:
         _clock(self.observed_monotonic_ms, "observed_monotonic_ms")
         if type(self.realtime_degraded) is not bool:
             raise ValueError("realtime_degraded must be an explicit boolean")
+        if type(self.streaming) is not bool or type(self.gaming) is not bool:
+            raise ValueError("streaming and gaming must be explicit booleans")
 
 
 @dataclass(frozen=True)
@@ -168,7 +189,10 @@ class AdmissionSnapshot:
     realtime_reserve_remaining: ResourceVector
     health_fresh: bool
     realtime_degraded: bool
+    streaming: bool | None
+    gaming: bool | None
     deferred_for_health: int
+    deferred_for_active_session: int
     expired_queued: int
     expired_active_leases: int
 
@@ -208,10 +232,11 @@ def _sum_resources(leases: list[WorkloadLease]) -> ResourceVector:
 class WorkloadAdmissionController:
     """Deterministic, bounded admission; the host owns all actual execution.
 
-    The controller never preempts an active lease. The real-time reserve keeps
-    background work from consuming a configured slice, but the host must size
-    that reserve for its worst expected voice/game burst and retain a separate
-    cancellation mechanism for long-running workers.
+    The controller never preempts an active lease. Only audio, game-control,
+    voice, and avatar lanes can consume the hard real-time reserve. Chat remains
+    eligible under degraded health but must fit outside that reserve. The host
+    must size the reserve for its worst expected voice/game burst and retain a
+    separate cancellation mechanism for long-running workers.
     """
 
     def __init__(
@@ -293,7 +318,9 @@ class WorkloadAdmissionController:
         with self._lock:
             return self._queued.pop(request_id, None) is not None
 
-    def _health_state(self, now_ms: int, health: HostHealth | None) -> tuple[bool, bool]:
+    def _health_state(
+        self, now_ms: int, health: HostHealth | None
+    ) -> tuple[bool, bool, bool | None, bool | None]:
         if health is not None and not isinstance(health, HostHealth):
             raise TypeError("health must be HostHealth or None")
         fresh = bool(
@@ -301,7 +328,9 @@ class WorkloadAdmissionController:
             and 0 <= now_ms - health.observed_monotonic_ms <= self._health_max_age_ms
         )
         degraded = not fresh or (health.realtime_degraded if health is not None else True)
-        return fresh, degraded
+        if not fresh or health is None:
+            return False, True, None, None
+        return True, degraded, health.streaming, health.gaming
 
     def schedule(
         self,
@@ -320,16 +349,16 @@ class WorkloadAdmissionController:
         with self._lock:
             now = self._advance_clock(now_monotonic_ms)
             self._expire(now)
-            _, degraded = self._health_state(now, health)
+            _, degraded, streaming, gaming = self._health_state(now, health)
             if len(self._active) >= self._max_active or not self._queued:
                 return ()
             active_leases = list(self._active.values())
             used = _sum_resources(active_leases)
             available = _subtract(self._budget.capacity, used)
-            protected_used = _sum_resources(
-                [lease for lease in active_leases if lease.lane in _PROTECTED_LANES]
+            reserve_used = _sum_resources(
+                [lease for lease in active_leases if lease.lane in _REALTIME_RESERVE_LANES]
             )
-            reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+            reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
             ordered = sorted(
                 self._queued.items(),
                 key=lambda item: (
@@ -350,9 +379,12 @@ class WorkloadAdmissionController:
                     continue
                 if degraded and request.lane not in _PROTECTED_LANES:
                     continue
+                if (streaming or gaming) and request.lane in _STREAM_DEFERRED_LANES:
+                    blocked_priority = priority
+                    continue
                 allocatable = (
                     available
-                    if request.lane in _PROTECTED_LANES
+                    if request.lane in _REALTIME_RESERVE_LANES
                     else _subtract(available, reserve_remaining)
                 )
                 if not _fits(allocatable, request.resources):
@@ -370,9 +402,9 @@ class WorkloadAdmissionController:
                 self._active[lease.lease_id] = lease
                 self._active_by_request[request_id] = lease.lease_id
                 available = _subtract(available, request.resources)
-                if request.lane in _PROTECTED_LANES:
-                    protected_used = _add(protected_used, request.resources)
-                    reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+                if request.lane in _REALTIME_RESERVE_LANES:
+                    reserve_used = _add(reserve_used, request.resources)
+                    reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
                 admitted.append(lease)
             return tuple(admitted)
 
@@ -411,14 +443,14 @@ class WorkloadAdmissionController:
         with self._lock:
             now = self._advance_clock(now_monotonic_ms)
             self._expire(now)
-            fresh, degraded = self._health_state(now, health)
+            fresh, degraded, streaming, gaming = self._health_state(now, health)
             active = list(self._active.values())
             used = _sum_resources(active)
             available = _subtract(self._budget.capacity, used)
-            protected_used = _sum_resources(
-                [lease for lease in active if lease.lane in _PROTECTED_LANES]
+            reserve_used = _sum_resources(
+                [lease for lease in active if lease.lane in _REALTIME_RESERVE_LANES]
             )
-            reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
+            reserve_remaining = _subtract(self._budget.realtime_reserve, reserve_used)
             queued_counts = tuple(
                 (lane.value, sum(1 for _, request in self._queued.values() if request.lane == lane))
                 for lane in WorkloadLane
@@ -431,6 +463,10 @@ class WorkloadAdmissionController:
                 1 for _, request in self._queued.values()
                 if degraded and request.lane not in _PROTECTED_LANES
             )
+            deferred_active = sum(
+                1 for _, request in self._queued.values()
+                if (streaming or gaming) and request.lane in _STREAM_DEFERRED_LANES
+            )
             return AdmissionSnapshot(
                 queued=len(self._queued),
                 active=len(active),
@@ -441,7 +477,10 @@ class WorkloadAdmissionController:
                 realtime_reserve_remaining=reserve_remaining,
                 health_fresh=fresh,
                 realtime_degraded=degraded,
+                streaming=streaming,
+                gaming=gaming,
                 deferred_for_health=deferred,
+                deferred_for_active_session=deferred_active,
                 expired_queued=self._expired_queued,
                 expired_active_leases=sum(1 for lease in active if now >= lease.expires_monotonic_ms),
             )
