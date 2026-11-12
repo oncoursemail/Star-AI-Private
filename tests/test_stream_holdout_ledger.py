@@ -64,6 +64,7 @@ def constraints(**changes):
         "max_false_cutoff_rate": 1.0,
         "max_missed_final_rate": 1.0,
         "max_p95_latency_ms": 900,
+        "max_latency_violation_session_rate": 1.0,
         "min_hold_pauses": 1,
         "min_final_turns": 1,
         "min_calibration_groups": 1,
