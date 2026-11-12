@@ -141,7 +141,10 @@ class TaskLedger:
 
     def _expire_deadline(self, record: TaskRecord, now: int) -> TaskRecord:
         if (record.deadline_ms is not None and now >= record.deadline_ms
-                and record.state in (TaskState.QUEUED, TaskState.RUNNING)):
+                and record.state in (
+                    TaskState.QUEUED, TaskState.RUNNING,
+                    TaskState.FAILED, TaskState.CANCELLED,
+                )):
             updated = replace(
                 record,
                 state=TaskState.EXPIRED,
@@ -362,7 +365,10 @@ class TaskLedger:
             requeued = 0
             expired = 0
             for task_id, record in tuple(self._records.items()):
-                if record.state not in (TaskState.QUEUED, TaskState.RUNNING):
+                if record.state not in (
+                    TaskState.QUEUED, TaskState.RUNNING,
+                    TaskState.FAILED, TaskState.CANCELLED,
+                ):
                     continue
                 if record.deadline_ms is not None and now >= record.deadline_ms:
                     self._records[task_id] = replace(
