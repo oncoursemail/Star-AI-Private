@@ -52,7 +52,7 @@ A policy grid can contain many combinations. Selecting the lowest-latency point 
 
 ## 3. Research findings
 
-### 2.1 LiveKit eot-bench: evaluate the decision policy, not only a classifier
+### 3.1 LiveKit eot-bench: evaluate the decision policy, not only a classifier
 
 Source: https://github.com/livekit/eot-bench  
 Leaderboard: https://livekit.com/benchmarks/eot-bench
@@ -68,7 +68,7 @@ It compares latency under a false-cutoff budget and includes a silence-only base
 
 **STAR implication:** Keep endpointing delay separate from TTFT, TTS first-audio, playback, and avatar latency. A faster LLM cannot compensate for a voice detector that waits too long or cuts the viewer off.
 
-### 2.2 Why calibration and holdout must be grouped
+### 3.2 Why calibration and holdout must be grouped
 
 Pauses from the same user turn are correlated. Turns from one conversation or rehearsal session can also share microphone, speaker, room, language, and interaction characteristics.
 
@@ -76,7 +76,7 @@ Randomly splitting individual pauses can leak the same conversation into both se
 
 The adapter should create stable HMAC digests for conversation/session groups, not store raw viewer identities or voiceprints. The evaluator returns no group IDs.
 
-### 2.3 Wilson upper confidence bounds
+### 3.3 Wilson upper confidence bounds
 
 A point estimate such as 0 false cutoffs in 20 pauses does not establish that the true cutoff rate is below 5%. STAR uses a one-sided Wilson upper confidence bound for false-cutoff and missed-final rates.
 
@@ -84,7 +84,7 @@ This is intentionally conservative: a small sample may remain inconclusive even 
 
 The bound is a binomial approximation and does not repair correlated samples. The evaluator therefore requires a minimum number of distinct conversation/session groups (20 by default), not only a minimum number of pauses and turns. Grouped holdout design and enough independent sessions remain necessary. For clustered data, a future adapter should bootstrap at the session/group level rather than treating every pause as independent.
 
-### 2.4 LiveKit production endpointing defaults are not universal STAR settings
+### 3.4 LiveKit production endpointing defaults are not universal STAR settings
 
 Current LiveKit documentation describes 0.5–3.0 s default endpointing delays and 0.3–2.5 s with its audio turn detector, with a VAD minimum silence duration requirement. These are framework defaults for its pipeline, not a universal optimum for STAR's hardware, audience, language, or game context.
 
