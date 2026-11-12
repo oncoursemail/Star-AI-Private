@@ -1,8 +1,8 @@
 """Thread-safe telemetry for the voice speaker's output callback.
 
-A callback timestamp means the audio backend handed a non-empty PCM block to
-PortAudio's output callback. It is not a measurement of DAC, Bluetooth, room,
-or listener-perceived acoustic arrival.
+When PortAudio supplies valid callback time info, the first playback timestamp
+is its estimated DAC time mapped onto Python's monotonic clock. Otherwise it
+falls back to callback invocation time. Neither proves acoustic arrival.
 """
 from __future__ import annotations
 
@@ -20,6 +20,31 @@ class PlaybackSnapshot:
     first_playback_at: float | None
     output_callbacks_with_audio: int | None
     output_underflows: int | None  # PortAudio underflows observed while non-empty audio was emitted
+
+
+def estimate_output_time(
+    callback_monotonic: float,
+    *,
+    current_time: float | None,
+    output_buffer_dac_time: float | None,
+    max_future_s: float = 1.0,
+) -> float:
+    """Map PortAudio outputBufferDacTime to monotonic time; fall back safely."""
+    if type(callback_monotonic) not in (int, float) or not math.isfinite(callback_monotonic):
+        raise ValueError("callback_monotonic must be finite")
+    if (
+        type(current_time) in (int, float)
+        and type(output_buffer_dac_time) in (int, float)
+        and math.isfinite(current_time)
+        and math.isfinite(output_buffer_dac_time)
+        and type(max_future_s) in (int, float)
+        and math.isfinite(max_future_s)
+        and 0.0 < max_future_s <= 5.0
+    ):
+        delta = float(output_buffer_dac_time) - float(current_time)
+        if 0.0 <= delta <= max_future_s:
+            return float(callback_monotonic) + delta
+    return float(callback_monotonic)
 
 
 class PlaybackTelemetry:
@@ -44,7 +69,7 @@ class PlaybackTelemetry:
         output_underflow: bool = False,
         at: float | None = None,
     ) -> None:
-        """Record one PortAudio callback and the number of queued frames copied to output."""
+        """Record one output callback and the number of queued frames copied to output."""
         if type(frames) is not int or frames < 0:
             raise ValueError("frames must be a nonnegative integer")
         if type(emitted_frames) is not int or not 0 <= emitted_frames <= frames:
@@ -71,4 +96,4 @@ class PlaybackTelemetry:
             )
 
 
-__all__ = ["PlaybackSnapshot", "PlaybackTelemetry"]
+__all__ = ["PlaybackSnapshot", "PlaybackTelemetry", "estimate_output_time"]
