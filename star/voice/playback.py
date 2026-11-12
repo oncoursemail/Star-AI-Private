@@ -32,16 +32,20 @@ def estimate_output_time(
     """Map PortAudio outputBufferDacTime to monotonic time; fall back safely."""
     if type(callback_monotonic) not in (int, float) or not math.isfinite(callback_monotonic):
         raise ValueError("callback_monotonic must be finite")
+    current = current_time
+    dac_time = output_buffer_dac_time
     if (
-        type(current_time) in (int, float)
-        and type(output_buffer_dac_time) in (int, float)
-        and math.isfinite(current_time)
-        and math.isfinite(output_buffer_dac_time)
+        isinstance(current, (int, float))
+        and not isinstance(current, bool)
+        and isinstance(dac_time, (int, float))
+        and not isinstance(dac_time, bool)
+        and math.isfinite(current)
+        and math.isfinite(dac_time)
         and type(max_future_s) in (int, float)
         and math.isfinite(max_future_s)
         and 0.0 < max_future_s <= 1.0
     ):
-        delta = float(output_buffer_dac_time) - float(current_time)
+        delta = float(dac_time) - float(current)
         if 0.0 <= delta <= max_future_s:
             return float(callback_monotonic) + delta
     return float(callback_monotonic)
