@@ -220,19 +220,24 @@ def test_overdue_active_playback_stays_fenced_until_host_stop_is_confirmed(tmp_p
 
     wall.value += 100
     second = open_store(path, wall, now=500, epoch="host-b")
+    recovered = second.get(record.delivery_id)
+    assert recovered.state is DeliveryState.RECOVERY_REQUIRED
+    assert second.reap(now_ms=501).expired_deadlines == 0
+    second.close()
+
+    # A second restart must not discard the stop-confirmation fence either.
+    third = open_store(path, wall, now=900, epoch="host-c")
     try:
-        recovered = second.get(record.delivery_id)
-        assert recovered.state is DeliveryState.RECOVERY_REQUIRED
-        assert second.reap(now_ms=501).expired_deadlines == 0
-        assert second.get(record.delivery_id).state is DeliveryState.RECOVERY_REQUIRED
+        still_fenced = third.get(record.delivery_id)
+        assert still_fenced.state is DeliveryState.RECOVERY_REQUIRED
         with pytest.raises(DeliveryDeadlineExpired):
-            second.reconcile_after_restart(
-                recovered.delivery_id, recovered.version, now_ms=502,
+            third.reconcile_after_restart(
+                still_fenced.delivery_id, still_fenced.version, now_ms=901,
                 host_confirmed_stopped=True,
             )
-        assert second.get(record.delivery_id).state is DeliveryState.EXPIRED
+        assert third.get(record.delivery_id).state is DeliveryState.EXPIRED
     finally:
-        second.close()
+        third.close()
 
 
 def test_wall_clock_rollback_expires_deadline_bound_obligations(tmp_path):
