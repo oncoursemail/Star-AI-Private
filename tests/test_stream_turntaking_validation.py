@@ -380,7 +380,11 @@ def test_cluster_incidence_guard_detects_errors_concentrated_in_few_sessions():
     holdout, hold_groups = dataset("hold", 700)
     bad_turns = {f"hold-turn-{index}" for index in range(40)}
     holdout = [
-        replace(span, duration_ms=1200)
+        replace(
+            span,
+            duration_ms=1200,
+            scores=(EndOfTurnScore(250, 0.99),),
+        )
         if span.turn_id in bad_turns and span.kind is PauseKind.HOLD
         else span
         for span in holdout
