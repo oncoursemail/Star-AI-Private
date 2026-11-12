@@ -17,7 +17,7 @@ import math
 import random
 import re
 from threading import RLock
-from typing import Any
+from typing import Any, cast
 
 from .stream_rehearsal_eval import RehearsalLimits, evaluate_rehearsal
 
@@ -65,7 +65,7 @@ def _milliseconds(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a finite nonnegative number")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{label} is outside the supported range") from exc
     if not math.isfinite(result) or not 0 <= result <= 1e13:
