@@ -179,7 +179,70 @@ Sources:
 - https://github.com/Roblox/open-game-eval
 - https://arxiv.org/abs/2610.02563
 
-## 6. Acceptance plan
+## 6. General knowledge, task memory, and transferable skills
+
+General knowledge should not be implemented as an ever-growing prompt or an undifferentiated vector database. STAR should keep distinct representations for:
+
+- **Semantic knowledge:** source-backed facts, concepts, definitions, and relationships.
+- **Temporal knowledge:** when a claim was true, when it was checked, what superseded it, and when it may expire.
+- **Episodic experience:** what STAR actually observed or attempted in a particular task/session.
+- **Procedural skill:** a tested sequence or executable artifact that reliably performs a task.
+- **Task state:** current project/game objective, verified progress, blockers, and next action.
+- **World-model knowledge:** predictions about how a game or tool changes after an action.
+
+### Evidence: MemoryArena (2026-02-18)
+
+MemoryArena evaluates interdependent multi-session Memory-Agent-Environment loops rather than isolated fact recall. Its paper reports that agents with near-saturated results on traditional long-context memory benchmarks can still perform poorly when earlier experience must guide later actions.
+
+**STAR implication:** test whether remembered knowledge changes a future action correctly. A fact-recall score is not proof that Star can apply the fact to a tool, game, project, or conversation.
+
+Source: https://arxiv.org/abs/2602.16313
+
+### Evidence: Mem2ActBench (ACL 2026)
+
+Mem2ActBench constructs 2,029 sessions and 400 memory-dependent tool-use tasks. The authors report that 91.3% of the tasks were strongly memory-dependent and identify failures in applying memory to tool selection and parameter grounding.
+
+**STAR implication:** build held-out tests where a remembered project constraint, approved preference, game version, or previous task state must change a later tool action. Score the action and its parameters, not only the retrieved summary.
+
+Source: https://aclanthology.org/2026.acl-long.370/
+
+### Evidence: APEX-MEM (ACL 2026)
+
+APEX-MEM uses temporally grounded, entity-centric property graphs, append-only history, and retrieval-time resolution of evolving or conflicting information. The authors report 88.88% on LOCOMO and 86.2% on LongMemEval in their evaluated configuration.
+
+**STAR implication:** preserve temporal history and resolve current truth at retrieval time. Do not silently overwrite old facts, and do not surface an obsolete preference as current simply because it is semantically similar.
+
+Source: https://aclanthology.org/2026.acl-long.749/
+
+### Evidence: LifeBench (2026-03-04)
+
+LifeBench evaluates long-horizon, multi-source memory across declarative and non-declarative information, including habits and procedural patterns inferred from distributed traces.
+
+**STAR implication:** evaluate habits and skills separately from facts. For example, knowing the definition of a Luau pattern is not the same as consistently producing correct Luau; remembering a game strategy is not the same as executing it under new conditions.
+
+Source: https://arxiv.org/abs/2603.03781
+
+### STAR knowledge-card contract
+
+Every reusable knowledge item should carry:
+
+1. Stable opaque ID and domain.
+2. Claim or procedure, with scope and version.
+3. Primary source(s), source date, and last verification time.
+4. Evidence type: cited fact, observed event, tested procedure, or hypothesis.
+5. Confidence and known counterexamples.
+6. Validity/expiry or a recheck policy for time-sensitive facts.
+7. Supersedes/superseded-by relationships.
+8. Required permissions and privacy/retention class.
+9. A held-out evaluation or execution test when the item claims to be a skill.
+
+### General-knowledge curriculum
+
+Build a broad, source-backed curriculum across mathematics, computing, engineering, science, history, geography, language, economics, arts, and practical digital skills. For each domain, use a loop of retrieve → explain → solve a new problem → verify → schedule spaced review. Separate stable concepts from current facts that need fresh research.
+
+Track factual accuracy, source support, calibration, contradiction handling, stale-claim rate, transfer to new tasks, and successful tool execution. Never equate the number of stored facts, retrieved chunks, or completed lessons with intelligence.
+
+## 7. Acceptance plan
 
 ### Phase A — deterministic policy tests
 
@@ -214,7 +277,7 @@ Run at least three matched repetitions for baseline and candidate. Preserve fail
 
 Only after CI, host acceptance, and private rehearsal should a human consider enabling the bridge. A passing policy test does not prove hardware performance, intelligence gain, game mastery, natural speech, or production readiness.
 
-## 7. Explicit limitations
+## 8. Explicit limitations
 
 - No Windows hardware adapter is added.
 - No CPU/RAM/VRAM values are inferred from installed hardware.
@@ -225,6 +288,10 @@ Only after CI, host acceptance, and private rehearsal should a human consider en
 - The host must independently enforce permissions and confirm worker termination before releasing a lease.
 
 ## References
+9. MemoryArena — https://arxiv.org/abs/2602.16313
+10. Mem2ActBench — https://aclanthology.org/2026.acl-long.370/
+11. APEX-MEM — https://aclanthology.org/2026.acl-long.749/
+12. LifeBench — https://arxiv.org/abs/2603.03781
 
 1. LOLPlay, 2026-10-25 — https://arxiv.org/abs/2611.03685
 2. MechEval/WARC, 2026-11-09 — https://arxiv.org/abs/2611.12324
