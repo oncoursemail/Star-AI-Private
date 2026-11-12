@@ -97,6 +97,7 @@ def test_playback_clock_separates_queue_submission_from_output_callback():
     assert stages["speaker_queue_to_playback"] == pytest.approx(0.04)
     assert stages["perceived"] == pytest.approx(0.24)
     data = metrics.to_dict()
+    assert data["speaker_output_callbacks_with_audio"] == 2
     assert data["speaker_output_underflows"] == 1
     assert data["first_playback_at"] == 1.24
 
