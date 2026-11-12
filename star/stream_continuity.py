@@ -222,6 +222,7 @@ class StreamContinuityStore:
             expires = trial.observed_unix_s + self._retention
             if expires <= now:
                 raise ValueError("practice evidence has passed the continuity retention window")
+            self.purge_expired(now_unix_s=now)
             if not self._bank.verify_practice_trial(trial, now_unix_s=now):
                 self._counts["invalid_evidence_rejected"] += 1
                 raise PermissionError("trial is not present as exact signed practice evidence")
