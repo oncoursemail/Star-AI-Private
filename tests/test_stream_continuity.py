@@ -171,7 +171,7 @@ def test_broadcast_approval_is_required_for_a_public_packet():
     store = enabled_store(bank)
     store.remember(trial, session_id="session-1", now_unix_s=NOW, owner_approved=True)
     assert store.packet(
-        game_id="obby", game_version="v1", now_unix_s=NOW,
+        game_id="obby", game_version="v1", stream_session_id="stream-1", now_unix_s=NOW,
         public_action_labels={"jump": "Gap jump"},
     ) is None
 
