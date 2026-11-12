@@ -13,6 +13,11 @@ import math
 import re
 from statistics import NormalDist
 
+from .stream_turntaking_cluster import (
+    ClusteredTurnMetrics,
+    evaluate_clustered_turn_policy,
+    minimum_groups_for_zero_event_incidence,
+)
 from .stream_turntaking_eval import (
     ScoreSource,
     SilenceSpan,
@@ -40,7 +45,7 @@ class ValidationStatus(str, Enum):
 
 @dataclass(frozen=True)
 class TurnPolicyConstraints:
-    """Predeclared acceptance limits; rates use one-sided Wilson upper bounds."""
+    """Predeclared acceptance limits for pause- and session-level error rates."""
 
     max_false_cutoff_rate: float = 0.05
     max_missed_final_rate: float = 0.05
@@ -93,6 +98,8 @@ class TurnPolicyValidation:
     holdout_false_cutoff_upper_bound: float | None
     holdout_missed_final_upper_bound: float | None
     holdout_ledger_claimed: bool = False
+    cluster_metrics: ClusteredTurnMetrics | None = None
+    cluster_aware: bool = True
 
 
 def _probe_partition(spans: Sequence[SilenceSpan], label: str) -> TurnPolicyResult:
@@ -190,6 +197,9 @@ def select_and_validate_turn_policy(
     timeouts_ms: Sequence[int],
     constraints: TurnPolicyConstraints,
     holdout_ledger: HoldoutLedger | None = None,
+    cluster_aware: bool = True,
+    cluster_bootstrap_replicates: int = 1_000,
+    cluster_random_seed: int = 0,
 ) -> TurnPolicyValidation:
     """Choose a policy using calibration only, then evaluate it on held-out turns.
 
@@ -206,6 +216,19 @@ def select_and_validate_turn_policy(
         raise TypeError("constraints must be TurnPolicyConstraints")
     if holdout_ledger is not None and not isinstance(holdout_ledger, HoldoutLedger):
         raise TypeError("holdout_ledger must be HoldoutLedger or None")
+    if type(cluster_aware) is not bool:
+        raise ValueError("cluster_aware must be boolean")
+    if cluster_aware:
+        if (
+            type(cluster_bootstrap_replicates) is not int
+            or not 200 <= cluster_bootstrap_replicates <= 10_000
+        ):
+            raise ValueError("cluster_bootstrap_replicates must be in 200..10000")
+        if (
+            type(cluster_random_seed) is not int
+            or not 0 <= cluster_random_seed <= 4_294_967_295
+        ):
+            raise ValueError("cluster_random_seed must be in 0..4294967295")
     (
         calibration_probe,
         holdout_probe,
@@ -232,6 +255,7 @@ def select_and_validate_turn_policy(
             holdout_group_count=holdout_group_count,
             holdout_false_cutoff_upper_bound=None,
             holdout_missed_final_upper_bound=None,
+            cluster_aware=cluster_aware,
         )
 
     sweep = sweep_turn_policies(
@@ -260,6 +284,7 @@ def select_and_validate_turn_policy(
             holdout_group_count=holdout_group_count,
             holdout_false_cutoff_upper_bound=None,
             holdout_missed_final_upper_bound=None,
+            cluster_aware=cluster_aware,
         )
 
     # Deterministic tie-breaks are predeclared and use calibration metrics only.
@@ -307,13 +332,81 @@ def select_and_validate_turn_policy(
         constraints.confidence_level,
     )
 
-    enough_holdout = (
+    cluster_metrics: ClusteredTurnMetrics | None = None
+    if cluster_aware:
+        cluster_metrics = evaluate_clustered_turn_policy(
+            holdout_spans,
+            selected_policy,
+            group_ids_by_turn=group_ids_by_turn,
+            bootstrap_replicates=cluster_bootstrap_replicates,
+            confidence_level=constraints.confidence_level,
+            random_seed=cluster_random_seed,
+        )
+
+    enough_basic_holdout = (
         holdout_metrics.hold_pause_count >= constraints.min_hold_pauses
         and holdout_metrics.final_turn_count >= constraints.min_final_turns
         and holdout_group_count >= constraints.min_holdout_groups
     )
-    if not enough_holdout:
+    cluster_evidence_sufficient = True
+    cluster_point_violation = False
+    if cluster_metrics is not None:
+        false_required_groups = minimum_groups_for_zero_event_incidence(
+            constraints.max_false_cutoff_rate,
+            constraints.confidence_level,
+        )
+        missed_required_groups = minimum_groups_for_zero_event_incidence(
+            constraints.max_missed_final_rate,
+            constraints.confidence_level,
+        )
+        cluster_evidence_sufficient = (
+            false_required_groups is not None
+            and missed_required_groups is not None
+            and holdout_group_count >= max(
+                constraints.min_holdout_groups,
+                false_required_groups,
+                missed_required_groups,
+            )
+        )
+        cluster_point_violation = (
+            cluster_metrics.pooled_false_cutoff_rate > constraints.max_false_cutoff_rate
+            or cluster_metrics.pooled_missed_final_rate > constraints.max_missed_final_rate
+            or cluster_metrics.false_cutoff_session_incidence > constraints.max_false_cutoff_rate
+            or cluster_metrics.missed_final_session_incidence > constraints.max_missed_final_rate
+        )
+
+    if (
+        not enough_basic_holdout
+        or (
+            cluster_metrics is not None
+            and not cluster_evidence_sufficient
+            and not cluster_point_violation
+        )
+    ):
         status = ValidationStatus.INCONCLUSIVE_HOLDOUT
+    elif cluster_metrics is not None:
+        cluster_pass = (
+            cluster_metrics.bootstrap_false_cutoff_rate_upper_bound
+            <= constraints.max_false_cutoff_rate
+            and cluster_metrics.bootstrap_missed_final_rate_upper_bound
+            <= constraints.max_missed_final_rate
+            and cluster_metrics.false_cutoff_session_incidence_upper_bound
+            <= constraints.max_false_cutoff_rate
+            and cluster_metrics.missed_final_session_incidence_upper_bound
+            <= constraints.max_missed_final_rate
+            and cluster_metrics.mean_session_p95_latency_upper_bound_ms
+            <= constraints.max_p95_latency_ms
+        )
+        status = (
+            ValidationStatus.PASS
+            if (
+                cluster_evidence_sufficient
+                and cluster_pass
+                and holdout_metrics.p95_observed_latency_ms
+                <= constraints.max_p95_latency_ms
+            )
+            else ValidationStatus.FAIL
+        )
     elif (
         false_upper <= constraints.max_false_cutoff_rate
         and missed_upper <= constraints.max_missed_final_rate
@@ -338,6 +431,8 @@ def select_and_validate_turn_policy(
         holdout_false_cutoff_upper_bound=false_upper,
         holdout_missed_final_upper_bound=missed_upper,
         holdout_ledger_claimed=holdout_ledger is not None,
+        cluster_metrics=cluster_metrics,
+        cluster_aware=cluster_aware,
     )
 
 
@@ -345,5 +440,8 @@ __all__ = [
     "ValidationStatus",
     "TurnPolicyConstraints",
     "TurnPolicyValidation",
+    "ClusteredTurnMetrics",
+    "evaluate_clustered_turn_policy",
+    "minimum_groups_for_zero_event_incidence",
     "select_and_validate_turn_policy",
 ]
