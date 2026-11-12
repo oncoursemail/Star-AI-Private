@@ -154,8 +154,13 @@ def test_report_does_not_retain_raw_measurement_arrays():
     report = evaluate_rehearsal(snapshot(), limits())
 
     assert set(report) == {"schema_version", "run_id", "overall", "metrics", "gates", "notes"}
-    assert "first_audible_latency_ms" not in report["metrics"]
-    assert "audio" not in report["metrics"]
+    for raw_series in (
+        "first_content_latency_ms",
+        "first_audible_latency_ms",
+        "game_frame_time_ms",
+        "avatar_sync_error_ms",
+    ):
+        assert raw_series not in report["metrics"]
     assert all("transcript" not in str(gate).lower() for gate in report["gates"])
 
 
