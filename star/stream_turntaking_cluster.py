@@ -23,7 +23,7 @@ from .stream_turntaking_eval import (
     evaluate_turn_policy,
 )
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SPANS = 20_000
 _MAX_GROUPS = 20_000
 _MIN_BOOTSTRAP_REPLICATES = 200
