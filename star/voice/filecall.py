@@ -33,6 +33,7 @@ from typing import Callable
 
 from .call import CallSession
 from .metrics import latency_table
+from .playback import PlaybackSnapshot
 from .pcm import FRAME_BYTES, FRAME_SAMPLES, SAMPLE_RATE, frames, rms, samples
 from .turn import TurnDetector
 
@@ -87,6 +88,7 @@ class VirtualSpeaker:
         self._queue_end = 0.0
         self._queued = 0.0
         self.sample_rate = 0
+        self._first_playback_at: float | None = None
 
     # -- Speaker interface --------------------------------------------------------------------
     def play(self, pcm: bytes, sample_rate: int) -> None:
@@ -94,6 +96,8 @@ class VirtualSpeaker:
             now = self.clock()
             start = max(now, self._queue_end)
             duration = len(pcm) / 2 / sample_rate
+            if pcm and self._first_playback_at is None:
+                self._first_playback_at = start
             step = int(self.LEVEL_WINDOW * sample_rate) * 2
             self._segments.append([start, pcm, sample_rate, [rms(pcm[i:i + step]) for i in range(0, len(pcm), step)]])
             self._queue_end = start + duration
@@ -117,6 +121,12 @@ class VirtualSpeaker:
         with self._lock:
             self._queued = 0.0
             self._queue_end = max(self._queue_end, self.clock())
+            self._first_playback_at = None
+
+    def playback_snapshot(self) -> PlaybackSnapshot:
+        """Return the simulated scheduled start; virtual devices have no hardware callback counters."""
+        with self._lock:
+            return PlaybackSnapshot(self._first_playback_at, None, None, None)
 
     def pending_seconds(self) -> float:
         with self._lock:
