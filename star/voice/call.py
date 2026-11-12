@@ -862,7 +862,6 @@ class CallSession:
         try:
             playback = self.speaker.playback_snapshot()
             metrics.first_playback_at = playback.first_playback_at
-            metrics.speaker_output_callbacks = playback.output_callbacks
             metrics.speaker_output_callbacks_with_audio = playback.output_callbacks_with_audio
             metrics.speaker_output_underflows = playback.output_underflows
         except Exception:
