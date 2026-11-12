@@ -114,6 +114,9 @@ class StreamHostSampler:
     not-applicable value after the corresponding state is known false. Missing
     measurements for an active workload raise TelemetryUnavailable, so callers
     must not feed the scheduler a fabricated healthy sample.
+
+    One host sampling thread owns each instance; rebuild the sampler and
+    runtime when the host monotonic clock epoch changes.
     """
 
     def __init__(self, *, max_age_ms: int = 3_000) -> None:
