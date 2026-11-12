@@ -212,6 +212,24 @@ Sources:
 
 Observation and mutation tools should remain distinct. Live publishing, player data, economy changes, moderation and other external effects remain separately authorized.
 
+### Generalist 3D agents: SIMA 2
+
+Google DeepMind's SIMA 2 combines a vision-based game interface with a language/reasoning model and keyboard/mouse actions. Its research preview describes goal reasoning, interaction in multiple commercial games, language-conditioned behavior, and self-directed improvement from experience. The paper/blog also calls out remaining limits: long-horizon planning, short interaction memory, precise low-level control and robust visual understanding.
+
+Source:
+- https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+
+**STAR application:** borrow the architecture, not the unavailable research model. Keep a slow strategic planner, a fast observation/action loop, a versioned skill bank and held-out transfer tests. Store compact verified state summaries instead of replaying entire screen histories. Use task success and independent environment state—not an agent's narration—as the reward signal.
+
+### Interactive world models: Genie 4
+
+Google DeepMind announced Genie 4 on October 27, 2026 as a real-time interactive world-simulation model with multimodal scene, sound and dialogue generation.
+
+Source:
+- https://deepmind.google/blog/genie-4-a-new-generation-of-world-simulation/
+
+**STAR application:** treat world models as a future optional training/evaluation source. If access becomes available, generate diverse private practice environments, test whether a skill transfers across visual/physics variations, and compare predicted versus observed transitions. Genie 4 is not a local dependency or a substitute for real Roblox/game playtests; access and reproducibility must be verified before integration.
+
 ### Game-skill transfer
 
 A skill is not mastered because Star can describe it or repeat one successful button sequence. Record the game version, control mapping, preconditions, state features, allowed actions, predicted state transition, failure conditions and independent success evidence. Test on unseen maps, seeds and situations. Retire or revalidate skills after patches that change controls, physics or mechanics.
