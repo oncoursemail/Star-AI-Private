@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from ..voice.call import CallConfig, CallSession
 from ..voice.metrics import latency_summary
 from ..voice.pcm import FRAME_BYTES, FRAME_MS
+from ..voice.playback import PlaybackSnapshot
 from ..voice.turn import TurnConfig
 
 REPLIES = ("Oh, nice one. That sounds like a fun idea, tell me more.",
@@ -112,6 +113,9 @@ class _Speaker:
 
     def level(self) -> float:
         return 0.1 if self.pending_seconds() > 0 else 0.0
+
+    def playback_snapshot(self) -> PlaybackSnapshot:
+        return PlaybackSnapshot(None, None, None)
 
 
 @dataclass
