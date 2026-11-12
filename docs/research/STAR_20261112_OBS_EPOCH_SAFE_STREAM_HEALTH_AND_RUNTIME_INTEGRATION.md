@@ -324,4 +324,4 @@ This PR is based on #1148's head and adds a narrow OBS adapter. It does not modi
 12. OpenTelemetry semantic conventions overview: https://opentelemetry.io/docs/concepts/semantic-conventions/
 13. Google DeepMind SIMA 2 (13 November 2025): https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
 14. Voyager lifelong-learning game agent: https://github.com/MineDojo/Voyager
-15. GameDevBench: https://github.com/GAIR-NLP/GameDevBench
+15. GameDevBench: https://github.com/waynchi/gamedevbench
