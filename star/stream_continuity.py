@@ -289,7 +289,7 @@ class StreamContinuityStore:
         now_unix_s: int,
         public_action_labels: dict[str, str],
         broadcast_approved: bool = False,
-        limit: int = 3,
+        limit: int = 1,
         lookback_seconds: int = _DEFAULT_RETENTION_S,
     ) -> StreamContinuityPacket | None:
         """Return only relevant, curated, same-game/version aggregates or silence.
