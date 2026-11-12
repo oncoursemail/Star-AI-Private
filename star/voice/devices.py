@@ -12,7 +12,7 @@ import threading
 import time
 
 from .pcm import FRAME_SAMPLES, SAMPLE_RATE
-from .playback import PlaybackSnapshot, PlaybackTelemetry
+from .playback import PlaybackSnapshot, PlaybackTelemetry, estimate_output_time
 
 log = logging.getLogger(__name__)
 
@@ -107,8 +107,13 @@ class SoundSpeaker:
         self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16", device=_device(device),
                                           callback=self._callback)
 
-    def _callback(self, out, frames, _time, status) -> None:
+    def _callback(self, out, frames, time_info, status) -> None:
         callback_at = time.monotonic()
+        output_at = estimate_output_time(
+            callback_at,
+            current_time=getattr(time_info, "currentTime", None),
+            output_buffer_dac_time=getattr(time_info, "outputBufferDacTime", None),
+        )
         wanted = frames * 2
         underflow = bool(getattr(status, "output_underflow", False))
         with self._lock:
@@ -117,7 +122,7 @@ class SoundSpeaker:
             self._played += len(chunk) // 2
             try:
                 self._playback.record_callback(
-                    at=callback_at, frames=frames, emitted_frames=len(chunk) // 2,
+                    at=output_at, frames=frames, emitted_frames=len(chunk) // 2,
                     output_underflow=underflow,
                 )
             except Exception:
@@ -128,7 +133,7 @@ class SoundSpeaker:
         if chunk:
             import numpy as np
             block = np.frombuffer(chunk, dtype="<i2").astype(np.float32)
-            self._levels.append((callback_at, float(np.sqrt(np.mean(block * block))) / 32768.0))
+            self._levels.append((output_at, float(np.sqrt(np.mean(block * block))) / 32768.0))
 
     def __enter__(self) -> "SoundSpeaker":
         self._stream.start()
