@@ -284,7 +284,13 @@ class SQLiteDeliveryLedger(DeliveryLedger):
                 deadline_wall is not None
                 and (wall_rollback or wall_now >= deadline_wall)
             )
-            if deadline_due and rebased.state not in (
+            if rebased.state in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
+                # Even an overdue active playback must remain fenced until the host
+                # proves the old worker stopped. Reconciliation then applies deadline expiry.
+                super().mark_recovery_required(
+                    record.delivery_id, rebased.version, now_ms=now_ms
+                )
+            elif deadline_due and rebased.state not in (
                 DeliveryState.DELIVERED, DeliveryState.CANCELLED, DeliveryState.EXPIRED
             ):
                 expired = replace(
@@ -300,10 +306,6 @@ class SQLiteDeliveryLedger(DeliveryLedger):
                     failure_code="deadline_expired_on_restore",
                 )
                 self._records[record.delivery_id] = expired
-            elif rebased.state in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
-                super().mark_recovery_required(
-                    record.delivery_id, rebased.version, now_ms=now_ms
-                )
 
         self._persist_changes(before)
 
