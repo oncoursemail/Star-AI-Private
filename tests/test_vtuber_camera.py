@@ -28,6 +28,7 @@ from star.vtuber.model import ModelError, find_starface_dir, load_manifest, load
 from star.vtuber.rig import REACTIONS, LiveRig
 from star.vtuber.sample import render_sample
 from star.vtuber.sinks import MemorySink, PyVirtualCamSink, SinkError
+from star.voice.playback import PlaybackSnapshot
 
 RATE = 16000
 
@@ -154,6 +155,27 @@ class LipSyncTests(unittest.TestCase):
         self.assertEqual(wrapped.level(), 0.0)                  # everything else is the speaker's own
         wrapped.stop()
         self.assertEqual((speaker.stopped, feed.cleared), (1, 1))
+
+    def test_lipsync_wrapper_forwards_playback_snapshot(self):
+        class TimedSpeaker:
+            def playback_snapshot(self):
+                return PlaybackSnapshot(12.5, 4, 1)
+
+            def pending_seconds(self):
+                return 0.0
+
+            def play(self, pcm, rate):
+                pass
+
+        wrapped = lipsync.LipSyncSpeaker(TimedSpeaker(), object())
+        snapshot = wrapped.playback_snapshot()
+        self.assertEqual(snapshot, PlaybackSnapshot(12.5, 4, 1))
+
+        class LegacySpeaker:
+            pass
+
+        legacy = lipsync.LipSyncSpeaker(LegacySpeaker(), object())
+        self.assertEqual(legacy.playback_snapshot(), PlaybackSnapshot(None, None, None))
 
     def test_her_voice_still_plays_when_lipsync_breaks(self):
         class Speaker:
