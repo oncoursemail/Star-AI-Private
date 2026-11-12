@@ -205,6 +205,7 @@ def test_future_or_replayed_samples_cannot_rearm_the_runtime():
             now_monotonic_ms=1_100,
             trusted_host=True,
         )
+    runtime.schedule(1_000)
     with pytest.raises(ValueError, match="clock"):
         runtime.schedule(999)
 
