@@ -132,6 +132,7 @@ class SoundSpeaker:
         )
         self._level_submitted_seq = 0
         self._level_processed_seq = 0
+        self._level_last_processed_seq = 0
         self._level_overflow_until = float("-inf")
         self.dropped_level_blocks = 0
         self._level_stop = threading.Event()
@@ -165,9 +166,18 @@ class SoundSpeaker:
                     self._level_overflow_until, time.monotonic() + _LEVEL_WINDOW_S
                 )
 
+            # Sequence gaps reveal samples evicted by deque(maxlen) while the worker
+            # was busy. Count drops here, outside the audio callback.
+            missing = max(0, sequence - self._level_last_processed_seq - 1)
+            if missing:
+                self.dropped_level_blocks += missing
+                self._level_overflow_until = max(
+                    self._level_overflow_until, at + _LEVEL_WINDOW_S
+                )
+            self._level_last_processed_seq = sequence
             with self._levels_lock:
                 self._levels.append((at, value))
-                self._level_processed_seq = max(self._level_processed_seq, sequence)
+                self._level_processed_seq = sequence
 
     def _callback(self, out, frames, time_info, status) -> None:
         callback_at = time.monotonic()
@@ -198,11 +208,6 @@ class SoundSpeaker:
         if chunk:
             # Metering is best-effort and bounded. A full queue drops only an old meter
             # sample; it never drops, delays, or modifies the PCM sent to the device.
-            if len(self._level_queue) >= _LEVEL_QUEUE_CAPACITY:
-                self.dropped_level_blocks += 1
-                self._level_overflow_until = max(
-                    self._level_overflow_until, output_at + _LEVEL_WINDOW_S
-                )
             sequence = self._level_submitted_seq + 1
             self._level_queue.append((sequence, output_at, chunk))
             self._level_submitted_seq = sequence
