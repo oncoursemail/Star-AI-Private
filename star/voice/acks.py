@@ -67,11 +67,13 @@ class AckClips:
         self._clips: dict[str, list[Clip]] = {}
         self._next: dict[str, int] = {}
         self._lock = threading.Lock()
+        self.error: str | None = None
         self.ready = threading.Event()
 
     def render(self) -> None:
         clips: dict[str, list[Clip]] = {}
         back: list[Clip] = []
+        error: str | None = None
         try:
             for group, texts in self.lines.items():
                 for text in texts:
@@ -82,10 +84,18 @@ class AckClips:
                 chunks = tuple((pcm, rate) for pcm, rate in self.tts.synthesize(text) if pcm)
                 if chunks:
                     back.append(Clip(text, chunks))
+        except Exception as exc:
+            # A background pre-render failure must not escape as an unhandled
+            # thread exception or leave partially rendered clips available.
+            # Keep only the exception type; do not persist engine error text.
+            error = type(exc).__name__
+            clips = {}
+            back = []
         finally:
             with self._lock:
                 self._clips = clips
                 self._back = back
+                self.error = error
             self.ready.set()
 
     def backchannel(self) -> Clip | None:
