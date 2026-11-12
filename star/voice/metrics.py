@@ -18,7 +18,6 @@ class TurnMetrics:
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
     first_audio_at: float | None = None  # first reply audio submitted to the speaker queue
     first_playback_at: float | None = None  # first non-empty output callback (not acoustic arrival)
-    speaker_output_callbacks: int | None = None
     speaker_output_callbacks_with_audio: int | None = None
     speaker_output_underflows: int | None = None
     first_ack_at: float | None = None    # acknowledgement clip handed to the speaker (star/voice/acks.py)
