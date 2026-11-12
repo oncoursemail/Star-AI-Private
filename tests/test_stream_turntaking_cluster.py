@@ -1,11 +1,15 @@
 """Tests for session-clustered STAR turn-policy uncertainty."""
 from dataclasses import replace
 
-import math\n\nimport pytest
+import math
+
+import pytest
 
 from star.stream_turntaking_cluster import (
     evaluate_clustered_turn_policy,
-    hoeffding_upper_bound,\n    minimum_groups_for_zero_event_incidence,\n    weighted_hoeffding_upper_bound,
+    hoeffding_upper_bound,
+    minimum_groups_for_zero_event_incidence,
+    weighted_hoeffding_upper_bound,
 )
 from star.stream_turntaking_eval import (
     EndOfTurnScore,
