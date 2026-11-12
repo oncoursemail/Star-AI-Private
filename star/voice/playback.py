@@ -20,7 +20,7 @@ class PlaybackSnapshot:
     first_playback_at: float | None
     output_callbacks: int | None
     output_callbacks_with_audio: int | None
-    output_underflows: int | None
+    output_underflows: int | None  # PortAudio underflows observed while non-empty audio was emitted
 
 
 class PlaybackTelemetry:
@@ -62,7 +62,7 @@ class PlaybackTelemetry:
                 self._callbacks_with_audio += 1
                 if self._first_playback_at is None:
                     self._first_playback_at = float(stamp)
-            if output_underflow:
+            if output_underflow and emitted_frames:
                 self._output_underflows += 1
 
     def snapshot(self) -> PlaybackSnapshot:
