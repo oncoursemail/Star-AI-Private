@@ -170,7 +170,7 @@ def test_expired_lease_releases_capacity_and_cannot_be_released_twice():
     controller.submit(make_request("voice", WorkloadLane.VOICE, cpu=10))
     lease = controller.schedule(1_000, health=healthy())[0]
     controller.submit(make_request("next", WorkloadLane.VOICE, cpu=10))
-    with pytest.raises(PermissionError, match="confirmed"):
+    with pytest.raises(PermissionError, match="confirm"):
         controller.release(lease.lease_id, 1_100, host_confirmed_stopped=False)
     snapshot = controller.snapshot(1_100, health=healthy(now=1_100))
     assert snapshot.active == 1
