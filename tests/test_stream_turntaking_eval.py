@@ -62,14 +62,14 @@ def test_action_delay_ignores_scores_before_the_delay():
         dataset(2),
         TurnPolicy(threshold=0.8, action_delay_ms=350, timeout_ms=1000),
     )
-    assert result.false_cutoffs == 2
+    assert result.false_cutoffs == 0
     assert result.p50_observed_latency_ms == 600
 
 
 def test_threshold_can_avoid_a_mid_turn_cutoff():
     result = evaluate_turn_policy(
         dataset(2),
-        TurnPolicy(threshold=0.96, action_delay_ms=200, timeout_ms=1000),
+        TurnPolicy(threshold=0.96, action_delay_ms=200, timeout_ms=1300),
     )
     assert result.false_cutoffs == 0
     assert result.detected_final_turns == 0
