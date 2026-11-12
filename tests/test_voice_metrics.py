@@ -93,6 +93,7 @@ def test_playback_clock_separates_queue_submission_from_output_callback():
     )
     stages = metrics.stages()
     assert stages["total"] == pytest.approx(0.4)  # existing queue-submission metric stays compatible
+    assert stages["speech_end_to_first_submission"] == pytest.approx(0.2)
     assert stages["speech_end_to_first_playback"] == pytest.approx(0.24)
     assert stages["speaker_queue_to_playback"] == pytest.approx(0.04)
     assert stages["perceived"] == pytest.approx(0.24)
