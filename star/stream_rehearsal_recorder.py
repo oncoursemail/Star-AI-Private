@@ -103,13 +103,14 @@ class _Reservoir:
         if slot < self.capacity:
             self.values[slot] = value
 
-    def health(self) -> dict[str, int | float]:
+    def health(self) -> dict[str, int | float | bool]:
         return {
             "observed": self.seen,
             "retained": len(self.values),
             "sampling_fraction": (
                 round(len(self.values) / self.seen, 6) if self.seen else 0.0
             ),
+            "exact": self.seen <= self.capacity,
         }
 
 
