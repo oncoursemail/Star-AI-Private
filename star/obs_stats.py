@@ -64,7 +64,7 @@ class ObsStatsSnapshot:
     output_skipped_frames: int
     output_total_frames: int
     cpu_usage_percent: float | None = None
-    memory_usage_mib: float | None = None
+    memory_usage_mb: float | None = None
 
     def __post_init__(self) -> None:
         for name in ("obs_epoch", "stream_epoch"):
@@ -91,8 +91,8 @@ class ObsStatsSnapshot:
             cpu = _number(self.cpu_usage_percent, "cpu_usage_percent", maximum=100.0)
             if cpu > 100:
                 raise ValueError("cpu_usage_percent must be in 0..100")
-        if self.memory_usage_mib is not None:
-            _number(self.memory_usage_mib, "memory_usage_mib")
+        if self.memory_usage_mb is not None:
+            _number(self.memory_usage_mb, "memory_usage_mb")
 
 
 def parse_get_stats_response(
@@ -131,7 +131,7 @@ def parse_get_stats_response(
             if "cpuUsage" in response_data and response_data["cpuUsage"] is not None
             else None
         ),
-        memory_usage_mib=(
+        memory_usage_mb=(
             _number(response_data["memoryUsage"], "memoryUsage")
             if "memoryUsage" in response_data and response_data["memoryUsage"] is not None
             else None
@@ -154,7 +154,7 @@ class ObsStatsInterval:
     active_fps: float | None = None
     average_frame_render_time_ms: float | None = None
     cpu_usage_percent: float | None = None
-    memory_usage_mib: float | None = None
+    memory_usage_mb: float | None = None
     reason: str = ""
 
     def rehearsal_counts(self) -> dict[str, int]:
@@ -251,7 +251,7 @@ class ObsStatsWindow:
             active_fps=sample.active_fps,
             average_frame_render_time_ms=sample.average_frame_render_time_ms,
             cpu_usage_percent=sample.cpu_usage_percent,
-            memory_usage_mib=sample.memory_usage_mib,
+            memory_usage_mb=sample.memory_usage_mb,
         )
 
 
