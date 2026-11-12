@@ -277,7 +277,7 @@ def test_invalid_health_and_lease_identifiers_are_rejected():
     lease = controller.schedule(1_000, health=healthy())[0]
     with pytest.raises(ValueError, match="lease_id"):
         controller.release("../not-a-lease", 1_001, host_confirmed_stopped=True)
-    assert controller.release(lease.lease_id, 1_001) is True
+    assert controller.release(lease.lease_id, 1_001, host_confirmed_stopped=True) is True
 
 
 def test_capacity_is_enforced_independently_for_cpu_ram_and_vram():
