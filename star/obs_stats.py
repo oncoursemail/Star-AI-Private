@@ -17,7 +17,7 @@ import math
 import re
 from typing import Any, Mapping, cast
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_COUNTER = 9_007_199_254_740_991  # largest integer exactly representable by JSON/JS Number
 _MAX_GAUGE = 1_000_000_000.0
 
