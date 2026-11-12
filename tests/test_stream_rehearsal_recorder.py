@@ -234,9 +234,9 @@ def test_game_epoch_change_does_not_create_a_cross_process_frame_hitch():
     assert recorder.record_frame_present(epoch="game-a", at_ms=0.0)
     assert recorder.record_frame_present(epoch="game-a", at_ms=16.0)
     assert recorder.record_frame_present(epoch="game-b", at_ms=50_000.0)
-    assert recorder.record_frame_present(epoch="game-b", at_ms=66_000.0)
+    assert recorder.record_frame_present(epoch="game-b", at_ms=50_016.0)
 
-    assert recorder.snapshot()["game_frame_time_ms"] == [16.0, 16_000.0]
+    assert recorder.snapshot()["game_frame_time_ms"] == [16.0, 16.0]
     assert recorder.health()["source_restarts"]["game"] == 1
 
 
