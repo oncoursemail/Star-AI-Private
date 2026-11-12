@@ -52,6 +52,12 @@ _PROTECTED_LANES = frozenset({
     WorkloadLane.AVATAR,
     WorkloadLane.CHAT,
 })
+_REALTIME_RESERVE_LANES = frozenset({
+    WorkloadLane.AUDIO,
+    WorkloadLane.GAME_CONTROL,
+    WorkloadLane.VOICE,
+    WorkloadLane.AVATAR,
+})
 _STREAM_DEFERRED_LANES = frozenset({
     WorkloadLane.INTERACTIVE,
     WorkloadLane.RESEARCH,
@@ -347,7 +353,7 @@ class WorkloadAdmissionController:
             used = _sum_resources(active_leases)
             available = _subtract(self._budget.capacity, used)
             protected_used = _sum_resources(
-                [lease for lease in active_leases if lease.lane in _PROTECTED_LANES]
+                [lease for lease in active_leases if lease.lane in _REALTIME_RESERVE_LANES]
             )
             reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
             ordered = sorted(
@@ -375,7 +381,7 @@ class WorkloadAdmissionController:
                     continue
                 allocatable = (
                     available
-                    if request.lane in _PROTECTED_LANES
+                    if request.lane in _REALTIME_RESERVE_LANES
                     else _subtract(available, reserve_remaining)
                 )
                 if not _fits(allocatable, request.resources):
@@ -393,7 +399,7 @@ class WorkloadAdmissionController:
                 self._active[lease.lease_id] = lease
                 self._active_by_request[request_id] = lease.lease_id
                 available = _subtract(available, request.resources)
-                if request.lane in _PROTECTED_LANES:
+                if request.lane in _REALTIME_RESERVE_LANES:
                     protected_used = _add(protected_used, request.resources)
                     reserve_remaining = _subtract(self._budget.realtime_reserve, protected_used)
                 admitted.append(lease)
