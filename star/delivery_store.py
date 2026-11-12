@@ -420,35 +420,114 @@ class SQLiteDeliveryLedger(DeliveryLedger):
                 raise
             return result
 
-    def create(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("create", *args, **kwargs)
+    def create(
+        self,
+        delivery_id: str,
+        task_id: str,
+        task_version: int,
+        result_sha256: str,
+        segment_sha256s: tuple[str, ...],
+        *,
+        now_ms: int,
+        deadline_ms: int | None = None,
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "create", delivery_id, task_id, task_version, result_sha256,
+            segment_sha256s, now_ms=now_ms, deadline_ms=deadline_ms,
+        )
 
-    def claim(self, *args, **kwargs) -> DeliveryLease:
-        return self._mutate("claim", *args, **kwargs)
+    def claim(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        attempt_id: str,
+        *,
+        now_ms: int,
+        lease_ms: int | None = None,
+    ) -> DeliveryLease:
+        return self._mutate(
+            "claim", delivery_id, expected_version, attempt_id,
+            now_ms=now_ms, lease_ms=lease_ms,
+        )
 
-    def start_playback(self, *args, **kwargs) -> DeliveryLease:
-        return self._mutate("start_playback", *args, **kwargs)
+    def start_playback(
+        self, lease: DeliveryLease, playback_id: str, *, now_ms: int
+    ) -> DeliveryLease:
+        return self._mutate("start_playback", lease, playback_id, now_ms=now_ms)
 
-    def acknowledge_playback(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("acknowledge_playback", *args, **kwargs)
+    def acknowledge_playback(
+        self,
+        lease: DeliveryLease,
+        playback_id: str,
+        *,
+        played_ms: int,
+        duration_ms: int,
+        interrupted: bool,
+        now_ms: int,
+        completion_tolerance_ms: int = 0,
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "acknowledge_playback", lease, playback_id, played_ms=played_ms,
+            duration_ms=duration_ms, interrupted=interrupted, now_ms=now_ms,
+            completion_tolerance_ms=completion_tolerance_ms,
+        )
 
-    def fail(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("fail", *args, **kwargs)
+    def fail(
+        self,
+        lease: DeliveryLease,
+        failure_code: str,
+        *,
+        now_ms: int,
+        host_confirmed_stopped: bool = False,
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "fail", lease, failure_code, now_ms=now_ms,
+            host_confirmed_stopped=host_confirmed_stopped,
+        )
 
-    def recover_expired_lease(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("recover_expired_lease", *args, **kwargs)
+    def recover_expired_lease(
+        self, lease: DeliveryLease, *, now_ms: int, host_confirmed_stopped: bool
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "recover_expired_lease", lease, now_ms=now_ms,
+            host_confirmed_stopped=host_confirmed_stopped,
+        )
 
-    def mark_recovery_required(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("mark_recovery_required", *args, **kwargs)
+    def mark_recovery_required(
+        self, delivery_id: str, expected_version: int, *, now_ms: int
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "mark_recovery_required", delivery_id, expected_version, now_ms=now_ms
+        )
 
-    def reconcile_after_restart(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("reconcile_after_restart", *args, **kwargs)
+    def reconcile_after_restart(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+        host_confirmed_stopped: bool,
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "reconcile_after_restart", delivery_id, expected_version,
+            now_ms=now_ms, host_confirmed_stopped=host_confirmed_stopped,
+        )
 
-    def cancel(self, *args, **kwargs) -> DeliveryRecord:
-        return self._mutate("cancel", *args, **kwargs)
+    def cancel(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+        host_confirmed_stopped: bool = False,
+    ) -> DeliveryRecord:
+        return self._mutate(
+            "cancel", delivery_id, expected_version, now_ms=now_ms,
+            host_confirmed_stopped=host_confirmed_stopped,
+        )
 
-    def reap(self, *args, **kwargs) -> DeliveryReapReport:
-        return self._mutate("reap", *args, **kwargs)
+    def reap(self, *, now_ms: int) -> DeliveryReapReport:
+        return self._mutate("reap", now_ms=now_ms)
 
     def integrity_check(self) -> str:
         with self._lock:
