@@ -27,6 +27,7 @@ class WorkloadLane(str, Enum):
     GAME_CONTROL = "game_control"
     VOICE = "voice"
     AVATAR = "avatar"
+    CHAT = "chat"
     INTERACTIVE = "interactive"
     RESEARCH = "research"
     LEARNING = "learning"
@@ -38,16 +39,24 @@ _LANE_PRIORITY = {
     WorkloadLane.GAME_CONTROL: 0,
     WorkloadLane.VOICE: 1,
     WorkloadLane.AVATAR: 1,
-    WorkloadLane.INTERACTIVE: 2,
-    WorkloadLane.RESEARCH: 3,
-    WorkloadLane.LEARNING: 3,
-    WorkloadLane.ASSET_GENERATION: 3,
+    WorkloadLane.CHAT: 2,
+    WorkloadLane.INTERACTIVE: 3,
+    WorkloadLane.RESEARCH: 4,
+    WorkloadLane.LEARNING: 4,
+    WorkloadLane.ASSET_GENERATION: 4,
 }
 _PROTECTED_LANES = frozenset({
     WorkloadLane.AUDIO,
     WorkloadLane.GAME_CONTROL,
     WorkloadLane.VOICE,
     WorkloadLane.AVATAR,
+    WorkloadLane.CHAT,
+})
+_STREAM_DEFERRED_LANES = frozenset({
+    WorkloadLane.INTERACTIVE,
+    WorkloadLane.RESEARCH,
+    WorkloadLane.LEARNING,
+    WorkloadLane.ASSET_GENERATION,
 })
 
 
@@ -104,11 +113,15 @@ class HostHealth:
 
     observed_monotonic_ms: int
     realtime_degraded: bool
+    streaming: bool = False
+    gaming: bool = False
 
     def __post_init__(self) -> None:
         _clock(self.observed_monotonic_ms, "observed_monotonic_ms")
         if type(self.realtime_degraded) is not bool:
             raise ValueError("realtime_degraded must be an explicit boolean")
+        if type(self.streaming) is not bool or type(self.gaming) is not bool:
+            raise ValueError("streaming and gaming must be explicit booleans")
 
 
 @dataclass(frozen=True)
@@ -168,7 +181,10 @@ class AdmissionSnapshot:
     realtime_reserve_remaining: ResourceVector
     health_fresh: bool
     realtime_degraded: bool
+    streaming: bool | None
+    gaming: bool | None
     deferred_for_health: int
+    deferred_for_active_session: int
     expired_queued: int
     expired_active_leases: int
 
@@ -293,7 +309,9 @@ class WorkloadAdmissionController:
         with self._lock:
             return self._queued.pop(request_id, None) is not None
 
-    def _health_state(self, now_ms: int, health: HostHealth | None) -> tuple[bool, bool]:
+    def _health_state(
+        self, now_ms: int, health: HostHealth | None
+    ) -> tuple[bool, bool, bool | None, bool | None]:
         if health is not None and not isinstance(health, HostHealth):
             raise TypeError("health must be HostHealth or None")
         fresh = bool(
@@ -301,7 +319,9 @@ class WorkloadAdmissionController:
             and 0 <= now_ms - health.observed_monotonic_ms <= self._health_max_age_ms
         )
         degraded = not fresh or (health.realtime_degraded if health is not None else True)
-        return fresh, degraded
+        if not fresh or health is None:
+            return False, True, None, None
+        return True, degraded, health.streaming, health.gaming
 
     def schedule(
         self,
@@ -320,7 +340,7 @@ class WorkloadAdmissionController:
         with self._lock:
             now = self._advance_clock(now_monotonic_ms)
             self._expire(now)
-            _, degraded = self._health_state(now, health)
+            _, degraded, streaming, gaming = self._health_state(now, health)
             if len(self._active) >= self._max_active or not self._queued:
                 return ()
             active_leases = list(self._active.values())
@@ -349,6 +369,9 @@ class WorkloadAdmissionController:
                 if request.enqueued_monotonic_ms > now:
                     continue
                 if degraded and request.lane not in _PROTECTED_LANES:
+                    continue
+                if (streaming or gaming) and request.lane in _STREAM_DEFERRED_LANES:
+                    blocked_priority = priority
                     continue
                 allocatable = (
                     available
@@ -411,7 +434,7 @@ class WorkloadAdmissionController:
         with self._lock:
             now = self._advance_clock(now_monotonic_ms)
             self._expire(now)
-            fresh, degraded = self._health_state(now, health)
+            fresh, degraded, streaming, gaming = self._health_state(now, health)
             active = list(self._active.values())
             used = _sum_resources(active)
             available = _subtract(self._budget.capacity, used)
@@ -431,6 +454,10 @@ class WorkloadAdmissionController:
                 1 for _, request in self._queued.values()
                 if degraded and request.lane not in _PROTECTED_LANES
             )
+            deferred_active = sum(
+                1 for _, request in self._queued.values()
+                if (streaming or gaming) and request.lane in _STREAM_DEFERRED_LANES
+            )
             return AdmissionSnapshot(
                 queued=len(self._queued),
                 active=len(active),
@@ -441,7 +468,10 @@ class WorkloadAdmissionController:
                 realtime_reserve_remaining=reserve_remaining,
                 health_fresh=fresh,
                 realtime_degraded=degraded,
+                streaming=streaming,
+                gaming=gaming,
                 deferred_for_health=deferred,
+                deferred_for_active_session=deferred_active,
                 expired_queued=self._expired_queued,
                 expired_active_leases=sum(1 for lease in active if now >= lease.expires_monotonic_ms),
             )
