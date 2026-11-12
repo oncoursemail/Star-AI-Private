@@ -166,7 +166,7 @@ def test_report_does_not_retain_raw_measurement_arrays():
     assert all("transcript" not in str(gate).lower() for gate in report["gates"])
 
 
-@pytest.mark.parametrize("bad", [True, -1, float("nan"), float("inf"), "420"])
+@pytest.mark.parametrize("bad", [True, -1, 10**1000, float("nan"), float("inf"), "420"])
 def test_invalid_latency_samples_are_rejected(bad):
     data = snapshot(first_audible_latency_ms=[bad] * 20)
     with pytest.raises(ValueError):
