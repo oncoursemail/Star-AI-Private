@@ -121,7 +121,7 @@ Source: [OBS WebSocket protocol](https://github.com/obsproject/obs-websocket/blo
 
 ### OpenGameEval
 
-Roblox's OpenGameEval is especially relevant because it runs agents in reproducible, stateful Roblox Studio sessions and checks both edited scenes and simulated play sessions. Its October 2026 paper reports 84 human-curated tasks, 13 frontier models and 16 attempts per task. It separates observation tools from editing tools. Runs that inspected relevant objects before editing passed more often than runs that did not inspect them.
+Roblox's OpenGameEval is especially relevant because it runs agents in reproducible, stateful Roblox Studio sessions and checks both edited scenes and simulated play sessions. Its October 2026 paper reports 84 human-curated tasks, 13 frontier models and 16 attempts per task. It separates observation tools from editing tools. Runs that inspected every object touched by the reference solution passed 13.4 percentage points more often on scene-only tasks and 9.8 points more often on script-only tasks than runs that inspected none.
 
 Sources: [OpenGameEval paper](https://arxiv.org/abs/2610.02563) · [official repository](https://github.com/Roblox/open-game-eval)
 
@@ -147,7 +147,7 @@ Source: [official GameDevBench repository](https://github.com/waynchi/gamedevben
 
 ### CEGame-Bench
 
-CEGame-Bench evaluates long-horizon game creation across Defold, Godot, Roblox Studio, Unity and Unreal. Its October 2026 paper emphasizes the gap between a project that builds and a game that can actually be launched, played through, and resumed from a saved world. The paper reports that only 16% of evaluated agent runs reached the ending, and describes a requirement-driven playtesting skill that improved execution-based scores in its evaluated settings.
+CEGame-Bench evaluates long-horizon game creation across Defold, Godot, Roblox Studio, Unity and Unreal. Its October 2026 paper emphasizes the gap between a project that builds and a game that can actually be launched, played through, and resumed from a saved world. The paper reports that only 16% of evaluated agent runs reached the ending, and describes a requirement-driven playtesting skill that improved execution-based scores by 14.1–24.3 points for three evaluated models.
 
 Source: [CEGame-Bench paper](https://arxiv.org/abs/2610.26098)
 
