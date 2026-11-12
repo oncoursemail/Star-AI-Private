@@ -106,7 +106,8 @@ def test_playback_summary_includes_acknowledgement_only_turns():
     metrics = TurnMetrics(speech_end=1.0, first_ack_at=1.2, first_playback_at=1.25)
     summary = latency_summary([metrics])
     latency = summary["latency"]
-    assert latency["speech_end_to_audio_submitted"]["p50_ms"] == pytest.approx(200.0)
+    assert latency["speech_end_to_audio_submitted"]["n"] == 0
+    assert latency["speech_end_to_first_submission"]["p50_ms"] == pytest.approx(200.0)
     assert latency["speech_end_to_first_playback"]["p50_ms"] == pytest.approx(250.0)
     assert latency["speaker_queue_to_playback"]["p50_ms"] == pytest.approx(50.0)
     assert summary["incomplete_turns"] == 0
