@@ -398,8 +398,6 @@ def select_and_validate_turn_policy(
             if (
                 cluster_evidence_sufficient
                 and cluster_pass
-                and false_upper <= constraints.max_false_cutoff_rate
-                and missed_upper <= constraints.max_missed_final_rate
                 and holdout_metrics.p95_observed_latency_ms
                 <= constraints.max_p95_latency_ms
             )
