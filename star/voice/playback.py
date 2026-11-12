@@ -27,7 +27,7 @@ def estimate_output_time(
     *,
     current_time: float | None,
     output_buffer_dac_time: float | None,
-    max_future_s: float = 1.0,
+    max_future_s: float = 0.5,
 ) -> float:
     """Map PortAudio outputBufferDacTime to monotonic time; fall back safely."""
     if type(callback_monotonic) not in (int, float) or not math.isfinite(callback_monotonic):
@@ -39,7 +39,7 @@ def estimate_output_time(
         and math.isfinite(output_buffer_dac_time)
         and type(max_future_s) in (int, float)
         and math.isfinite(max_future_s)
-        and 0.0 < max_future_s <= 5.0
+        and 0.0 < max_future_s <= 1.0
     ):
         delta = float(output_buffer_dac_time) - float(current_time)
         if 0.0 <= delta <= max_future_s:
