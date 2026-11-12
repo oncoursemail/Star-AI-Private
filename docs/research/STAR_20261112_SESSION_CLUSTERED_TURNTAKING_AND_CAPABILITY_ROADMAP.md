@@ -141,3 +141,48 @@ Evaluate knowledge by future task success and grounded actions, not recall alone
 - Do not promote a live voice policy until blinded human review and target-hardware guardrails pass.
 
 This PR adds no microphone capture, ASR, TTS, playback control, OBS/VTube Studio integration, Windows APIs, model calls, game input, model-weight updates or network access. It claims no measured speedup, intelligence gain, naturalness improvement or gameplay mastery.
+
+
+## Additional source-backed research for STAR's broader capabilities
+
+### Generalist game control: SIMA 2
+
+Google DeepMind's SIMA 2 report describes an agent that moves beyond instruction following toward goal reasoning, conversation and learning across 3D virtual environments. The reported architecture combines a general reasoning model with visual/environment understanding, memory and keyboard/mouse actions.
+
+Source: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+
+STAR should borrow the separation of high-level goal reasoning from grounded low-level control. Do not make the large language model emit every frame's input. The strategic controller should produce a bounded objective/skill plan; a fast controller should translate current observations into immediate actions and report outcomes.
+
+### Continual skill acquisition: Voyager
+
+Voyager's published architecture combines an automatic curriculum, an executable skill library and iterative prompting that uses environment feedback, execution errors and self-verification. It demonstrates how skills can be composed and reused in a new Minecraft world without continually fine-tuning the foundation model.
+
+Source: https://github.com/caixianzhou/voyager
+
+STAR's equivalent should store versioned, testable skill artifacts rather than silently modifying foundation weights. Each skill needs preconditions, environment/version scope, action contract, expected postconditions, failure modes, provenance and a held-out transfer test.
+
+### Visual feedback for game creation: GameDevBench
+
+GameDevBench contains 333 Godot development tasks across 2D graphics/animation, 3D graphics/animation, UI and gameplay logic. The authors report that image/video feedback improved one evaluated agent from 41.1% to 52.0%, illustrating why engine execution and visual inspection are part of the development loop rather than optional polish.
+
+Source: https://github.com/waynchi/gamedevbench
+
+For STAR Creator, code diffs should be accompanied by engine launch results, deterministic runtime assertions and visual regression evidence. A project that compiles but renders incorrectly is not a successful game-development task.
+
+### Memory must affect actions: Mem2ActBench
+
+The ACL 2026 Mem2ActBench paper reports 2,029 synthesized interaction sessions and 400 tool-use tasks; human evaluation found 91.3% of those tasks strongly memory-dependent. The benchmark tests whether an agent applies past information to select tools and ground their parameters, rather than merely answering explicit recall questions.
+
+Source: https://aclanthology.org/2026.acl-long.370/
+
+STAR Knowledge Brain should therefore be evaluated on future actions: correct project paths, previously approved settings, current task state, tool arguments and conflict resolution. Retrieval precision alone is not sufficient.
+
+### Proposed acceptance tests across the capability stack
+
+- **Gamer:** objective completion is checked against environment state; action traces are replayable; skill transfer is measured on a different map/game version.
+- **Social/voice:** endpointing, barge-in, acknowledgement handling, thought recovery and appropriateness are scored separately.
+- **Creator:** build success, runtime behavior, visual output and gameplay assertions all pass in an isolated project.
+- **Memory:** a later task correctly applies a remembered constraint to a tool call; stale or contradicted facts are not silently reused.
+- **Inference:** baseline and candidate use identical model/configuration/workload manifests; TTFT, inter-token latency, first-audible latency, p99 stream health and independent quality are reported together.
+
+These sources inform architecture and evaluation design. They do not establish that STAR currently has SIMA-level game ability, Voyager-style continual learning, GameDevBench-level creation performance or benchmark-proven long-term memory.
