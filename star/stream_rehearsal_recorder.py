@@ -11,7 +11,7 @@ stays bounded while representing the whole session.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import math
 import random
@@ -64,7 +64,10 @@ def _identifier(value: object, label: str) -> str:
 def _milliseconds(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a finite nonnegative number")
-    result = float(value)
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{label} is outside the supported range") from exc
     if not math.isfinite(result) or not 0 <= result <= 1e13:
         raise ValueError(f"{label} is outside the supported range")
     return result
@@ -82,9 +85,12 @@ class _Reservoir:
 
     capacity: int
     seed: int
+    values: list[float] = field(init=False)
+    seen: int = field(init=False)
+    _random: random.Random = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.values: list[float] = []
+        self.values = []
         self.seen = 0
         self._random = random.Random(self.seed)
 
@@ -229,7 +235,7 @@ class StreamRehearsalRecorder:
         First audible should be acknowledged by the local playback boundary,
         not inferred from text generation or TTS completion.
         """
-        if kind not in {"first_content", "first_audible"}:
+        if type(kind) is not str or kind not in {"first_content", "first_audible"}:
             raise ValueError("kind must be first_content or first_audible")
         event_id = _identifier(event_id, "event_id")
         start = _milliseconds(started_ms, "started_ms")
