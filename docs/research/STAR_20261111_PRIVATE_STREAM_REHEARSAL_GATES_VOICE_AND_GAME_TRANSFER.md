@@ -50,6 +50,23 @@ Continuity and learning:
 - Duplicate speech replay count.
 - Held-out game-skill transfer rate.
 
+### Snapshot field-to-host mapping
+
+| Snapshot field | Trusted producer |
+|---|---|
+| first_content_latency_ms | Streaming inference client: request start to first non-whitespace content chunk |
+| first_audible_latency_ms | Local audio output owner: request start to first acknowledged audible playback |
+| game_frame_time_ms | Game engine or OS frame-present observer; never an LLM estimate |
+| avatar_sync_error_ms | Absolute offset between playback clock and observed mouth/viseme update |
+| audio_underrun_chunks / audio_playback_chunks | Local audio callback/device counters |
+| obs_render_* / obs_output_* | OBS GetStats counters sampled as deltas within one OBS session |
+| turn_true_positives / false_positives / false_negatives | Human-labeled or otherwise trusted turn-taking scenario outcomes |
+| task_recovery_attempts / successes | Existing durable task coordinator after revalidating the resumed task |
+| stale_task_resumes / duplicate_speech_replays | Session arbiter and playback acknowledgements |
+| held_out_skill_trials / successes | Game evaluation harness on unseen levels/seeds/scenarios |
+
+These producers are not wired by this PR. Counters must be session-scoped and reset when the underlying OBS/audio/game process restarts. Never subtract counters across different process epochs. If a host cannot prove the measurement source or monotonic clock, omit the observation and let the gate become INCONCLUSIVE.
+
 ### Gate semantics
 
 Each threshold is supplied by the operator. None disables that gate. The evaluator deliberately has no universal latency or FPS defaults because acceptable values depend on the target game, frame cap, encoder, audio device, model and machine.
