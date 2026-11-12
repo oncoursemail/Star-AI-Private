@@ -17,7 +17,7 @@ import time
 
 from .stream_turntaking_eval import SilenceSpan
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_SPANS = 20_000
 _MAX_GROUPS = 20_000
 _MAX_TIMESTAMP_MS = 9_223_372_036_854_775_807
@@ -176,7 +176,7 @@ class HoldoutLedger:
             ensure_ascii=True,
             allow_nan=False,
         ).encode("utf-8")
-        dataset_digest = cls._hash(b"STAR-HOLDOUT-v1\\0" + payload)
+        dataset_digest = cls._hash(b"STAR-HOLDOUT-v1\0" + payload)
         group_digests = tuple(
             sorted(
                 cls._hash(b"STAR-GROUP-v1\\0" + group_id.encode("utf-8"))
