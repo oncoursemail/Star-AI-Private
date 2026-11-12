@@ -7,9 +7,11 @@ Heuristic, not phoneme recognition (no model, no GPU, ~0.1 ms per 20 ms hop in n
             a sibilant (more than 40 % of the energy above 4 kHz) gets a small "ih" so s/sh/f show teeth.
 The five names are the VRM viseme set (A I U E O), so the same weights feed a layered 2D model or a VRM over VMC.
 
-Timing is what makes it look right: every frame carries the moment it will be AUDIBLE (the time the speaker will
-reach it), the camera reads the frame for "now", and a frame older than 110 ms counts as silence, so a stalled
-audio path never keeps the mouth moving (same rule as star.stream_motion). The sender can be in another process:
+Timing is what makes it look right: every frame carries an estimated output time based on the speaker queue depth;
+the camera reads the frame for "now", and a frame older than 110 ms counts as silence, so a stalled audio path never
+keeps the mouth moving (same rule as star.stream_motion). PortAudio DAC timestamps are now exposed through the
+speaker wrapper for measurement, but this queue-based per-chunk schedule is not yet calibrated from that clock. The
+sender can be in another process:
 UdpFeed ships (delay, frames) and the camera process stamps the arrival time itself, so no clock is shared.
 """
 from __future__ import annotations
@@ -265,8 +267,7 @@ class UdpListener(threading.Thread):
 
 
 class LipSyncSpeaker:
-    """Wraps her Speaker (play/stop/reset/pending_seconds/played_seconds/level): the audio that is about to be played
-    is analysed and queued on the camera's timeline for the moment the speaker will actually reach it."""
+    """Wrap a Speaker and schedule mouth frames using its estimated queued-audio start time."""
 
     def __init__(self, speaker, feed, *, analyzer: Analyzer | None = None) -> None:
         self._speaker = speaker
@@ -274,7 +275,7 @@ class LipSyncSpeaker:
         self.analyzer = analyzer or Analyzer()
 
     def play(self, pcm: bytes, sample_rate: int) -> None:
-        delay = float(self._speaker.pending_seconds())            # before the write: when this chunk starts
+        delay = float(self._speaker.pending_seconds())            # queue-depth estimate before this write
         try:
             samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="<i2").astype(np.float32) / 32768.0
             frames = self.analyzer.push(samples, int(sample_rate))
