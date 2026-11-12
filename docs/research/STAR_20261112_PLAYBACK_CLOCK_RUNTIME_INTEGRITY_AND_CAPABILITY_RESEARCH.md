@@ -30,6 +30,7 @@ The new `star/voice/playback.py` provides a small thread-safe `PlaybackTelemetry
 - `first_playback_at`: first non-empty output callback timestamp.
 - `output_callbacks_with_audio`: number of output callbacks that actually copied queued audio.
 - `output_underflows`: PortAudio output-underflow flags observed on callbacks that also emitted audio.
+- `speech_end_to_first_submission`: earliest acknowledgement or TTS submission; the legacy `speech_end_to_audio_submitted` retains its TTS-only meaning.
 - `speaker_queue_to_playback`: elapsed time from the earliest acknowledgement/TTS audio submission to the first output callback.
 - `speech_end_to_first_playback`: end-of-user-speech to first output callback.
 - Existing `total` remains queue-submission based for compatibility.
@@ -105,6 +106,14 @@ STAR should use one **Avatar Director** with independent, composable layers rath
 - **State arbitration:** idle → listening → thinking → speaking → reacting/game-focused, with explicit priorities and interruption recovery.
 
 The mouth must follow the audio that is actually being played, not text generation or TTS enqueue time. Expression and gesture timing may be predicted, but the mouth clock must be output-driven. VTube Studio API access and any higher-risk permissions must be explicitly enabled by the owner; do not silently load models/items or request permissions that the current feature does not need.
+
+
+### Existing STAR VTuber stack
+
+STAR already has a local VTuber camera subsystem in `star/vtuber`: a layered mascot model, `LiveRig`, expression timeline, 20 ms mouth/viseme analysis, a virtual-camera sink, and VMC/OSC output for VRM receivers. The current `LipSyncSpeaker` schedules mouth frames against the speaker's queued-audio estimate. This patch makes the new playback snapshot explicitly pass through that wrapper, so call metrics can observe the underlying audio backend without breaking the existing camera path.
+
+This does **not** replace the existing queue-based lip-sync schedule with a hardware-calibrated schedule. The first callback timestamp is a measurement anchor for a later calibration experiment; per-chunk playback scheduling and client-heard loopback remain separate follow-up work. VTube Studio should be treated as an optional future adapter, not as an already-connected runtime.
+
 
 For a natural stream, use conversational turn-taking and social context to decide whether a reaction is warranted. Do not fill every silence, manufacture a laugh on every message, or claim real-world experiences the system did not have. The goal is expressive, coherent AI-character performance, not deceiving viewers about being human.
 
