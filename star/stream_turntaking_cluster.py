@@ -1,8 +1,9 @@
-"""Session-clustered uncertainty for STAR conversational turn evaluation.
+"""Session-clustered uncertainty and conservative finite-sample guardrails.
 
 Pauses inside one conversation are correlated. This module resamples complete
-session groups, reports session-incidence guardrails, and never returns source
-IDs or conversation content.
+session groups for diagnostic intervals and uses distribution-free weighted
+Hoeffding bounds for acceptance. It never returns source IDs or conversation
+content.
 """
 from __future__ import annotations
 
@@ -22,12 +23,13 @@ from .stream_turntaking_eval import (
     evaluate_turn_policy,
 )
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
 _MAX_SPANS = 20_000
 _MAX_GROUPS = 20_000
 _MIN_BOOTSTRAP_REPLICATES = 200
 _MAX_BOOTSTRAP_REPLICATES = 10_000
 _MAX_RANDOM_SEED = 4_294_967_295
+_MAX_DURATION_MS = 120_000
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,16 @@ class ClusteredTurnMetrics:
     mean_session_p95_latency_ci_low_ms: float
     mean_session_p95_latency_ci_high_ms: float
     mean_session_p95_latency_upper_bound_ms: float
+    false_cutoff_rate_hoeffding_upper_bound: float
+    false_cutoff_rate_effective_session_count: float
+    missed_final_rate_hoeffding_upper_bound: float
+    missed_final_rate_effective_session_count: float
+    false_cutoff_session_incidence_hoeffding_upper_bound: float
+    missed_final_session_incidence_hoeffding_upper_bound: float
+    latency_limit_ms: int
+    latency_violation_session_count: int
+    latency_violation_session_incidence: float
+    latency_violation_session_incidence_hoeffding_upper_bound: float
     bootstrap_replicates: int
     confidence_level: float
 
@@ -79,8 +91,20 @@ def _nearest_rank(values: Sequence[float], probability: float) -> float:
     return float(ordered[rank - 1])
 
 
+def _validate_confidence(confidence_level: float) -> float:
+    if (
+        isinstance(confidence_level, bool)
+        or not isinstance(confidence_level, (int, float))
+    ):
+        raise ValueError("confidence_level must be between 0.8 and 0.99")
+    confidence = float(confidence_level)
+    if not math.isfinite(confidence) or not 0.8 <= confidence <= 0.99:
+        raise ValueError("confidence_level must be between 0.8 and 0.99")
+    return confidence
+
+
 def _wilson_upper(successes: int, trials: int, confidence_level: float) -> float:
-    """One-sided Wilson upper bound over independent session-level outcomes."""
+    """Approximate one-sided Wilson bound, retained as a diagnostic only."""
     if (
         type(successes) is not int
         or type(trials) is not int
@@ -88,7 +112,8 @@ def _wilson_upper(successes: int, trials: int, confidence_level: float) -> float
         or not 0 <= successes <= trials
     ):
         raise ValueError("Wilson counts must satisfy 0 <= successes <= trials")
-    z = NormalDist().inv_cdf(confidence_level)
+    confidence = _validate_confidence(confidence_level)
+    z = NormalDist().inv_cdf(confidence)
     rate = successes / trials
     z_squared = z * z
     denominator = 1.0 + z_squared / trials
@@ -99,34 +124,94 @@ def _wilson_upper(successes: int, trials: int, confidence_level: float) -> float
     return min(1.0, (center + spread) / denominator)
 
 
+def hoeffding_upper_bound(
+    successes: int,
+    trials: int,
+    confidence_level: float = 0.95,
+) -> float:
+    """Distribution-free upper bound for a mean of independent [0, 1] values.
+
+    For Bernoulli session indicators this remains valid when session-level
+    event probabilities differ, provided sessions are independent.
+    """
+    if (
+        type(successes) is not int
+        or type(trials) is not int
+        or trials < 1
+        or not 0 <= successes <= trials
+    ):
+        raise ValueError("counts must satisfy 0 <= successes <= trials")
+    confidence = _validate_confidence(confidence_level)
+    alpha = 1.0 - confidence
+    radius = math.sqrt(math.log(1.0 / alpha) / (2.0 * trials))
+    return min(1.0, successes / trials + radius)
+
+
+def weighted_hoeffding_upper_bound(
+    successes_by_group: Sequence[int],
+    opportunities_by_group: Sequence[int],
+    confidence_level: float = 0.95,
+) -> tuple[float, float]:
+    """Return a weighted-rate upper bound and its effective group count.
+
+    Each independent group contributes a bounded rate successes/opportunities.
+    The observed opportunity count defines its fixed weight. Hoeffding's
+    inequality then bounds the weighted mean without assuming independence
+    between observations inside a group.
+    """
+    if (
+        not isinstance(successes_by_group, (tuple, list))
+        or not isinstance(opportunities_by_group, (tuple, list))
+        or not successes_by_group
+        or len(successes_by_group) != len(opportunities_by_group)
+        or len(successes_by_group) > _MAX_GROUPS
+    ):
+        raise ValueError("group counts must be non-empty equal-length sequences")
+    for successes, opportunities in zip(successes_by_group, opportunities_by_group):
+        if (
+            type(successes) is not int
+            or type(opportunities) is not int
+            or opportunities < 1
+            or not 0 <= successes <= opportunities
+        ):
+            raise ValueError("each group must satisfy 0 <= successes <= opportunities")
+    confidence = _validate_confidence(confidence_level)
+    total_opportunities = sum(opportunities_by_group)
+    total_successes = sum(successes_by_group)
+    squared_weight_sum = sum(
+        (opportunities / total_opportunities) ** 2
+        for opportunities in opportunities_by_group
+    )
+    effective_groups = 1.0 / squared_weight_sum
+    radius = math.sqrt(
+        0.5 * squared_weight_sum * math.log(1.0 / (1.0 - confidence))
+    )
+    return min(1.0, total_successes / total_opportunities + radius), effective_groups
+
+
 def minimum_groups_for_zero_event_incidence(
     maximum_rate: float,
     confidence_level: float = 0.95,
 ) -> int | None:
-    """Return groups needed for a zero-event Wilson upper bound to meet a rate.
+    """Return equal-weight independent groups needed for a zero-event Hoeffding bound.
 
-    None means the requested rate is exactly zero or cannot be demonstrated
-    within the module's bounded maximum of 20,000 independent groups.
+    The result is deliberately more conservative than an approximate Wilson
+    score bound. None means a zero rate or more than 20,000 groups would be
+    required. For unequal opportunity counts, compare the required count with
+    the effective group count returned by weighted_hoeffding_upper_bound.
     """
     if isinstance(maximum_rate, bool) or not isinstance(maximum_rate, (int, float)):
         raise ValueError("maximum_rate must be a finite fraction in 0..1")
     rate = float(maximum_rate)
     if not math.isfinite(rate) or not 0.0 <= rate <= 1.0:
         raise ValueError("maximum_rate must be a finite fraction in 0..1")
-    if (
-        isinstance(confidence_level, bool)
-        or not isinstance(confidence_level, (int, float))
-    ):
-        raise ValueError("confidence_level must be between 0.8 and 0.99")
-    confidence = float(confidence_level)
-    if not math.isfinite(confidence) or not 0.8 <= confidence <= 0.99:
-        raise ValueError("confidence_level must be between 0.8 and 0.99")
+    confidence = _validate_confidence(confidence_level)
     if rate == 0.0:
         return None
-    for group_count in range(1, _MAX_GROUPS + 1):
-        if _wilson_upper(0, group_count, confidence) <= rate:
-            return group_count
-    return None
+    required = math.ceil(
+        math.log(1.0 / (1.0 - confidence)) / (2.0 * rate * rate)
+    )
+    return required if 1 <= required <= _MAX_GROUPS else None
 
 
 def _bootstrap_interval(
@@ -148,16 +233,17 @@ def evaluate_clustered_turn_policy(
     bootstrap_replicates: int = 1_000,
     confidence_level: float = 0.95,
     random_seed: int = 0,
+    latency_limit_ms: int = 900,
 ) -> ClusteredTurnMetrics:
-    """Evaluate a fixed policy with whole-session bootstrap resampling.
+    """Evaluate a fixed policy with cluster diagnostics and finite-sample guards.
 
-    False-cutoff bootstrap samples resample only sessions containing at least
-    one observed HOLD pause, preserving each sampled session's complete pause
-    cluster. Missed-turn samples resample all sessions. Latency uncertainty is
-    reported as the mean of session-level p95 values, not as a population p95.
+    Whole-session bootstrap intervals are retained as diagnostics. They are
+    not acceptance evidence until their coverage has been validated for the
+    target session-count, size-imbalance, and intracluster-correlation envelope.
 
-    Session-incidence Wilson bounds provide a separate guard against a
-    zero-error bootstrap distribution falsely implying zero population risk.
+    Acceptance uses weighted Hoeffding bounds over independent session-level
+    rates plus Hoeffding bounds over session-incidence outcomes. This is
+    distribution-free for independent groups, but intentionally conservative.
     """
     if not isinstance(spans, (tuple, list)) or not 1 <= len(spans) <= _MAX_SPANS:
         raise ValueError("spans must contain 1..20000 observations")
@@ -173,18 +259,15 @@ def evaluate_clustered_turn_policy(
         or not _MIN_BOOTSTRAP_REPLICATES <= bootstrap_replicates <= _MAX_BOOTSTRAP_REPLICATES
     ):
         raise ValueError("bootstrap_replicates must be in 200..10000")
-    if (
-        isinstance(confidence_level, bool)
-        or not isinstance(confidence_level, (int, float))
-    ):
-        raise ValueError("confidence_level must be between 0.8 and 0.99")
-    confidence = float(confidence_level)
-    if not math.isfinite(confidence) or not 0.8 <= confidence <= 0.99:
-        raise ValueError("confidence_level must be between 0.8 and 0.99")
+    confidence = _validate_confidence(confidence_level)
     if type(random_seed) is not int or not 0 <= random_seed <= _MAX_RANDOM_SEED:
         raise ValueError("random_seed must be in 0..4294967295")
+    if (
+        type(latency_limit_ms) is not int
+        or not 1 <= latency_limit_ms <= _MAX_DURATION_MS
+    ):
+        raise ValueError("latency_limit_ms must be in 1..120000")
 
-    # Reuse the canonical evaluator's complete dataset validation.
     pooled = evaluate_turn_policy(rows, policy)
     turn_ids = {span.turn_id for span in rows}
     if set(group_ids_by_turn) != turn_ids:
@@ -198,8 +281,7 @@ def evaluate_clustered_turn_policy(
         groups_by_id.setdefault(group_id, [])
 
     for span in rows:
-        group_id = group_ids_by_turn[span.turn_id]
-        groups_by_id[group_id].append(span)
+        groups_by_id[group_ids_by_turn[span.turn_id]].append(span)
 
     if not 1 <= len(groups_by_id) <= _MAX_GROUPS:
         raise ValueError("holdout must contain 1..20000 session groups")
@@ -244,10 +326,36 @@ def evaluate_clustered_turn_policy(
     missed_session_count = sum(
         summary.missed_final_turn_count > 0 for summary in summaries
     )
+    latency_violation_session_count = sum(
+        summary.p95_latency_ms > latency_limit_ms for summary in summaries
+    )
     hold_count = sum(summary.hold_pause_count for summary in summaries)
     false_count = sum(summary.false_cutoff_count for summary in summaries)
     final_count = sum(summary.final_turn_count for summary in summaries)
     missed_count = sum(summary.missed_final_turn_count for summary in summaries)
+
+    false_rate_upper, false_effective_groups = weighted_hoeffding_upper_bound(
+        [summary.false_cutoff_count for summary in hold_groups],
+        [summary.hold_pause_count for summary in hold_groups],
+        confidence,
+    )
+    missed_rate_upper, missed_effective_groups = weighted_hoeffding_upper_bound(
+        [summary.missed_final_turn_count for summary in summaries],
+        [summary.final_turn_count for summary in summaries],
+        confidence,
+    )
+    false_incidence_upper = hoeffding_upper_bound(
+        false_session_count, len(hold_groups), confidence
+    )
+    missed_incidence_upper = hoeffding_upper_bound(
+        missed_session_count, len(summaries), confidence
+    )
+    latency_violation_incidence = (
+        latency_violation_session_count / len(summaries)
+    )
+    latency_violation_incidence_upper = hoeffding_upper_bound(
+        latency_violation_session_count, len(summaries), confidence
+    )
 
     rng = random.Random(random_seed)
     false_bootstrap: list[float] = []
@@ -285,7 +393,6 @@ def evaluate_clustered_turn_policy(
     hold_group_count = len(hold_groups)
     session_count = len(summaries)
 
-    # Sanity-check the aggregate counts against the canonical pooled evaluator.
     if (
         hold_count != pooled.hold_pause_count
         or false_count != pooled.false_cutoffs
@@ -325,6 +432,16 @@ def evaluate_clustered_turn_policy(
         mean_session_p95_latency_ci_low_ms=latency_low,
         mean_session_p95_latency_ci_high_ms=latency_high,
         mean_session_p95_latency_upper_bound_ms=latency_upper,
+        false_cutoff_rate_hoeffding_upper_bound=false_rate_upper,
+        false_cutoff_rate_effective_session_count=false_effective_groups,
+        missed_final_rate_hoeffding_upper_bound=missed_rate_upper,
+        missed_final_rate_effective_session_count=missed_effective_groups,
+        false_cutoff_session_incidence_hoeffding_upper_bound=false_incidence_upper,
+        missed_final_session_incidence_hoeffding_upper_bound=missed_incidence_upper,
+        latency_limit_ms=latency_limit_ms,
+        latency_violation_session_count=latency_violation_session_count,
+        latency_violation_session_incidence=latency_violation_incidence,
+        latency_violation_session_incidence_hoeffding_upper_bound=latency_violation_incidence_upper,
         bootstrap_replicates=bootstrap_replicates,
         confidence_level=confidence,
     )
@@ -333,5 +450,7 @@ def evaluate_clustered_turn_policy(
 __all__ = [
     "ClusteredTurnMetrics",
     "evaluate_clustered_turn_policy",
+    "hoeffding_upper_bound",
     "minimum_groups_for_zero_event_incidence",
+    "weighted_hoeffding_upper_bound",
 ]
