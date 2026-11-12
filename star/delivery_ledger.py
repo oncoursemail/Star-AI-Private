@@ -31,6 +31,7 @@ class DeliveryState(str, Enum):
     PLAYING = "playing"
     PARTIAL = "partial"
     FAILED = "failed"
+    RECOVERY_REQUIRED = "recovery_required"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
@@ -497,6 +498,76 @@ class DeliveryLedger:
             self._records[record.delivery_id] = recovered
             return recovered
 
+    def mark_recovery_required(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+    ) -> DeliveryRecord:
+        """Fence an in-flight claim/playback restored after an unclean restart."""
+        with self._lock:
+            now = self._now(now_ms)
+            record = self._get(delivery_id)
+            self._cas(record, expected_version)
+            if record.state not in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
+                raise DeliveryConflict("only an active claim or playback can require restart recovery")
+            recovered = replace(
+                record,
+                state=DeliveryState.RECOVERY_REQUIRED,
+                version=record.version + 1,
+                generation=record.generation + 1,
+                updated_ms=now,
+                attempt_id=None,
+                lease_expires_ms=None,
+                active_segment=None,
+                playback_id=None,
+                failure_code=(
+                    "restart_playing" if record.state is DeliveryState.PLAYING
+                    else "restart_claimed"
+                ),
+            )
+            self._records[delivery_id] = recovered
+            return recovered
+
+    def reconcile_after_restart(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+        host_confirmed_stopped: bool,
+    ) -> DeliveryRecord:
+        """Release a restart fence only after the host confirms old work stopped."""
+        if host_confirmed_stopped is not True:
+            raise PermissionError("host must confirm old synthesis/playback workers stopped")
+        with self._lock:
+            now = self._now(now_ms)
+            record = self._get(delivery_id)
+            self._cas(record, expected_version)
+            if record.state is not DeliveryState.RECOVERY_REQUIRED:
+                raise DeliveryConflict("delivery does not require restart reconciliation")
+            if record.failure_code == "restart_playing":
+                next_state = DeliveryState.PARTIAL
+            elif record.failure_code == "restart_claimed":
+                next_state = DeliveryState.READY
+            else:
+                raise DeliveryConflict("restart recovery marker is missing or invalid")
+            updated = replace(
+                record,
+                state=next_state,
+                version=record.version + 1,
+                generation=record.generation + 1,
+                updated_ms=now,
+                attempt_id=None,
+                lease_expires_ms=None,
+                active_segment=None,
+                playback_id=None,
+                failure_code="restart_reconciled",
+            )
+            self._records[delivery_id] = updated
+            return updated
+
     def cancel(
         self,
         delivery_id: str,
@@ -517,8 +588,8 @@ class DeliveryLedger:
                 raise DeliveryConflict("delivered obligations cannot be cancelled")
             if record.state is DeliveryState.CANCELLED:
                 raise DeliveryConflict("delivery is already cancelled")
-            if record.state is DeliveryState.PLAYING and host_confirmed_stopped is not True:
-                raise PermissionError("host must confirm playback stopped before cancellation")
+            if record.state in (DeliveryState.PLAYING, DeliveryState.RECOVERY_REQUIRED) and host_confirmed_stopped is not True:
+                raise PermissionError("host must confirm active or orphaned playback stopped before cancellation")
             cancelled = replace(
                 record,
                 state=DeliveryState.CANCELLED,
