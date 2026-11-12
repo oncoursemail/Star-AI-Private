@@ -395,6 +395,8 @@ def test_cluster_aware_can_be_disabled_for_legacy_pause_level_evaluation():
         {**cal_groups, **hold_groups},
         constraints=permissive_small_constraints(),
         cluster_aware=False,
+        cluster_bootstrap_replicates=100,
+        cluster_random_seed=-1,
     )
     assert result.status is ValidationStatus.PASS
     assert result.cluster_aware is False
