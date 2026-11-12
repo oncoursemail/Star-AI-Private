@@ -14,6 +14,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+import secrets
 import sqlite3
 from threading import RLock, get_ident
 
@@ -28,6 +29,9 @@ _MAX_LABELS = 32
 _MAX_PACKET_CHARS = 1_800
 _TRIAL_TAG = b"star.stream-continuity.trial.v1\x00"
 _SESSION_TAG = b"star.stream-continuity.session.v1\x00"
+_TICKET = re.compile(r"[0-9a-f]{32}\Z")
+_MAX_PENDING_CALLBACKS = 32
+_MAX_USED_CALLBACKS = 4_096
 
 
 def _identifier(value: object, field: str) -> str:
@@ -64,8 +68,9 @@ class ContinuityFact:
 
 @dataclass(frozen=True)
 class StreamContinuityPacket:
-    """Bounded USER-priority context, not a system prompt or speech permission."""
+    """Bounded USER-priority context plus a host-only audible-completion ticket."""
 
+    ticket: str
     facts: tuple[ContinuityFact, ...]
     context_record: str
 
@@ -142,7 +147,12 @@ class StreamContinuityStore:
             "invalid_evidence_rejected": 0,
             "expired": 0,
             "packets": 0,
+            "callbacks_completed": 0,
+            "callbacks_cancelled": 0,
+            "callbacks_expired": 0,
         }
+        self._pending_callbacks: dict[str, tuple[str, tuple[str, ...], int]] = {}
+        self._used_callbacks: set[tuple[str, str]] = set()
 
     def _thread(self) -> None:
         if self._closed:
@@ -157,6 +167,13 @@ class StreamContinuityStore:
         self._clock = now
         return now
 
+    def _expire_callbacks(self, now: int) -> None:
+        expired = [ticket for ticket, (_, _, expires) in self._pending_callbacks.items()
+                   if now >= expires]
+        for ticket in expired:
+            del self._pending_callbacks[ticket]
+        self._counts["callbacks_expired"] += len(expired)
+
     def enable(self, *, owner_approved: bool = False) -> None:
         with self._lock:
             self._thread()
@@ -169,6 +186,8 @@ class StreamContinuityStore:
         with self._lock:
             self._thread()
             self._enabled = False
+            self._counts["callbacks_cancelled"] += len(self._pending_callbacks)
+            self._pending_callbacks.clear()
 
     def remember(
         self,
@@ -266,6 +285,7 @@ class StreamContinuityStore:
         *,
         game_id: str,
         game_version: str,
+        stream_session_id: str,
         now_unix_s: int,
         public_action_labels: dict[str, str],
         broadcast_approved: bool = False,
@@ -281,6 +301,7 @@ class StreamContinuityStore:
         """
         _identifier(game_id, "game_id")
         _identifier(game_version, "game_version")
+        _identifier(stream_session_id, "stream_session_id")
         if type(public_action_labels) is not dict or not 1 <= len(public_action_labels) <= _MAX_LABELS:
             raise ValueError("provide 1..32 owner-curated public action labels")
         labels: dict[str, str] = {}
@@ -297,10 +318,27 @@ class StreamContinuityStore:
         with self._lock:
             self._thread()
             now = self._advance(now_unix_s)
+            self._expire_callbacks(now)
             if not self._enabled:
                 return None
             self.purge_expired(now_unix_s=now)
-            placeholders = ",".join("?" for _ in labels)
+            session_digest = sha256(
+                _SESSION_TAG + stream_session_id.encode("ascii")
+            ).hexdigest()
+            pending_actions = {
+                action_id
+                for pending_session, actions, _ in self._pending_callbacks.values()
+                if pending_session == session_digest
+                for action_id in actions
+            }
+            eligible_labels = {
+                action_id: label for action_id, label in labels.items()
+                if (session_digest, action_id) not in self._used_callbacks
+                and action_id not in pending_actions
+            }
+            if not eligible_labels:
+                return None
+            placeholders = ",".join("?" for _ in eligible_labels)
             rows = self._db.execute(
                 f"""SELECT action_id, outcome, observed_unix_s
                     FROM stream_continuity
@@ -310,28 +348,28 @@ class StreamContinuityStore:
                       AND expires_at_unix_s>?
                     ORDER BY observed_unix_s DESC, trial_digest ASC
                     LIMIT 512""",
-                (game_id, game_version, *labels.keys(), now - lookback_seconds, now, now),
+                (game_id, game_version, *eligible_labels.keys(), now - lookback_seconds, now, now),
             ).fetchall()
             grouped: dict[str, list[tuple[str, int]]] = {}
             for action_id, outcome, observed in rows:
                 grouped.setdefault(action_id, []).append((outcome, observed))
-            facts: list[tuple[int, ContinuityFact]] = []
+            facts: list[tuple[int, str, ContinuityFact]] = []
             for action_id, events in grouped.items():
                 latest_outcome, latest_at = max(events, key=lambda item: item[1])
                 fact = ContinuityFact(
-                    label=labels[action_id],
+                    label=eligible_labels[action_id],
                     attempts=len(events),
                     successes=sum(outcome == "success" for outcome, _ in events),
                     failures=sum(outcome == "failure" for outcome, _ in events),
                     most_recent_outcome=latest_outcome,
                     days_since_last=max(0, (now - latest_at) // 86400),
                 )
-                facts.append((latest_at, fact))
-            selected = tuple(
-                fact for _, fact in sorted(
-                    facts, key=lambda item: (-item[0], item[1].label)
-                )[:limit]
-            )
+                facts.append((latest_at, action_id, fact))
+            selected_entries = sorted(
+                facts, key=lambda item: (-item[0], item[2].label)
+            )[:limit]
+            selected = tuple(item[2] for item in selected_entries)
+            selected_actions = tuple(item[1] for item in selected_entries)
             if not selected:
                 return None
             payload = [
@@ -359,8 +397,50 @@ class StreamContinuityStore:
             )
             if len(record) > _MAX_PACKET_CHARS:
                 return None
+            if len(self._pending_callbacks) >= _MAX_PENDING_CALLBACKS:
+                raise OverflowError("too many pending continuity callbacks")
+            if len(self._used_callbacks) + len(selected_actions) > _MAX_USED_CALLBACKS:
+                raise OverflowError("callback replay ledger is full; start a new stream session")
+            ticket = secrets.token_hex(16)
+            self._pending_callbacks[ticket] = (session_digest, selected_actions, now + 900)
             self._counts["packets"] += 1
-            return StreamContinuityPacket(selected, record)
+            return StreamContinuityPacket(ticket, selected, record)
+
+    def complete_callback(
+        self,
+        ticket: str,
+        *,
+        now_unix_s: int,
+        playback_confirmed: bool,
+    ) -> bool:
+        """Consume a callback only after the trusted host confirms audible playback.
+
+        This must never be exposed as an LLM tool. playback_confirmed is a
+        host-adapter assertion, not a cryptographic proof of what a viewer heard.
+        False releases the reservation so a later turn may try again.
+        """
+        if type(ticket) is not str or _TICKET.fullmatch(ticket) is None:
+            raise ValueError("invalid callback ticket")
+        if type(playback_confirmed) is not bool:
+            raise ValueError("playback_confirmed must be an explicit boolean")
+        with self._lock:
+            self._thread()
+            now = self._advance(now_unix_s)
+            self._expire_callbacks(now)
+            pending = self._pending_callbacks.get(ticket)
+            if pending is None:
+                return False
+            session_digest, actions, _expires = pending
+            if not playback_confirmed:
+                del self._pending_callbacks[ticket]
+                self._counts["callbacks_cancelled"] += 1
+                return False
+            if len(self._used_callbacks) + len(actions) > _MAX_USED_CALLBACKS:
+                raise OverflowError("callback replay ledger is full; start a new stream session")
+            del self._pending_callbacks[ticket]
+            self._used_callbacks.update((session_digest, action) for action in actions)
+            self._counts["callbacks_completed"] += 1
+            return True
 
     def clear(self, *, owner_approved: bool = False) -> int:
         """Explicitly clear this store; the source GameplaySkillBank is untouched."""
@@ -369,6 +449,9 @@ class StreamContinuityStore:
             if owner_approved is not True:
                 raise PermissionError("clearing continuity memory requires owner approval")
             cursor = self._db.execute("DELETE FROM stream_continuity")
+            self._counts["callbacks_cancelled"] += len(self._pending_callbacks)
+            self._pending_callbacks.clear()
+            self._used_callbacks.clear()
             return max(0, cursor.rowcount)
 
     def metrics(self) -> dict[str, int | bool]:
@@ -386,6 +469,7 @@ class StreamContinuityStore:
                 "enabled": self._enabled,
                 "retained": retained,
                 "distinct_sessions": sessions,
+                "pending_callbacks": len(self._pending_callbacks),
             }
 
     def close(self) -> None:
