@@ -110,15 +110,18 @@ class SoundSpeaker:
     def _callback(self, out, frames, _time, status) -> None:
         callback_at = time.monotonic()
         wanted = frames * 2
-        underflow = getattr(status, "output_underflow", False) is True
+        underflow = bool(getattr(status, "output_underflow", False))
         with self._lock:
             chunk = bytes(self._buffer[:wanted])
             del self._buffer[:wanted]
             self._played += len(chunk) // 2
-            self._playback.record_callback(
-                at=callback_at, frames=frames, emitted_frames=len(chunk) // 2,
-                output_underflow=underflow,
-            )
+            try:
+                self._playback.record_callback(
+                    at=callback_at, frames=frames, emitted_frames=len(chunk) // 2,
+                    output_underflow=underflow,
+                )
+            except Exception:
+                pass                 # telemetry must never break the audio callback
         out[:len(chunk)] = chunk
         if len(chunk) < wanted:
             out[len(chunk):] = b"\x00" * (wanted - len(chunk))
