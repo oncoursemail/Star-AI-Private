@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 
 import pytest
@@ -249,7 +248,6 @@ def test_two_store_instances_detect_stale_writer(tmp_path):
         assert record.state is DeliveryState.READY
         with pytest.raises(DeliveryStoreConflict):
             create_one(second)
-        assert second.get("delivery-1") if False else True
     finally:
         first.close()
         second.close()
