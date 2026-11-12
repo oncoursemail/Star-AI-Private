@@ -59,6 +59,9 @@ def run(calibration, holdout, groups, **kwargs):
         action_delays_ms=kwargs.pop("action_delays_ms", (200, 350)),
         timeouts_ms=kwargs.pop("timeouts_ms", (900, 1000)),
         constraints=kwargs.pop("constraints", TurnPolicyConstraints()),
+        cluster_aware=kwargs.pop("cluster_aware", True),
+        cluster_bootstrap_replicates=kwargs.pop("cluster_bootstrap_replicates", 200),
+        cluster_random_seed=kwargs.pop("cluster_random_seed", 0),
     )
 
 
@@ -333,3 +336,79 @@ def test_selected_policy_uses_model_scores_not_silence_baseline():
     assert result.holdout_metrics.score_source.value == "model"
     assert result.holdout_silence_baseline is not None
     assert result.holdout_silence_baseline.score_source.value == "silence_only"
+
+
+
+def test_cluster_aware_acceptance_requires_enough_independent_sessions():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold", 20)
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=TurnPolicyConstraints(
+            min_hold_pauses=1,
+            min_final_turns=1,
+            min_calibration_groups=1,
+            min_holdout_groups=1,
+        ),
+    )
+    assert result.status is ValidationStatus.INCONCLUSIVE_HOLDOUT
+    assert result.cluster_aware is True
+    assert result.cluster_metrics is not None
+    assert result.cluster_metrics.session_count == 20
+
+
+def test_cluster_aware_validation_passes_with_sufficient_zero_error_sessions():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold", 100)
+    result = run(calibration, holdout, {**cal_groups, **hold_groups})
+    assert result.status is ValidationStatus.PASS
+    assert result.cluster_metrics is not None
+    assert result.cluster_metrics.session_count == 100
+    assert result.cluster_metrics.false_cutoff_session_incidence_upper_bound <= 0.05
+    assert result.cluster_metrics.missed_final_session_incidence_upper_bound <= 0.05
+
+
+def test_cluster_incidence_guard_detects_errors_concentrated_in_few_sessions():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold", 100)
+    holdout = [
+        replace(span, duration_ms=1200)
+        if span.turn_id in {"hold-turn-0", "hold-turn-1"} and span.kind is PauseKind.HOLD
+        else span
+        for span in holdout
+    ]
+    result = run(calibration, holdout, {**cal_groups, **hold_groups})
+    assert result.status is ValidationStatus.FAIL
+    assert result.cluster_metrics is not None
+    assert result.cluster_metrics.false_cutoff_session_count == 2
+    assert result.cluster_metrics.false_cutoff_session_incidence_upper_bound > 0.05
+
+
+def test_cluster_aware_can_be_disabled_for_legacy_pause_level_evaluation():
+    calibration, cal_groups = dataset("cal")
+    holdout, hold_groups = dataset("hold", 2)
+    result = run(
+        calibration,
+        holdout,
+        {**cal_groups, **hold_groups},
+        constraints=permissive_small_constraints(),
+        cluster_aware=False,
+    )
+    assert result.status is ValidationStatus.PASS
+    assert result.cluster_aware is False
+    assert result.cluster_metrics is None
+
+
+def test_invalid_cluster_bootstrap_settings_are_rejected_before_holdout_use():
+    calibration, cal_groups = dataset("cal", 2)
+    holdout, hold_groups = dataset("hold", 2)
+    with pytest.raises(ValueError, match="cluster_bootstrap_replicates"):
+        run(
+            calibration,
+            holdout,
+            {**cal_groups, **hold_groups},
+            constraints=permissive_small_constraints(),
+            cluster_bootstrap_replicates=100,
+        )
