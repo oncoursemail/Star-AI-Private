@@ -1,5 +1,6 @@
 """Tests for STAR's transactional single-use holdout ledger."""
 from concurrent.futures import ThreadPoolExecutor
+import sqlite3
 
 import pytest
 
@@ -265,3 +266,28 @@ def test_without_ledger_preserves_legacy_behavior():
         {**calibration_groups, **holdout_groups},
     )
     assert result.holdout_ledger_claimed is False
+
+
+
+def test_ledger_persists_only_hashes_not_source_group_ids(tmp_path):
+    rows, groups = dataset("private-holdout", 3)
+    ledger_path = tmp_path / "ledger.sqlite3"
+    HoldoutLedger(ledger_path).claim(rows, groups)
+
+    connection = sqlite3.connect(ledger_path)
+    try:
+        claims = connection.execute(
+            "SELECT dataset_digest, claimed_at_ms, evaluator_version FROM holdout_claims"
+        ).fetchall()
+        stored_groups = connection.execute(
+            "SELECT group_digest, dataset_digest FROM holdout_groups"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert len(claims) == 1
+    assert len(stored_groups) == 3
+    serialized = repr((claims, stored_groups))
+    assert "private-holdout" not in serialized
+    assert "session-" not in serialized
+    assert "turn-" not in serialized
