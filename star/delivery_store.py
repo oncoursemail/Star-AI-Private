@@ -19,7 +19,6 @@ import time
 from typing import Callable
 
 from .delivery_ledger import (
-    DeliveryConflict,
     DeliveryLease,
     DeliveryRecord,
     DeliveryReapReport,
