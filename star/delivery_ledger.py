@@ -31,6 +31,7 @@ class DeliveryState(str, Enum):
     PLAYING = "playing"
     PARTIAL = "partial"
     FAILED = "failed"
+    RECOVERY_REQUIRED = "recovery_required"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
@@ -164,7 +165,13 @@ class DeliveryLedger:
         if type(expected_version) is not int or expected_version != record.version:
             raise DeliveryConflict("delivery version changed; refresh the snapshot")
 
-    def _expire_deadline(self, record: DeliveryRecord, now: int) -> DeliveryRecord:
+    def _expire_deadline(
+        self,
+        record: DeliveryRecord,
+        now: int,
+        *,
+        allow_recovery_required: bool = False,
+    ) -> DeliveryRecord:
         if (
             record.deadline_ms is not None
             and now >= record.deadline_ms
@@ -173,6 +180,7 @@ class DeliveryLedger:
                 DeliveryState.CANCELLED,
                 DeliveryState.EXPIRED,
             )
+            and (record.state is not DeliveryState.RECOVERY_REQUIRED or allow_recovery_required)
         ):
             updated = replace(
                 record,
@@ -217,9 +225,6 @@ class DeliveryLedger:
             self._digest(digest, f"segment_sha256s[{index}]")
         with self._lock:
             now = self._now(now_ms)
-            if deadline_ms is not None:
-                if type(deadline_ms) is not int or not now < deadline_ms <= _MAX_CLOCK_MS:
-                    raise ValueError("deadline_ms must be after now_ms")
             existing = self._records.get(delivery_id)
             if existing is not None:
                 same_contract = (
@@ -232,6 +237,9 @@ class DeliveryLedger:
                 if same_contract:
                     return existing
                 raise DeliveryConflict("delivery IDs cannot be reused for another contract")
+            if deadline_ms is not None:
+                if type(deadline_ms) is not int or not now < deadline_ms <= _MAX_CLOCK_MS:
+                    raise ValueError("deadline_ms must be after now_ms")
             if len(self._records) >= self.max_records:
                 raise OverflowError("delivery ledger capacity reached; rotate after review")
             record = DeliveryRecord(
@@ -497,6 +505,79 @@ class DeliveryLedger:
             self._records[record.delivery_id] = recovered
             return recovered
 
+    def mark_recovery_required(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+    ) -> DeliveryRecord:
+        """Fence an in-flight claim/playback restored after an unclean restart."""
+        with self._lock:
+            now = self._now(now_ms)
+            record = self._get(delivery_id)
+            self._cas(record, expected_version)
+            if record.state not in (DeliveryState.CLAIMED, DeliveryState.PLAYING):
+                raise DeliveryConflict("only an active claim or playback can require restart recovery")
+            recovered = replace(
+                record,
+                state=DeliveryState.RECOVERY_REQUIRED,
+                version=record.version + 1,
+                generation=record.generation + 1,
+                updated_ms=now,
+                attempt_id=None,
+                lease_expires_ms=None,
+                active_segment=None,
+                playback_id=None,
+                failure_code=(
+                    "restart_playing" if record.state is DeliveryState.PLAYING
+                    else "restart_claimed"
+                ),
+            )
+            self._records[delivery_id] = recovered
+            return recovered
+
+    def reconcile_after_restart(
+        self,
+        delivery_id: str,
+        expected_version: int,
+        *,
+        now_ms: int,
+        host_confirmed_stopped: bool,
+    ) -> DeliveryRecord:
+        """Release a restart fence only after the host confirms old work stopped."""
+        if host_confirmed_stopped is not True:
+            raise PermissionError("host must confirm old synthesis/playback workers stopped")
+        with self._lock:
+            now = self._now(now_ms)
+            record = self._get(delivery_id)
+            self._cas(record, expected_version)
+            record = self._expire_deadline(record, now, allow_recovery_required=True)
+            if record.state is DeliveryState.EXPIRED:
+                raise DeliveryDeadlineExpired("delivery deadline expired before restart reconciliation")
+            if record.state is not DeliveryState.RECOVERY_REQUIRED:
+                raise DeliveryConflict("delivery does not require restart reconciliation")
+            if record.failure_code == "restart_playing":
+                next_state = DeliveryState.PARTIAL
+            elif record.failure_code == "restart_claimed":
+                next_state = DeliveryState.READY
+            else:
+                raise DeliveryConflict("restart recovery marker is missing or invalid")
+            updated = replace(
+                record,
+                state=next_state,
+                version=record.version + 1,
+                generation=record.generation + 1,
+                updated_ms=now,
+                attempt_id=None,
+                lease_expires_ms=None,
+                active_segment=None,
+                playback_id=None,
+                failure_code="restart_reconciled",
+            )
+            self._records[delivery_id] = updated
+            return updated
+
     def cancel(
         self,
         delivery_id: str,
@@ -517,8 +598,8 @@ class DeliveryLedger:
                 raise DeliveryConflict("delivered obligations cannot be cancelled")
             if record.state is DeliveryState.CANCELLED:
                 raise DeliveryConflict("delivery is already cancelled")
-            if record.state is DeliveryState.PLAYING and host_confirmed_stopped is not True:
-                raise PermissionError("host must confirm playback stopped before cancellation")
+            if record.state in (DeliveryState.PLAYING, DeliveryState.RECOVERY_REQUIRED) and host_confirmed_stopped is not True:
+                raise PermissionError("host must confirm active or orphaned playback stopped before cancellation")
             cancelled = replace(
                 record,
                 state=DeliveryState.CANCELLED,
