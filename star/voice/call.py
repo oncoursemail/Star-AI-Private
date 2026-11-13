@@ -284,20 +284,35 @@ class CallSession:
         if decision.action in (RoomAction.RESPOND, RoomAction.INTERRUPT):
             payload: RoomPayload | None = None
             reply: _Reply | None = None
+            active = False
+            unavailable_reason = ""
             with self._lock:
                 active = self._reply is not None and not self._reply.done.is_set()
-                if not self._stopped and not active:
+                if self._stopped:
+                    unavailable_reason = "call_ended"
+                elif not active:
                     payload = self.room_payload_store.take(cue.event_id, now=self.clock())
-                    if payload is not None and payload.cue == cue:
+                    if payload is None:
+                        unavailable_reason = "payload_expired_before_response"
+                    elif payload.cue != cue:
+                        unavailable_reason = "payload_cue_mismatch"
+                    else:
                         reply = self._reserve_room_payload_locked(payload)
             if reply is not None and payload is not None:
                 self._launch_room_payload(reply, payload)
                 self._emit({"type": "room_message_decision", "event_id": cue.event_id,
                             "action": decision.action.value, "reason": decision.reason})
                 return decision
+            if not active:
+                self.room_payload_store.delete(cue.event_id)
+                unavailable = RoomDecision(RoomAction.WAIT, cue.event_id,
+                                            unavailable_reason or "room_response_reservation_failed")
+                self._emit({"type": "room_message_decision", "event_id": cue.event_id,
+                            "action": unavailable.action.value, "reason": unavailable.reason})
+                return unavailable
 
-            # Another input may have started a reply between policy evaluation and reservation.
-            # Preserve the payload and queue it instead of losing the viewer's message.
+            # Another input is still active. Preserve the payload and queue it rather than
+            # losing the viewer's message.
             queued = self._enqueue_room_payload(cue, decision.priority, now=self.clock(),
                                                 reason="room_response_deferred")
             if queued.action is not RoomAction.QUEUE:
@@ -926,10 +941,10 @@ class CallSession:
                     self._reset_room_playback_locked()
         with self._lock:
             latest = self._reply is reply
-        if latest and self.room_payload_store is not None and self.room_queue is not None and len(self.room_queue) > 0:
-            self._emit({"type": "room_queue_ready", "pending": len(self.room_queue)})
         if latest and not self._stopped and self.detector.state == TurnDetector.IDLE and not self._ptt_held:
             self._set_state("listening")
+        if latest and self.room_payload_store is not None and self.room_queue is not None and len(self.room_queue) > 0:
+            self._emit({"type": "room_queue_ready", "pending": len(self.room_queue)})
 
     # -- events -------------------------------------------------------------------------------
     def _set_state(self, state: str) -> None:
