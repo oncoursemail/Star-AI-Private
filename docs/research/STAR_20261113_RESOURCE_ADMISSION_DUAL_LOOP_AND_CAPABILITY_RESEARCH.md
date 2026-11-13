@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-13  
 **Branch:** `feat/resource-admission-20261113-run21`  
-**Status:** Research plus a pure, opt-in-ready admission policy. The policy is not wired into the desktop supervisor and is not enabled by default.
+**Status:** Research only. The experimental `star/resource_admission.py` policy and its tests were removed from this branch after a repository audit found an existing lease-based scheduler and composed runtime in #1140/#1142. Do not merge a second ALLOW/DEFER authority.
 
 ## Executive recommendation
 
@@ -13,52 +13,24 @@ STAR should use a **two-loop runtime**:
 
 This architecture is supported by the September 2026 Realtime-Venus paper, which separates continuous interaction from asynchronous capability execution and binds delegated work to the originating session and its evidence snapshot. The paper also reports that routing itself remains imperfect; STAR must evaluate both unnecessary delegation and missed delegation, not assume a model always chooses correctly.
 
-The new `star/resource_admission.py` module implements only the **policy decision** for optional background work. It does not collect telemetry, create processes, reserve GPU memory, or grant permissions.
+This document does not add or retain a second scheduler. Use #1140's lease-based controller and #1142's composed stream-pressure runtime as the sole admission authority. If the #1178 telemetry thresholds are useful, translate them into host-health signals and calibrated ResourceVector estimates at that single entry point.
 
-## New implementation
+## Consolidation decision
 
-### `star/resource_admission.py`
+A repository audit found that #1140 already supplies the authoritative multi-resource scheduler and #1142 composes it with the stream-pressure governor. Those components already provide bounded queues, priority ordering, protected reserves, leases, host-confirmed release, freshness checks, and recovery hysteresis.
 
-A dependency-free, deterministic policy with typed inputs and decisions.
+The experimental #1178 policy was removed from this branch because a second stateless ALLOW/DEFER decision could race with the lease-based controller: two callers could evaluate the same snapshot and both admit work without reserving resources. Its initial CPU/GPU percentages and RAM/VRAM floors were also heuristics, not calibrated reservations.
 
-- `ResourceSnapshot`: monotonic timestamp, CPU utilization, available RAM/VRAM, GPU utilization, game FPS, audio underruns, and OBS dropped/total frames.
-- `WorkloadRequest`: host-assigned workload kind and estimated incremental CPU/RAM/VRAM/GPU demand.
-- `AdmissionPolicy.evaluate()`: returns `ALLOW`, `DEFER`, or `PROTECTED` with a stable reason code.
-- Protected work is routed to a separate scheduler lane; it is not counted as a background admission.
-- Unknown GPU telemetry blocks GPU-demanding background work.
-- Stale or future-dated snapshots fail closed.
-- Any audio underrun in the sample window defers background work.
-- OBS drops above the configured rate defer background work; a short sample with drops is treated conservatively.
-- Active-game FPS must be present and above the configured floor before background work is admitted.
-- Estimated workload demand is added to current CPU/GPU utilization and subtracted from free memory before admission.
-- Policy thresholds are configurable; defaults are conservative starting points, not hardware-derived truths.
+Decision:
+- Keep #1140 as the sole resource-allocation and lease authority.
+- Keep #1142 as the sole composed stream/game admission entry point.
+- Feed fresh, coherent host telemetry into that path; do not create another admission API.
+- Serialize decisions in one trusted supervisor and release leases only after confirmed worker termination.
+- Treat missing or stale telemetry as degraded health for optional workloads.
+- Calibrate resource vectors from repeated per-process measurements on the actual Windows target, not from generic percentage thresholds.
+- Preserve distinct real-time audio/game/avatar lanes, interactive chat/tool lanes, and deferrable background learning/research lanes.
 
-### Deliberate boundaries
-
-- The host must sample metrics using one monotonic clock and provide a bounded sample window.
-- Workload estimates must be calibrated from measured STAR jobs; a guessed estimate can make admission unsafe.
-- `WorkloadKind` must be assigned by trusted host code. Viewer/chat/ASR/OCR/game text must never choose its own priority or protected class.
-- `PROTECTED` means “send to the protected scheduler lane,” not “unlimited resources.” The foreground lane still needs its own bounded queues, cancellation and process-level safeguards.
-- The module does not stop a job already running if resources deteriorate. A future supervisor must add preemption/checkpoint rules and must never preempt audio callbacks, TTS playback, game input, or OBS capture.
-- No live hardware telemetry is fabricated by this module.
-
-## Admission policy defaults
-
-The initial values are safety-oriented defaults to be measured and tuned on each machine:
-
-| Signal | Default guard | Reason |
-|---|---:|---|
-| Snapshot age | 3 seconds maximum | Stale telemetry must not authorize new load |
-| Future timestamp tolerance | 250 ms | Reject clock-domain mistakes |
-| CPU after estimated work | <= 82% | Keep host/streaming headroom |
-| Free RAM after estimated work | >= 2,048 MB | Preserve OS and application headroom |
-| Free VRAM after estimated work | >= 1,536 MB | Avoid consuming the final graphics reserve |
-| GPU after estimated work | <= 82% | Avoid saturating rendering/inference |
-| Active-game FPS | >= 55 FPS | Defer optional work when game smoothness is already low |
-| Audio underruns | 0 in sample window | Audio quality takes priority |
-| OBS dropped-frame rate | <= 1% | Protect stream output |
-
-These are not universal values. Calibrate with 5–10 minute representative mixed-load runs on the actual machine. Record the 95th percentile, not just the average. The 8 GB RTX 4060 target is especially sensitive to model residency, game texture allocation, OBS encoder choice, avatar rendering, and transient VRAM spikes. CPU/GPU utilization estimates are coarse admission heuristics, not hard reservations; derive them from repeated workload profiles and keep a single trusted supervisor responsible for serializing admission. The VRAM/RAM reserve checks are hard free-memory floors based on the snapshot, but they still cannot prevent an external process from allocating memory immediately afterward. For OBS, the host must use a consistent valid denominator and must not combine render-thread and output-thread counters from different sampling bases.
+The deleted prototype's tests were specific to the removed policy and are not part of the final PR. This research document remains as a design audit and integration guide.
 
 ## Current research findings
 
@@ -269,19 +241,19 @@ Viewer text, ASR, OCR, game chat, and web pages are untrusted input. They cannot
 
 ## Implementation status
 
-Implemented in this branch:
-- pure typed resource snapshot and workload request;
-- conservative admission decision with protected-lane routing;
-- stale/future sample rejection;
-- audio-underrun and OBS-drop guardrails;
-- active-game FPS guard;
-- CPU/RAM/VRAM/GPU headroom checks;
-- configurable thresholds;
-- focused regression tests.
+This PR branch is research-only after the scheduler consolidation review.
 
-Not implemented by this branch:
-- Windows hardware telemetry collection;
-- a desktop worker supervisor or preemption;
+Removed from this branch:
+- `star/resource_admission.py`
+- `tests/test_resource_admission.py`
+
+Existing authoritative implementation to integrate and verify:
+- #1140: lease-based multi-resource workload admission.
+- #1142: stream-pressure governor composed with that admission controller.
+
+Not implemented by this research:
+- Windows hardware telemetry collection or calibration;
+- desktop supervisor integration beyond the existing #1142 path;
 - model routing or inference-engine changes;
 - ASR/diarization provider installation;
 - Twitch/YouTube clients;
@@ -289,4 +261,4 @@ Not implemented by this branch:
 - gameplay input or game-learning agents;
 - automatic training or self-modification.
 
-The policy is intentionally not wired into runtime defaults. GitHub Actions and hardware acceptance tests must pass before integration.
+The branch does not change production behavior, model weights, defaults, permissions, installers, or releases. Exact-head GitHub Actions and hardware acceptance remain separate gates.
