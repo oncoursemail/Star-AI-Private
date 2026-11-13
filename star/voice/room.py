@@ -152,20 +152,23 @@ class RoomTurnDirector:
         """Update actual playback and the room event that caused this response."""
         if type(speaking) is not bool:
             raise ValueError("speaking must be a boolean")
-        if speaking:
-            if not isinstance(response_id, str) or not response_id or len(response_id) > 128:
-                raise ValueError("an active playback requires a non-empty response_id of at most 128 characters")
-            if trigger_event_id is not None and (
-                not isinstance(trigger_event_id, str) or not trigger_event_id or len(trigger_event_id) > 128
-            ):
-                raise ValueError("trigger_event_id must be None or a non-empty string of at most 128 characters")
-            self._assistant_speaking = True
-            self._response_id = response_id
-            self._trigger_event_id = trigger_event_id
-        else:
-            self._assistant_speaking = False
+        if response_id is not None and (
+            not isinstance(response_id, str) or not response_id or len(response_id) > 128
+        ):
+            raise ValueError("response_id must be None or a non-empty string of at most 128 characters")
+        if trigger_event_id is not None and (
+            not isinstance(trigger_event_id, str) or not trigger_event_id or len(trigger_event_id) > 128
+        ):
+            raise ValueError("trigger_event_id must be None or a non-empty string of at most 128 characters")
+        if speaking and response_id is None:
+            raise ValueError("an active playback requires a non-empty response_id")
+        self._assistant_speaking = speaking
+        if response_id is None:
             self._response_id = None
             self._trigger_event_id = None
+        else:
+            self._response_id = response_id
+            self._trigger_event_id = trigger_event_id
 
     def reset_session(self) -> None:
         """Clear ephemeral room state when a stream/session ends."""
@@ -194,7 +197,7 @@ class RoomTurnDirector:
             if cue.source not in {CueSource.AUDIO, CueSource.CHAT}:
                 action = RoomAction.CONTINUE if self._assistant_speaking else RoomAction.IGNORE
                 return RoomDecision(action, cue.event_id, "human_resolution_wrong_source")
-            if not self._assistant_speaking:
+            if self._response_id is None:
                 return RoomDecision(RoomAction.IGNORE, cue.event_id, "no_active_response")
             if self._trigger_event_id is None:
                 return RoomDecision(RoomAction.CONTINUE, cue.event_id, "active_response_unlinked")
