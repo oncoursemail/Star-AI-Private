@@ -35,7 +35,7 @@ The queue:
 - Stores RoomCue metadata only; no transcript, PCM, raw chat body, voiceprint or viewer profile.
 - Accepts only final cues paired with a matching RoomDecision whose action is QUEUE.
 - Uses a configurable hard capacity (default 64).
-- Rejects duplicate event IDs within a bounded session dedupe window.
+- Rejects duplicate event IDs while they are queued even if the recent-completion dedupe window is smaller than queue capacity; also retains a bounded recent-ID dedupe window after dequeue.
 - Uses stable priority ordering and adds a small age boost to prevent ordinary questions from starving.
 - Expires cues at the earlier of the event-age deadline or queue-residence deadline.
 - Returns expired cue metadata so the host can delete matching payloads from its own short-lived store.

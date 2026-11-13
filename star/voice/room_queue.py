@@ -96,6 +96,7 @@ class RoomCueQueue:
         self._items: list[_QueuedCue] = []
         self._seen_order: deque[str] = deque()
         self._seen: set[str] = set()
+        self._queued_ids: set[str] = set()
         self._expired_pending: deque[RoomCue] = deque()
         self._sequence = 0
         self._stats = RoomQueueStats()
@@ -137,7 +138,7 @@ class RoomCueQueue:
 
         with self._lock:
             self._expire_locked(now)
-            if cue.event_id in self._seen:
+            if cue.event_id in self._seen or cue.event_id in self._queued_ids:
                 self._bump(duplicates=1)
                 return RoomQueueResult.DUPLICATE
             if len(self._items) >= self.config.max_items:
@@ -153,6 +154,7 @@ class RoomCueQueue:
             )
             self._sequence += 1
             self._items.append(item)
+            self._queued_ids.add(cue.event_id)
             self._remember_locked(cue.event_id)
             self._bump(accepted=1)
             return RoomQueueResult.ADDED
@@ -175,6 +177,7 @@ class RoomCueQueue:
 
             index = max(range(len(self._items)), key=lambda i: rank(self._items[i]))
             item = self._items.pop(index)
+            self._queued_ids.discard(item.cue.event_id)
             self._bump(dequeued=1)
             return item.cue
 
@@ -195,7 +198,10 @@ class RoomCueQueue:
         with self._lock:
             before = len(self._items)
             self._items = [item for item in self._items if item.cue.event_id != event_id]
-            return len(self._items) != before
+            removed = len(self._items) != before
+            if removed:
+                self._queued_ids.discard(event_id)
+            return removed
 
     def reset(self) -> None:
         """Clear queue, dedupe history, sequence and counters at session end."""
@@ -203,6 +209,7 @@ class RoomCueQueue:
             self._items.clear()
             self._seen_order.clear()
             self._seen.clear()
+            self._queued_ids.clear()
             self._expired_pending.clear()
             self._sequence = 0
             self._stats = RoomQueueStats()
@@ -212,6 +219,7 @@ class RoomCueQueue:
         if expired:
             expired_ids = {item.cue.event_id for item in expired}
             self._items = [item for item in self._items if item.cue.event_id not in expired_ids]
+            self._queued_ids.difference_update(expired_ids)
             self._bump(expired=len(expired))
             for item in expired:
                 if len(self._expired_pending) >= self.config.dedupe_capacity:
