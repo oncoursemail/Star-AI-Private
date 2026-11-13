@@ -27,6 +27,10 @@ Why it is worth testing:
 
 Do not assume every Qwen3.5 feature or chat template is supported by STAR's current llama.cpp build. Pin the exact model revision, tokenizer, template, quantization, and backend before benchmarking.
 
+The Qwen3.5-4B card also says the model was trained with multi-step prediction (MTP) and documents speculative MTP serving recipes: SGLang uses a NEXTN configuration and vLLM uses its Qwen3.5 MTP method. This makes it a particularly useful candidate for testing native MTP before adding a separate resident draft model. The recipes require current/main inference-framework builds; pin the exact framework commit and verify model support, memory overhead, acceptance, TTFT, time-per-output-token, and first-audible latency before use.
+
+The model card's own reported comparison gives Qwen3.5-4B vs Qwen3.5-9B: MMLU-Pro 79.1 vs 82.5, GPQA Diamond 76.2 vs 81.7, LiveCodeBench v6 55.8 vs 65.6, BFCL-V4 50.3 vs 66.1, and TAU2-Bench 79.9 vs 79.1. These are publisher-reported scores from the model card, not independent results or a substitute for STAR's own held-out tasks.
+
 ### Qwen3.5-9B — higher-capability multimodal candidate
 
 The official card identifies Qwen3.5-9B as an Apache 2.0 multimodal image-text model and provides Transformers, vLLM, and SGLang serving paths.
