@@ -90,6 +90,8 @@ class TaskRecord:
 
 @dataclass(frozen=True)
 class TaskClaim:
+    """Lease token returned only to the claimant; keep it private."""
+
     task: TaskRecord
     lease_id: str = field(repr=False)
 
