@@ -14,7 +14,6 @@ from star.stream_workload_runtime import StreamWorkloadRuntime
 from star.voice.incremental_thinking import ThinkAction, ThinkDirective
 from star.voice.incremental_think_admission import (
     IncrementalThinkAdmissionBridge,
-    ThinkBindingState,
 )
 
 
