@@ -107,11 +107,14 @@ async def benchmark_local_model_streaming(
     if not model.strip() or not 1 <= requests <= 12 or not 1 <= parallel <= 4:
         raise ValueError("Streaming benchmark requires a model, 1..12 requests and 1..4 slots")
 
-    own = client is None
-    if own:
+    if client is None:
         from .providers import open_client
 
-        client = open_client(config, request_timeout=None if server else 90.0)
+        active_client = open_client(config, request_timeout=None if server else 90.0)
+        close_client = True
+    else:
+        active_client = client
+        close_client = False
 
     semaphore = asyncio.Semaphore(parallel)
 
@@ -122,7 +125,7 @@ async def benchmark_local_model_streaming(
             first_content_ms: int | None = None
             output_tokens: int | None = None
             try:
-                stream = await client.chat.completions.create(
+                stream = await active_client.chat.completions.create(
                     model=model,
                     messages=[
                         {
@@ -171,5 +174,5 @@ async def benchmark_local_model_streaming(
         wall_ms = max(1, int((monotonic() - wall_started) * 1000))
         return summarize_streaming_probes(samples, wall_ms, parallel=parallel)
     finally:
-        if own:
-            await client.close()
+        if close_client:
+            await active_client.close()
