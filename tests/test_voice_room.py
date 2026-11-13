@@ -182,6 +182,7 @@ def test_config_rejects_invalid_thresholds_and_unbounded_dedupe():
     with pytest.raises(ValueError):
         RoomPolicyConfig(dedupe_capacity=100_000)
 
+
 def test_default_director_accepts_a_queued_question_after_a_long_reply():
     director = RoomTurnDirector()
     result = director.decide(cue(ended=10.0, started=9.8), now=30.0)
