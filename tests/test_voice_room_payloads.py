@@ -224,3 +224,11 @@ def test_take_after_deadline_expires_and_wipes_without_returning_content():
     assert buffer == bytearray()
     assert store.stats.expired == 1
     assert store.stats.bytes_used == 0
+
+def test_default_payload_store_keeps_a_question_during_a_long_reply():
+    store = RoomPayloadStore()
+    item = cue("long-reply", ended_at=10.0)
+    assert store.put(item, "question while STAR is speaking", now=10.0) is RoomPayloadStoreResult.STORED
+    payload = store.take(item.event_id, now=30.0)
+    assert payload is not None
+    assert payload.text == "question while STAR is speaking"
