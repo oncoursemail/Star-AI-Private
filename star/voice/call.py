@@ -33,6 +33,7 @@ from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
 from .persona import system_message
 from .room import RoomAction, RoomCue, RoomDecision, RoomTurnDirector
+from .room_queue import RoomCueQueue, RoomQueueResult
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
 
@@ -114,12 +115,20 @@ class CallSession:
                  speaker: Speaker, endpointer: Endpointer | None = None, config: CallConfig | None = None,
                  on_event: Callable[[dict], None] | None = None,
                  clock: Callable[[], float] = time.monotonic,
-                 room_director: RoomTurnDirector | None = None) -> None:
+                 room_director: RoomTurnDirector | None = None,
+                 room_queue: RoomCueQueue | None = None) -> None:
         if room_director is not None and not isinstance(room_director, RoomTurnDirector):
             raise TypeError("room_director must be a RoomTurnDirector or None")
+        if room_queue is not None and not isinstance(room_queue, RoomCueQueue):
+            raise TypeError("room_queue must be a RoomCueQueue or None")
+        if room_queue is not None and room_director is None:
+            raise ValueError("room_queue requires a configured room_director")
         self.config = config or CallConfig()
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
         self.room_director = room_director
+        self.room_queue = room_queue if room_queue is not None else (
+            RoomCueQueue() if room_director is not None else None
+        )
         self._room_lock = threading.RLock()
         self._room_response_id: str | None = None
         self._room_last_played_seconds = 0.0
@@ -163,6 +172,10 @@ class CallSession:
         reply = self._reply
         if reply is not None:
             reply.done.wait(3.0)
+        if self.room_queue is not None:
+            self.room_queue.reset()
+        if self.room_director is not None:
+            self.room_director.reset_session()
         self.detector.reset()
         self._set_state("ended")
 
@@ -178,16 +191,32 @@ class CallSession:
         """
         if self.room_director is None:
             raise RuntimeError("room_director is not configured for this call")
-        now = self.clock()
         if not isinstance(cue, RoomCue):
             raise TypeError("cue must be a RoomCue")
+        if self._stopped:
+            return RoomDecision(RoomAction.WAIT, cue.event_id, "call_ended")
+        now = self.clock()
         with self._room_lock:
             playback_known = self._sync_room_playback_locked(now)
             if not playback_known:
                 return RoomDecision(RoomAction.WAIT, cue.event_id, "playback_state_unavailable")
             decision = self.room_director.decide(cue, now=now)
         if decision.action is RoomAction.RESPOND and self.busy():
-            return RoomDecision(RoomAction.QUEUE, decision.event_id, "assistant_reply_in_progress", decision.priority)
+            decision = RoomDecision(
+                RoomAction.QUEUE, decision.event_id, "assistant_reply_in_progress", decision.priority
+            )
+        if decision.action is RoomAction.QUEUE:
+            if self.room_queue is None:
+                return RoomDecision(RoomAction.WAIT, decision.event_id, "room_queue_unavailable")
+            queued = self.room_queue.enqueue(cue, decision, now=now)
+            if queued is RoomQueueResult.DUPLICATE:
+                return RoomDecision(RoomAction.IGNORE, decision.event_id, "duplicate_queued_cue")
+            if queued is RoomQueueResult.FULL:
+                return RoomDecision(RoomAction.WAIT, decision.event_id, "room_queue_full", decision.priority)
+            if queued is RoomQueueResult.STALE:
+                return RoomDecision(RoomAction.IGNORE, decision.event_id, "stale_queued_cue")
+            if queued is not RoomQueueResult.ADDED:
+                return RoomDecision(RoomAction.WAIT, decision.event_id, "room_queue_rejected", decision.priority)
         if decision.action is RoomAction.INTERRUPT:
             response_id = decision.cancel_response_id
             if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
@@ -195,6 +224,22 @@ class CallSession:
             with self._room_lock:
                 self._reset_room_playback_locked()
         return decision
+
+    def pop_queued_room_cue(self) -> RoomCue | None:
+        """Return the next cue only when no reply is active; the host owns payload lookup and execution."""
+        if self.room_queue is None:
+            raise RuntimeError("room_queue is not configured for this call")
+        with self._lock:
+            reply = self._reply
+            if reply is not None and not reply.done.is_set():
+                return None
+            return self.room_queue.pop_next(now=self.clock())
+
+    def expire_queued_room_cues(self) -> tuple[RoomCue, ...]:
+        """Expire queued cues and return IDs/metadata for host-owned payload cleanup."""
+        if self.room_queue is None:
+            raise RuntimeError("room_queue is not configured for this call")
+        return self.room_queue.expire(now=self.clock())
 
     def interrupt_response(self, response_id: str) -> bool:
         """Cancel one exact response generation; stale IDs can never stop a newer reply."""

@@ -6,6 +6,7 @@ import pytest
 
 from star.voice.call import CallConfig, CallSession
 from star.voice.room import CueIntent, CueSource, RoomAction, RoomCue, RoomTurnDirector
+from star.voice.room_queue import RoomCueQueue, RoomQueueConfig
 from star.voice.turn import TurnConfig
 from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVAD, quiet, speech, wait_for
 
@@ -16,7 +17,7 @@ TEXTS = {
 END = quiet(40)
 
 
-def make(replies, *, room_director=True, tts_seconds_per_word=0.2, brain_first_delay=0.0):
+def make(replies, *, room_director=True, room_queue=None, tts_seconds_per_word=0.2, brain_first_delay=0.0):
     events, speaker = Events(), FakeSpeaker()
     director = RoomTurnDirector() if room_director else None
     session = CallSession(
@@ -28,6 +29,7 @@ def make(replies, *, room_director=True, tts_seconds_per_word=0.2, brain_first_d
         config=CallConfig(turn=TurnConfig(), partial_transcripts=False),
         on_event=events,
         room_director=director,
+        room_queue=room_queue,
     )
     session.start()
     return session, events, speaker
@@ -87,10 +89,15 @@ def test_direct_question_is_queued_while_star_is_still_preparing_a_reply():
         for frame in speech(1, 20) + END:
             session.feed(frame)
         assert wait_for(lambda: session.state == "thinking")
-        decision = session.handle_room_cue(cue("question-during-thinking"))
+        queued_cue = cue("question-during-thinking")
+        decision = session.handle_room_cue(queued_cue)
         assert decision.action is RoomAction.QUEUE
         assert decision.reason == "assistant_reply_in_progress"
-        assert speaker.stops == 0
+        assert session.pop_queued_room_cue() is None
+        session.interrupt()
+        assert session.wait_idle(5)
+        assert session.pop_queued_room_cue() == queued_cue
+        assert speaker.stops == 1
     finally:
         session.interrupt()
         session.wait_idle(5)
@@ -148,3 +155,41 @@ def test_room_bridge_requires_explicit_director_and_valid_response_ids():
             session.interrupt_response("")
     finally:
         session.stop()
+
+
+def test_full_call_room_queue_returns_wait_instead_of_dropping_a_cue():
+    queue = RoomCueQueue(RoomQueueConfig(max_items=1))
+    reply = "I am preparing the answer. " + "Here is the explanation. " * 10
+    session, _, _ = make([reply], room_queue=queue, brain_first_delay=0.4)
+    try:
+        for frame in speech(1, 20) + END:
+            session.feed(frame)
+        assert wait_for(lambda: session.state == "thinking")
+        first = cue("first-queued-question")
+        second = cue("second-queued-question")
+        assert session.handle_room_cue(first).action is RoomAction.QUEUE
+        full = session.handle_room_cue(second)
+        assert full.action is RoomAction.WAIT
+        assert full.reason == "room_queue_full"
+        assert session.pop_queued_room_cue() is None
+        session.interrupt()
+        assert session.wait_idle(5)
+        assert session.pop_queued_room_cue() == first
+    finally:
+        session.interrupt()
+        session.wait_idle(5)
+        session.stop()
+
+
+def test_stopping_a_call_clears_queued_room_cues_and_session_dedupe():
+    queue = RoomCueQueue()
+    reply = "I am preparing the answer. " + "Here is the explanation. " * 10
+    session, _, _ = make([reply], room_queue=queue, brain_first_delay=0.4)
+    for frame in speech(1, 20) + END:
+        session.feed(frame)
+    assert wait_for(lambda: session.state == "thinking")
+    item = cue("clear-on-stop")
+    assert session.handle_room_cue(item).action is RoomAction.QUEUE
+    session.stop()
+    assert session.pop_queued_room_cue() is None
+    assert queue.stats.accepted == 0
