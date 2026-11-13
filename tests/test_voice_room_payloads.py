@@ -204,3 +204,23 @@ def test_payload_result_does_not_contain_raw_audio_or_voiceprint_fields():
     assert {field.name for field in fields(RoomPayload)} == {"cue", "kind", "text", "received_at"}
     assert "audio" not in RoomPayload.__dataclass_fields__
     assert "embedding" not in RoomPayload.__dataclass_fields__
+
+
+def test_item_limit_rejects_without_evicting_existing_payload():
+    store = RoomPayloadStore(RoomPayloadStoreConfig(max_items=1, max_payload_bytes=32, max_total_bytes=64))
+    first, second = cue("item-first"), cue("item-second")
+    assert store.put(first, "first", now=10.0) is RoomPayloadStoreResult.STORED
+    assert store.put(second, "second", now=10.0) is RoomPayloadStoreResult.FULL
+    assert store.take("item-first", now=10.1).text == "first"
+    assert store.stats.rejected_full == 1
+
+
+def test_take_after_deadline_expires_and_wipes_without_returning_content():
+    store = RoomPayloadStore(RoomPayloadStoreConfig(max_age_seconds=1.0))
+    item = cue("take-expired")
+    assert store.put(item, "must not be returned", now=10.0) is RoomPayloadStoreResult.STORED
+    buffer = store._items[item.event_id].data
+    assert store.take(item.event_id, now=11.0) is None
+    assert buffer == bytearray()
+    assert store.stats.expired == 1
+    assert store.stats.bytes_used == 0
