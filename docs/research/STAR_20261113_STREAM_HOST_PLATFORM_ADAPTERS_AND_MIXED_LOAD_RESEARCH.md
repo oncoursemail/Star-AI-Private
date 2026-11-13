@@ -33,6 +33,7 @@ A new trusted-host ingress boundary:
 
 - voiceStartCall remains the existing UI action. Room mode requires both roomConsent: true and an explicit non-empty roomSources list.
 - Default behavior remains one-to-one voice; room components are not created unless explicitly opted in.
+- Room-only mode does not open the local microphone and skips local VAD, endpointer, and ASR model loading; it retains Brain, TTS, and the speaker for provider-fed final cues.
 - Chat-enabled room mode is refused unless the trusted desktop host injects a local moderation callback.
 - VoiceBridge.submit_room_message(call_id, cue, text) is a Python host method, **not** a renderer/IPC action and not part of VOICE_ACTIONS.
 - The bridge creates the room host only after the opted-in CallSession is built.
