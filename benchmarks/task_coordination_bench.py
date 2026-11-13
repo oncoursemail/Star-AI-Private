@@ -2,8 +2,8 @@
 
 Run from the repository root:
     python benchmarks/task_coordination_bench.py --tasks 1000
-Use an explicit file path with --database to compare durable WAL-backed SQLite.
-This reports local host throughput only; it is not a production SLA.
+Use --database PATH for file-backed WAL and --synchronous FULL|NORMAL to compare
+the durability/performance trade-off. This is not a production SLA.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import json
 import statistics
 import time
 
-from star.task_coordination import TaskLedger, TaskStatus
+from star.task_coordination import TaskLedger, TaskLedgerConfig, TaskStatus
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -25,13 +25,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", type=int, default=1000)
     parser.add_argument("--database", default=":memory:")
+    parser.add_argument("--synchronous", choices=("FULL", "NORMAL"), default="FULL")
     args = parser.parse_args()
     if not 1 <= args.tasks <= 100_000:
         parser.error("--tasks must be from 1 to 100000")
 
     durations: list[float] = []
     started = time.perf_counter()
-    with TaskLedger(args.database) as ledger:
+    config = TaskLedgerConfig(synchronous=args.synchronous)
+    with TaskLedger(args.database, config) as ledger:
         for index in range(args.tasks):
             task_id = f"bench-{index}"
             logical_now = 1_800_000_000.0 + index * 100.0
@@ -76,6 +78,7 @@ def main() -> int:
     operations = args.tasks * 7
     result = {
         "database": args.database,
+        "synchronous": args.synchronous,
         "tasks": args.tasks,
         "operations": operations,
         "elapsed_seconds": round(elapsed, 6),
