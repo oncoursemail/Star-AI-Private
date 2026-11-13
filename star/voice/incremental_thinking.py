@@ -77,6 +77,8 @@ class ThinkDirective:
     final_text: str = ""
     reason: str = ""
     cancel_previous: bool = False
+    cancel_utterance_id: str = ""
+    cancel_revision: int = -1
     commit_final: bool = False
 
     @property
@@ -197,6 +199,8 @@ class IncrementalThinkCoordinator:
         final_text: str = "",
         reason: str,
         cancel_previous: bool = False,
+        cancel_utterance_id: str = "",
+        cancel_revision: int = -1,
         commit_final: bool = False,
     ) -> ThinkDirective:
         return ThinkDirective(
@@ -207,6 +211,8 @@ class IncrementalThinkCoordinator:
             final_text=final_text,
             reason=reason,
             cancel_previous=cancel_previous,
+            cancel_utterance_id=cancel_utterance_id,
+            cancel_revision=cancel_revision,
             commit_final=commit_final,
         )
 
@@ -253,15 +259,19 @@ class IncrementalThinkCoordinator:
                 if self._active_id == item.utterance_id:
                     old_id = self._active_id
                     cancel = self._thinking
+                    old_revision = self._revision
                     self._clear_active()
                     self._counts["cancelled"] += int(cancel)
                     return self._directive(ThinkAction.CANCEL, utterance_id=old_id or "",
-                                           reason="stale_hypothesis", cancel_previous=cancel)
+                                           reason="stale_hypothesis", cancel_previous=cancel,
+                                           cancel_utterance_id=old_id or "", cancel_revision=old_revision)
                 self._counts["rejected"] += 1
                 return self._directive(ThinkAction.REJECT, utterance_id=item.utterance_id,
                                        reason="stale_hypothesis")
 
             cancel_previous = False
+            cancel_utterance_id = ""
+            cancel_revision = -1
             if self._active_id is None:
                 if item.utterance_id in self._seen:
                     self._counts["rejected"] += 1
@@ -280,6 +290,8 @@ class IncrementalThinkCoordinator:
                                            reason="utterance_replay")
                 old_id = self._active_id
                 cancel_previous = self._thinking
+                cancel_utterance_id = old_id or ""
+                cancel_revision = self._revision
                 self._counts["cancelled"] += int(cancel_previous)
                 self._clear_active()
                 try:
@@ -287,7 +299,9 @@ class IncrementalThinkCoordinator:
                 except RuntimeError:
                     self._counts["rejected"] += 1
                     return self._directive(ThinkAction.REJECT, utterance_id=old_id or "",
-                                           reason="replay_guard_capacity", cancel_previous=cancel_previous)
+                                           reason="replay_guard_capacity", cancel_previous=cancel_previous,
+                                           cancel_utterance_id=cancel_utterance_id,
+                                           cancel_revision=cancel_revision)
             else:
                 if item.sequence <= self._last_sequence or captured < self._last_ms:
                     self._counts["rejected"] += 1
@@ -296,11 +310,13 @@ class IncrementalThinkCoordinator:
                 if now - self._started_ms > self._max_duration:
                     old_id = self._active_id
                     cancel_previous = self._thinking
+                    cancel_revision = self._revision
                     self._clear_active()
                     self._counts["expired"] += 1
                     self._counts["cancelled"] += int(cancel_previous)
                     return self._directive(ThinkAction.CANCEL, utterance_id=old_id or "",
-                                           reason="utterance_duration_limit", cancel_previous=cancel_previous)
+                                           reason="utterance_duration_limit", cancel_previous=cancel_previous,
+                                           cancel_utterance_id=old_id or "", cancel_revision=cancel_revision)
 
             self._last_sequence = item.sequence
             self._last_ms = captured
@@ -311,12 +327,17 @@ class IncrementalThinkCoordinator:
                 if not final_text:
                     old_id = self._active_id or item.utterance_id
                     cancel_previous = self._thinking
+                    cancel_revision = self._revision
                     self._clear_active()
                     self._counts["cancelled"] += int(cancel_previous)
                     return self._directive(ThinkAction.CANCEL, utterance_id=old_id,
-                                           reason="empty_final_transcript", cancel_previous=cancel_previous)
-                if self._stable and not _is_prefix(self._stable, final_text):
+                                           reason="empty_final_transcript", cancel_previous=cancel_previous,
+                                           cancel_utterance_id=old_id, cancel_revision=cancel_revision)
+                if self._stable and not _is_prefix(self._stable, final_text) and not cancel_previous:
                     cancel_previous = self._thinking
+                    if cancel_previous:
+                        cancel_utterance_id = self._active_id or item.utterance_id
+                        cancel_revision = self._revision
                 utterance_id = self._active_id or item.utterance_id
                 self._revision += int(final_text != self._last_text)
                 self._counts["finalized"] += 1
@@ -327,6 +348,8 @@ class IncrementalThinkCoordinator:
                     final_text=final_text,
                     reason="canonical_final_transcript",
                     cancel_previous=cancel_previous,
+                    cancel_utterance_id=cancel_utterance_id,
+                    cancel_revision=cancel_revision,
                     commit_final=True,
                 )
                 self._clear_active()
@@ -337,6 +360,9 @@ class IncrementalThinkCoordinator:
             invalidated = invalidated or bool(self._stable and not stable)
             if invalidated:
                 cancel_previous = self._thinking
+                if cancel_previous:
+                    cancel_utterance_id = item.utterance_id
+                    cancel_revision = self._revision
                 self._revision += 1
                 self._thinking = False
                 self._counts["cancelled"] += int(cancel_previous)
@@ -359,6 +385,8 @@ class IncrementalThinkCoordinator:
                     stable_prefix=stable,
                     reason="stable_semantic_prefix",
                     cancel_previous=cancel_previous,
+                    cancel_utterance_id=cancel_utterance_id,
+                    cancel_revision=cancel_revision,
                 )
             if ready and self._thinking and stable != previous_stable:
                 self._counts["updated"] += 1
@@ -375,6 +403,8 @@ class IncrementalThinkCoordinator:
                     stable_prefix=stable,
                     reason="asr_revision_invalidated_prefix",
                     cancel_previous=True,
+                    cancel_utterance_id=cancel_utterance_id,
+                    cancel_revision=cancel_revision,
                 )
             return self._directive(
                 ThinkAction.WAIT,
@@ -395,10 +425,12 @@ class IncrementalThinkCoordinator:
                 return self._directive(ThinkAction.REJECT, utterance_id=utterance_id,
                                        reason="not_active")
             cancel_previous = self._thinking
+            cancel_revision = self._revision
             self._clear_active()
             self._counts["cancelled"] += int(cancel_previous)
             return self._directive(ThinkAction.CANCEL, utterance_id=utterance_id,
-                                   reason=reason, cancel_previous=cancel_previous)
+                                   reason=reason, cancel_previous=cancel_previous,
+                                   cancel_utterance_id=utterance_id, cancel_revision=cancel_revision)
 
     def expire(self, *, now_ms: float) -> ThinkDirective | None:
         """Cancel a thinker whose latest ASR evidence or utterance lifetime expired."""
@@ -412,6 +444,7 @@ class IncrementalThinkCoordinator:
                 return None
             utterance_id = self._active_id
             cancel_previous = self._thinking
+            cancel_revision = self._revision
             self._clear_active()
             self._counts["expired"] += 1
             self._counts["cancelled"] += int(cancel_previous)
@@ -420,6 +453,8 @@ class IncrementalThinkCoordinator:
                 utterance_id=utterance_id,
                 reason="stale_or_overlong_utterance",
                 cancel_previous=cancel_previous,
+                cancel_utterance_id=utterance_id,
+                cancel_revision=cancel_revision,
             )
 
     def metrics(self) -> dict[str, int | bool]:
