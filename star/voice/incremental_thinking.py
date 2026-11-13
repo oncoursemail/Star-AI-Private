@@ -91,12 +91,15 @@ class ThinkDirective:
 
 
 def _finite(value: object, label: str, low: float, high: float) -> float:
-    if type(value) is int:
-        number = float(cast(int, value))
-    elif type(value) is float:
-        number = cast(float, value)
-    else:
-        raise ValueError(f"{label} must be a finite number")
+    try:
+        if type(value) is int:
+            number = float(cast(int, value))
+        elif type(value) is float:
+            number = cast(float, value)
+        else:
+            raise ValueError(f"{label} must be a finite number")
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{label} must be a finite number") from exc
     if not math.isfinite(number) or not low <= number <= high:
         raise ValueError(f"{label} is outside its supported range")
     return number
