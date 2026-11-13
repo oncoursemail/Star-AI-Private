@@ -20,6 +20,7 @@ from threading import RLock
 from ..stream_workload_admission import ResourceVector, WorkloadLane, WorkloadLease, WorkloadRequest
 from ..stream_workload_runtime import StreamWorkloadRuntime
 from .incremental_thinking import ThinkAction, ThinkDirective
+from .think_resource_profile import ThinkResourceProfile
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_CLOCK_MS = 10**12
@@ -69,6 +70,7 @@ class _Binding:
     request_id: str
     directive: ThinkDirective
     state: ThinkBindingState
+    resources: ResourceVector
     lease: WorkloadLease | None = None
     cancel_reason: str = ""
 
@@ -103,21 +105,37 @@ class IncrementalThinkAdmissionBridge:
         self,
         runtime: StreamWorkloadRuntime,
         *,
-        resources: ResourceVector,
+        resources: ResourceVector | None = None,
+        resource_profile: ThinkResourceProfile | None = None,
+        configuration_fingerprint: str | None = None,
         max_pending: int = 64,
     ) -> None:
         if type(runtime) is not StreamWorkloadRuntime:
             raise TypeError("runtime must be StreamWorkloadRuntime")
-        if type(resources) is not ResourceVector:
+        if (resources is None) == (resource_profile is None):
+            raise ValueError("provide exactly one of resources or resource_profile")
+        if resources is not None and type(resources) is not ResourceVector:
             raise TypeError("resources must be an explicit ResourceVector")
+        if resource_profile is not None and type(resource_profile) is not ThinkResourceProfile:
+            raise TypeError("resource_profile must be ThinkResourceProfile")
+        if resource_profile is None and configuration_fingerprint is not None:
+            raise ValueError("configuration_fingerprint requires resource_profile")
+        if resource_profile is not None and (
+            type(configuration_fingerprint) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", configuration_fingerprint) is None
+        ):
+            raise ValueError("configuration_fingerprint must be a lowercase SHA-256 hex value")
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pending must be in 1..256")
-        for name in ("cpu_millicores", "ram_mb", "vram_mb"):
-            value = getattr(resources, name)
-            if type(value) is not int or not 0 <= value <= _MAX_RESOURCE_UNITS:
-                raise ValueError(f"resources.{name} is outside the supported range")
+        if resources is not None:
+            for name in ("cpu_millicores", "ram_mb", "vram_mb"):
+                value = getattr(resources, name)
+                if type(value) is not int or not 0 <= value <= _MAX_RESOURCE_UNITS:
+                    raise ValueError(f"resources.{name} is outside the supported range")
         self._runtime = runtime
         self._resources = resources
+        self._resource_profile = resource_profile
+        self._configuration_fingerprint = configuration_fingerprint
         self._max_pending = max_pending
         self._bindings: dict[tuple[str, int], _Binding] = {}
         self._by_lease: dict[str, tuple[str, int]] = {}
@@ -133,7 +151,20 @@ class IncrementalThinkAdmissionBridge:
             "start_uncertain": 0,
             "stop_unconfirmed": 0,
             "completed": 0,
+            "profile_unusable": 0,
         }
+
+    def _resources_for(self, now_ms: int) -> ResourceVector | None:
+        if self._resource_profile is None:
+            assert self._resources is not None
+            return self._resources
+        resources = self._resource_profile.resources_for(
+            now_ms=now_ms,
+            expected_configuration_fingerprint=self._configuration_fingerprint or "",
+        )
+        if resources is None:
+            self._counts["profile_unusable"] += 1
+        return resources
 
     @staticmethod
     def _key(utterance_id: str, revision: int) -> tuple[str, int]:
@@ -250,11 +281,16 @@ class IncrementalThinkAdmissionBridge:
                     self._counts["expired_or_rejected"] += 1
                     return ThinkAdmissionResult("rejected", "pending_capacity_reached")
 
+                request_resources = self._resources_for(now)
+                if request_resources is None:
+                    self._counts["blocked"] += 1
+                    return ThinkAdmissionResult("rejected", "resource_profile_stale_or_mismatched")
+
                 request_id = self._request_id(key)
                 request = WorkloadRequest(
                     request_id=request_id,
                     lane=WorkloadLane.VOICE_PREP,
-                    resources=self._resources,
+                    resources=request_resources,
                     enqueued_monotonic_ms=now,
                     deadline_monotonic_ms=None,
                 )
@@ -270,6 +306,7 @@ class IncrementalThinkAdmissionBridge:
                     request_id=request_id,
                     directive=directive,
                     state=ThinkBindingState.QUEUED,
+                    resources=request_resources,
                 )
                 self._counts["queued"] += 1
                 return ThinkAdmissionResult("queued", "awaiting_fresh_host_admission", request_id)
@@ -342,8 +379,19 @@ class IncrementalThinkAdmissionBridge:
                 return None
             if lease.request_id != binding.request_id:
                 raise ValueError("lease does not match the queued thinker request")
-            if lease.resources != self._resources:
+            if lease.resources != binding.resources:
                 raise ValueError("scheduler lease resource vector changed")
+            if self._resource_profile is not None:
+                current_resources = self._resources_for(now)
+                if current_resources is None or current_resources != binding.resources:
+                    # The worker has not started yet. A stale/mismatched profile
+                    # can therefore release this lease without a process-stop receipt.
+                    self._runtime.release(
+                        lease.lease_id, now, host_confirmed_stopped=True
+                    )
+                    self._remove(binding)
+                    self._counts["expired_or_rejected"] += 1
+                    return None
             binding.lease = lease
             binding.state = ThinkBindingState.STARTING
             self._by_lease[lease.lease_id] = key
