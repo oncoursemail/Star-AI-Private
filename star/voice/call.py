@@ -113,6 +113,7 @@ class RoomDispatchResult:
 class _Reply:
     def __init__(self, turn: int) -> None:
         self.response_id = uuid.uuid4().hex
+        self.trigger_event_id: str | None = None
         self.metrics = TurnMetrics(turn=turn)
         self.cancel = threading.Event()
         self.done = threading.Event()
@@ -246,9 +247,14 @@ class CallSession:
                 return RoomDecision(RoomAction.IGNORE, decision.event_id, "stale_queued_cue")
             if queued is not RoomQueueResult.ADDED:
                 return RoomDecision(RoomAction.WAIT, decision.event_id, "room_queue_rejected", decision.priority)
-        if decision.action is RoomAction.INTERRUPT:
+        if decision.action in (RoomAction.INTERRUPT, RoomAction.STOP):
             response_id = decision.cancel_response_id
-            if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
+            cancel_reason = (
+                "room_human_resolved_request"
+                if decision.action is RoomAction.STOP
+                else "room_barge_in"
+            )
+            if response_id is None or not self._cancel_reply(cancel_reason, expected_response_id=response_id):
                 return RoomDecision(RoomAction.WAIT, decision.event_id, "playback_generation_changed")
             with self._room_lock:
                 self._reset_room_playback_locked()
@@ -411,6 +417,7 @@ class CallSession:
             return None
         self._turn_count += 1
         reply = _Reply(self._turn_count)
+        reply.trigger_event_id = payload.cue.event_id
         reply.user_text = self._room_payload_prompt(payload)
         reply.carry_on_interrupt = False
         self._reply = reply
@@ -514,7 +521,11 @@ class CallSession:
             and 0.0 <= now - self._room_last_playback_at <= 0.25
         )
         speaking = recently_played or level > 0.0
-        self.room_director.set_assistant_playback(speaking, reply.response_id if speaking else None)
+        self.room_director.set_assistant_playback(
+            speaking,
+            reply.response_id if speaking else None,
+            reply.trigger_event_id if speaking else None,
+        )
         return True
 
     def _reset_room_playback_locked(self) -> None:
