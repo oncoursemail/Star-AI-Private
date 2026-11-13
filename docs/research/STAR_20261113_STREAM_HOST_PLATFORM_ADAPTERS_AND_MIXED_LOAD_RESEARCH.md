@@ -158,6 +158,8 @@ STAR Creator should therefore use this loop:
       -> repair
       -> save, reload, and verify the final state
 
+The hosted OpenGameEval runner requires an owner-managed Roblox account and an Open Cloud API key scoped to the studio-evaluations create operation; the repository recommends an expiration date. The public runner documents per-key job-creation limits (50/hour and 100/day), so STAR should schedule evaluations and avoid burst submission. Keep both the OpenGameEval key and the separate model-provider key in the OS credential store; never place them in project files or PRs.
+
 Keep observation tools distinct from edit tools. Give the agent read-only inspection first; require explicit task scope and a disposable place/session for risky changes. A script compiling is not a complete-game acceptance test.
 
 ## Performance and intelligence roadmap
