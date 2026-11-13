@@ -295,3 +295,14 @@ def test_cancelled_task_does_not_leave_a_queued_report_pending(tmp_path):
         ledger.transition("build", 1, TaskStatus.CANCELLED, now=14,
                           event_id="cancel", lease_id="lease-a")
         assert ledger.pending_reports() == ()
+
+
+def test_file_backed_database_defaults_to_full_sync_and_allows_explicit_normal(tmp_path):
+    full_db = str(tmp_path / "full.db")
+    with TaskLedger(full_db) as ledger:
+        assert ledger._db.execute("PRAGMA synchronous").fetchone()[0] == 2
+    normal_db = str(tmp_path / "normal.db")
+    with TaskLedger(normal_db, TaskLedgerConfig(synchronous="NORMAL")) as ledger:
+        assert ledger._db.execute("PRAGMA synchronous").fetchone()[0] == 1
+    with pytest.raises(ValueError, match="FULL or NORMAL"):
+        TaskLedgerConfig(synchronous="OFF")
