@@ -13,10 +13,10 @@ import math
 
 
 def _finite_number(value: object) -> bool:
-    if type(value) not in (int, float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     try:
-        return math.isfinite(float(value))
+        return math.isfinite(value)
     except OverflowError:
         return False
 
@@ -127,6 +127,8 @@ class RoomTurnDirector:
     """
 
     def __init__(self, config: RoomPolicyConfig | None = None) -> None:
+        if config is not None and not isinstance(config, RoomPolicyConfig):
+            raise TypeError("config must be a RoomPolicyConfig")
         self.config = config or RoomPolicyConfig()
         self._assistant_speaking = False
         self._response_id: str | None = None
