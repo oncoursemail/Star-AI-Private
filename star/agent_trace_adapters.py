@@ -183,7 +183,7 @@ class AgentTraceAdapters:
         *,
         span: TraceContext | None = None,
     ) -> int:
-        """Record a validated delivery snapshot without IDs, hashes, or speech content.
+        """Record bounded metadata from a trusted delivery snapshot without IDs, hashes, or speech content.
 
         Call after the ledger mutation has committed, from the host/control loop.
         This is diagnostic telemetry only; it does not advance delivery state,
