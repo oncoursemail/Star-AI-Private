@@ -240,6 +240,13 @@ class IncrementalThinkAdmissionBridge:
                 key = self._key(directive.utterance_id, directive.revision)
                 existing = self._bindings.get(key)
                 if existing is not None:
+                    if existing.state in (
+                        ThinkBindingState.CANCEL_PENDING,
+                        ThinkBindingState.STOP_REQUESTED,
+                        ThinkBindingState.RECOVERY_REQUIRED,
+                    ):
+                        self._counts["blocked"] += 1
+                        return ThinkAdmissionResult("blocked", "existing_generation_is_stopping", existing.request_id)
                     existing.directive = directive
                     self._counts["updated"] += 1
                     return ThinkAdmissionResult("already_pending", "idempotent_start", existing.request_id)
@@ -334,6 +341,13 @@ class IncrementalThinkAdmissionBridge:
                 return None
             if binding.state is not ThinkBindingState.QUEUED:
                 raise RuntimeError("duplicate or out-of-order scheduler lease")
+            if lease.granted_monotonic_ms > now:
+                raise ValueError("scheduler lease cannot be future-dated")
+            if now >= lease.expires_monotonic_ms:
+                self._runtime.release(lease.lease_id, now, host_confirmed_stopped=True)
+                self._remove(binding)
+                self._counts["expired_or_rejected"] += 1
+                return None
             if lease.request_id != binding.request_id:
                 raise ValueError("lease does not match the queued thinker request")
             if lease.resources != self._resources:
@@ -376,10 +390,18 @@ class IncrementalThinkAdmissionBridge:
             binding = self._bindings.get(key) if key is not None else None
             if binding is None or binding.lease is None:
                 raise KeyError("unknown thinker lease")
-            if binding.state is not ThinkBindingState.STARTING:
+            if binding.state not in (
+                ThinkBindingState.STARTING,
+                ThinkBindingState.STOP_REQUESTED,
+                ThinkBindingState.RECOVERY_REQUIRED,
+            ):
                 raise RuntimeError("startup receipt is not expected in this state")
             if started:
-                binding.state = ThinkBindingState.RUNNING
+                if binding.state is ThinkBindingState.STARTING:
+                    binding.state = ThinkBindingState.RUNNING
+                # If cancellation raced with startup, retain STOP_REQUESTED or
+                # RECOVERY_REQUIRED so the host cannot mistake the worker for
+                # an ordinary running generation.
                 self._counts["started"] += 1
                 return True
             if host_confirmed_stopped:
