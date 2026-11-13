@@ -649,6 +649,10 @@ payload store available. A trusted provider/desktop adapter must submit final cl
 events through `submit_room_message`. Because this is a Python host API, the current React
 call screen does not yet expose the room-only control.
 
+`voiceStatus` reports `roomOnlyAvailable`, `roomOnlyMissingPackages`, and
+`roomOnlyMissingModels` separately from the full microphone-call requirements, so a missing
+faster-whisper install does not falsely make a TTS-only room host appear unusable.
+
 Allowed source names are `audio`, `chat`, and `game`. A chat-enabled call must be created
 with a local moderation callback injected into `VoiceBridge(room_moderator=...)`; if no
 moderator is configured, startup is rejected. The callback must be fast, local, and fail
