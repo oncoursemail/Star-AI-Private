@@ -1,8 +1,8 @@
 """Configuration-bound calibration for speculative voice-preparation workers.
 
-A profile is derived from repeated, trusted host measurements of one exact
-inference configuration. It stores only the conservative resource envelope,
-not raw samples, model paths, transcripts, or machine identifiers.
+A profile is derived from repeated, trusted-host ResourceVector allocation
+samples for one exact inference configuration. It stores only the conservative
+allocation envelope, not raw measurements, model paths, transcripts, or machine identifiers.
 """
 from __future__ import annotations
 
@@ -40,9 +40,10 @@ def _with_margin(value: int, margin_percent: int) -> int:
 class ThinkResourceProfile:
     """A short-lived, model-configuration-specific resource envelope.
 
-    The envelope is the per-dimension maximum observed across representative
-    runs, increased by a fixed safety margin. This is deliberately conservative
-    and is not a statistical p99 guarantee.
+    The envelope is the per-dimension maximum of host-calibrated allocation
+    samples, increased by a fixed safety margin. ResourceVector values must use
+    the same allocation units as the scheduler budget; they are not raw OS
+    measurements. This is conservative, not a statistical p99 guarantee.
     """
 
     configuration_fingerprint: str
@@ -76,11 +77,12 @@ class ThinkResourceProfile:
         safety_margin_percent: int = 25,
         max_age_ms: int = 86_400_000,
     ) -> "ThinkResourceProfile":
-        """Build a profile from bounded per-worker peak-delta measurements.
+        """Build a profile from bounded per-worker peak-delta allocation samples.
 
-        The caller must collect samples from the actual host and exact inference
-        configuration. trusted_host is an explicit host assertion, not an
-        authentication mechanism or a substitute for process isolation.
+        The host must map physical measurements into the same ResourceVector
+        allocation units used by the scheduler and bind them to the exact
+        inference configuration. trusted_host is an explicit host assertion,
+        not authentication or a substitute for process isolation.
         """
         _validate_fingerprint(configuration_fingerprint, "configuration_fingerprint")
         _validate_clock(calibrated_monotonic_ms)
