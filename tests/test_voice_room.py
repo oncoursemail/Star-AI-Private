@@ -12,9 +12,9 @@ from star.voice.room import (
 
 def cue(event_id="e1", *, source=CueSource.AUDIO, intent=CueIntent.DIRECT_QUESTION,
         addressed=True, confidence=0.98, started=9.0, ended=9.5, overlap=0,
-        urgency=0.0, final=True):
+        urgency=0.0, final=True, resolves_event_id=None):
     return RoomCue(event_id, "speaker-1", source, intent, addressed, confidence,
-                   started, ended, overlap, urgency, final)
+                   started, ended, overlap, urgency, final, resolves_event_id)
 
 
 def test_direct_question_is_answered_when_idle():
@@ -187,3 +187,119 @@ def test_default_director_accepts_a_queued_question_after_a_long_reply():
     director = RoomTurnDirector()
     result = director.decide(cue(ended=10.0, started=9.8), now=30.0)
     assert result.action is RoomAction.RESPOND
+
+
+
+def test_matching_human_resolution_stops_only_the_response_for_that_event():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(True, "response-20", trigger_event_id="question-1")
+    result = director.decide(
+        cue(
+            "resolution-1",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-1",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.STOP
+    assert result.reason == "human_resolved_request"
+    assert result.cancel_response_id == "response-20"
+
+
+def test_unrelated_human_resolution_does_not_interrupt_active_response():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(True, "response-21", trigger_event_id="question-1")
+    result = director.decide(
+        cue(
+            "resolution-2",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-2",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.CONTINUE
+    assert result.reason == "unrelated_human_resolution"
+    assert result.cancel_response_id is None
+
+
+def test_resolution_without_linked_active_room_event_does_not_interrupt():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(True, "response-22")
+    result = director.decide(
+        cue(
+            "resolution-3",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-1",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.CONTINUE
+    assert result.reason == "active_response_unlinked"
+
+
+def test_human_resolution_without_active_response_is_ignored():
+    result = RoomTurnDirector().decide(
+        cue(
+            "resolution-4",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-1",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.IGNORE
+    assert result.reason == "no_active_response"
+
+
+def test_game_event_cannot_stop_a_human_response():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(True, "response-23", trigger_event_id="question-1")
+    result = director.decide(
+        cue(
+            "resolution-5",
+            source=CueSource.GAME,
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-1",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.CONTINUE
+    assert result.reason == "human_resolution_wrong_source"
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"intent": CueIntent.HUMAN_RESOLUTION},
+    {"intent": CueIntent.DIRECT_QUESTION, "resolves_event_id": "question-1"},
+    {"intent": CueIntent.HUMAN_RESOLUTION, "resolves_event_id": "e1"},
+    {"intent": CueIntent.HUMAN_RESOLUTION, "resolves_event_id": "x" * 129},
+])
+def test_resolution_event_link_is_validated(kwargs):
+    with pytest.raises(ValueError):
+        RoomTurnDirector().decide(cue(**kwargs), now=10.0)
+
+
+def test_playback_trigger_event_id_is_bounded():
+    director = RoomTurnDirector()
+    with pytest.raises(ValueError, match="trigger_event_id"):
+        director.set_assistant_playback(True, "response-24", trigger_event_id="x" * 129)
+
+
+def test_session_reset_clears_resolution_link():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(True, "response-25", trigger_event_id="question-1")
+    director.reset_session()
+    result = director.decide(
+        cue(
+            "resolution-6",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-1",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.IGNORE
+    assert result.reason == "no_active_response"
