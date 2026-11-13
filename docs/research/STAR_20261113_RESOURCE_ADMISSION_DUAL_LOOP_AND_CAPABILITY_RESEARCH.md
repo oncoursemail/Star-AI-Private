@@ -160,6 +160,26 @@ Sources:
 - https://github.com/Roblox/open-game-eval
 - https://github.com/waynchi/gamedevbench
 
+### 7. General game-playing agents: SIMA 2 and GameWorld
+
+Google DeepMind's **SIMA 2** demonstrates a generalist agent that combines visual observations, language instructions, high-level reasoning, and ordinary game controls across multiple 3D worlds. The published discussion is also unusually candid about remaining weaknesses: very long-horizon tasks, short interaction memory, precise low-level controls, and robust visual understanding remain difficult. Its self-improvement direction—generate tasks, attempt them, and evaluate outcomes—is useful as a design pattern, but STAR should keep skill promotion behind held-out evaluation rather than accepting self-reported success.
+
+**GameWorld** provides a complementary, verifiable benchmark: 34 browser games and 170 tasks across runner, arcade, platformer, puzzle, and simulation genres. It compares computer-use actions with semantic actions and evaluates serialized game state rather than relying only on an LLM judge. This is a useful low-risk first environment for STAR's Gamer Brain before adding game-specific adapters for Roblox or Minecraft.
+
+STAR's game agent should use a hierarchical controller:
+- a fast control loop for movement, camera, aiming, timing, and immediate hazards;
+- a slower strategic loop for goals, maps, inventory, resource planning, and team coordination;
+- a skill memory containing preconditions, action sequences, expected effects, and failure conditions;
+- a verifier that checks state changes and task completion;
+- a practice harness that tests skills on held-out maps, seeds, and difficulty settings.
+
+Do not treat a successful run on one fixed map as general mastery. Measure completion rate, progress, deaths/failures, time, resource efficiency, recovery after mistakes, and transfer to unseen environments. Keep computer input restricted to explicit, permitted game sessions; never bypass anti-cheat or automate prohibited competitive play.
+
+Sources:
+- https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+- https://gameworld-bench.github.io/
+- https://arxiv.org/abs/2604.07429
+
 ### 7. VTuber and broadcast integration
 
 VTube Studio's public WebSocket API can feed Live2D parameters, trigger hotkeys, load items, and subscribe to events. The plugin must request user approval; access can be revoked. Use a local-only connection by default and store its token in the OS credential store, not source code.
