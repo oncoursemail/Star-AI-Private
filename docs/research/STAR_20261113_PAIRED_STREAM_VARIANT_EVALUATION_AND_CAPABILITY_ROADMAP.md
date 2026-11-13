@@ -45,7 +45,7 @@ Each baseline/candidate trial records only:
 
 The evaluator enforces:
 
-1. A sealed preregistered case-roster digest.
+1. A sealed preregistered case-roster digest that includes a SHA-256 digest of each private scenario specification.
 2. HMAC-SHA256 receipts from an independent host-owned key.
 3. One baseline and one candidate trial per case.
 4. Exact revision binding for each variant.
