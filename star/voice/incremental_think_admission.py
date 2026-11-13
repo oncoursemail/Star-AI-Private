@@ -21,7 +21,7 @@ from ..stream_workload_admission import ResourceVector, WorkloadLane, WorkloadLe
 from ..stream_workload_runtime import StreamWorkloadRuntime
 from .incremental_thinking import ThinkAction, ThinkDirective
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_CLOCK_MS = 10**12
 _MAX_RESOURCE_UNITS = 1_000_000_000
 
