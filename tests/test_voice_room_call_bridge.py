@@ -16,13 +16,13 @@ TEXTS = {
 END = quiet(40)
 
 
-def make(replies, *, room_director=True, tts_seconds_per_word=0.2):
+def make(replies, *, room_director=True, tts_seconds_per_word=0.2, brain_first_delay=0.0):
     events, speaker = Events(), FakeSpeaker()
     director = RoomTurnDirector() if room_director else None
     session = CallSession(
         vad=FakeVAD(),
         asr=FakeASR(TEXTS),
-        brain=FakeBrain(replies, delay=0.01),
+        brain=FakeBrain(replies, first_delay=brain_first_delay, delay=0.01),
         tts=FakeTTS(seconds_per_word=tts_seconds_per_word),
         speaker=speaker,
         config=CallConfig(turn=TurnConfig(), partial_transcripts=False),
@@ -74,6 +74,23 @@ def test_backchannel_during_playback_does_not_cancel_the_reply():
         assert decision.action is RoomAction.CONTINUE
         assert speaker.stops == 0
         assert session.busy()
+    finally:
+        session.interrupt()
+        session.wait_idle(5)
+        session.stop()
+
+
+def test_direct_question_is_queued_while_star_is_still_preparing_a_reply():
+    reply = "I am preparing the answer. " + "Here is the explanation. " * 10
+    session, _, speaker = make([reply], brain_first_delay=0.4)
+    try:
+        for frame in speech(1, 20) + END:
+            session.feed(frame)
+        assert wait_for(lambda: session.state == "thinking")
+        decision = session.handle_room_cue(cue("question-during-thinking"))
+        assert decision.action is RoomAction.QUEUE
+        assert decision.reason == "assistant_reply_in_progress"
+        assert speaker.stops == 0
     finally:
         session.interrupt()
         session.wait_idle(5)
