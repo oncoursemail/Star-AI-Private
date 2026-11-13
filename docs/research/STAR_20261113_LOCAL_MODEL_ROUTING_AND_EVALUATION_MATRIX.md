@@ -165,7 +165,7 @@ Use separate cold-start and warm-cache cohorts. Randomize or counterbalance base
 - [IBM Granite 4.2-8B official model card](https://huggingface.co/ibm-granite/granite-4.2-8b)
 - [llama.cpp server capabilities](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 - [vLLM Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
-- [OpenTelemetry GenAI metrics](https://github.com/microsoft/opentelemetry-semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md)
+- [OpenTelemetry GenAI metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md)
 
 ## Limits
 
