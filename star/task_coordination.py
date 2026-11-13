@@ -626,9 +626,9 @@ class TaskLedger:
             self._ensure_open()
             rows = self._db.execute(
                 """SELECT r.* FROM task_reports r JOIN tasks t ON t.task_id=r.task_id
-                   WHERE r.status=? AND r.generation=t.generation
+                   WHERE r.status=? AND r.generation=t.generation AND t.status!=?
                    ORDER BY t.priority DESC,r.created_at ASC LIMIT ?""",
-                (ReportStatus.QUEUED.value, limit),
+                (ReportStatus.QUEUED.value, TaskStatus.CANCELLED.value, limit),
             ).fetchall()
             return tuple(self._report_from_row(row) for row in rows)
 
@@ -642,7 +642,8 @@ class TaskLedger:
                 count("SELECT COUNT(*) FROM task_events"),
                 count("SELECT COUNT(*) FROM task_reports"),
                 count("""SELECT COUNT(*) FROM task_reports r JOIN tasks t ON t.task_id=r.task_id
-                         WHERE r.status=? AND r.generation=t.generation""", (ReportStatus.QUEUED.value,)),
+                         WHERE r.status=? AND r.generation=t.generation AND t.status!=?""",
+                      (ReportStatus.QUEUED.value, TaskStatus.CANCELLED.value)),
                 count("SELECT COUNT(*) FROM tasks WHERE status=?", (TaskStatus.COMPLETED.value,)),
                 count("""SELECT COUNT(*) FROM task_reports r JOIN tasks t ON t.task_id=r.task_id
                          WHERE r.generation!=t.generation"""),
