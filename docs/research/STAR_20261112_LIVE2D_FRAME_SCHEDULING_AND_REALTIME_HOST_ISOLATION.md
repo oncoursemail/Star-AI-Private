@@ -168,7 +168,7 @@ Do not claim a speedup until the same hardware, model, VTube Studio version, fra
 
 ## 6. Validation status and limitations
 
-The new pump has eight focused offline tests covering:
+The new pump has nine focused offline tests covering:
 - latest-wins coalescing;
 - producer progress while a transport write is blocked;
 - flush waiting for an in-flight write;
