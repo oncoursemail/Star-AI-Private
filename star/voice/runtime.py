@@ -61,12 +61,27 @@ def make_brain(settings: VoiceSettings):
 
 
 def build_session(settings: VoiceSettings, engines: Engines, speaker: Speaker, brain=None,
-                  on_event: Callable[[dict], None] | None = None, prime: bool = True) -> CallSession:
+                  on_event: Callable[[dict], None] | None = None, prime: bool = True,
+                  room_enabled: bool = False) -> CallSession:
+    if type(room_enabled) is not bool:
+        raise TypeError("room_enabled must be a boolean")
     brain = brain or make_brain(settings)
     config = settings.call_config()
     if prime and hasattr(brain, "prime"):
         brain.prime([system_message(config.system_extra, config.style)])   # server reads the voice prompt before turn one
     if hasattr(engines.vad, "reset"):
         engines.vad.reset()
+    room_components = {}
+    if room_enabled:
+        # Multiparty streaming is per-call opt-in. No provider or room text is enabled by default.
+        from .room import RoomTurnDirector
+        from .room_queue import RoomCueQueue
+        from .room_payloads import RoomPayloadStore
+
+        room_components = {
+            "room_director": RoomTurnDirector(),
+            "room_queue": RoomCueQueue(),
+            "room_payload_store": RoomPayloadStore(),
+        }
     return CallSession(vad=engines.vad, asr=engines.asr, brain=brain, tts=engines.tts, speaker=speaker,
-                       endpointer=engines.endpointer, config=config, on_event=on_event)
+                       endpointer=engines.endpointer, config=config, on_event=on_event, **room_components)
