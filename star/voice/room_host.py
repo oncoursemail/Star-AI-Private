@@ -15,7 +15,7 @@ import time
 from typing import Callable
 
 from .call import CallSession, RoomDispatchResult, RoomDispatchStatus
-from .room import CueSource, RoomAction, RoomCue, RoomDecision
+from .room import CueIntent, CueSource, RoomAction, RoomCue, RoomDecision
 
 
 def _finite(value: object) -> bool:
@@ -181,7 +181,7 @@ class RoomStreamHost:
                 or not cue.speaker_id
                 or len(cue.speaker_id) > 128
                 or not isinstance(cue.source, CueSource)
-                or not hasattr(cue.intent, "value")
+                or not isinstance(cue.intent, CueIntent)
                 or type(cue.addressed_to_star) is not bool
                 or type(cue.final) is not bool
                 or type(cue.overlap_ms) is not int
