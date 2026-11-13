@@ -253,7 +253,7 @@ class IncrementalThinkAdmissionBridge:
                 request_id = self._request_id(key)
                 request = WorkloadRequest(
                     request_id=request_id,
-                    lane=WorkloadLane.CHAT,
+                    lane=WorkloadLane.VOICE_PREP,
                     resources=self._resources,
                     enqueued_monotonic_ms=now,
                     deadline_monotonic_ms=None,
@@ -311,8 +311,10 @@ class IncrementalThinkAdmissionBridge:
         now = _now(now_ms)
         if type(lease) is not WorkloadLease:
             raise TypeError("lease must be WorkloadLease")
-        if lease.lane is not WorkloadLane.CHAT:
+        if lease.lane is not WorkloadLane.VOICE_PREP:
             return None
+        if lease.granted_monotonic_ms > now:
+            raise ValueError("scheduler lease cannot be future-dated")
         with self._lock:
             key = next(
                 (key for key, binding in self._bindings.items()
