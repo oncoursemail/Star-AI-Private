@@ -140,6 +140,22 @@ If proactive correction is added later, it needs a separate policy from ordinary
 - False-positive interruptions must be measured independently from missed corrections.
 - Owner interruption always retains priority.
 
+### Joi-Bench-Task: execution must stay coherent while conversation changes
+
+The November 9, 2026 preprint *Joi-Bench-Task* evaluates whether full-duplex agents keep track of what is executing, what completed, what was communicated, and what remains to be reported as the user redirects or interrupts them. Across five evaluated commercial agents, the highest result-completion rate under request changes was 55%; four of five had average information-omission rates of at least 23% after interruption.
+
+Source: https://arxiv.org/abs/2611.12118
+
+**STAR implication:** a conversational interruption must not silently erase an independent task obligation. Build on STAR's Task Ledger, Delivery Ledger, and trace integration with an explicit obligation lifecycle:
+
+- queued → running → completed → delivered;
+- paused, superseded, cancelled, or awaiting clarification as distinct states;
+- request changes update priority and scope without silently discarding prior work;
+- speech interruption changes delivery state, not task state, unless the user explicitly cancels the task;
+- after resuming, reconcile what was completed, what was actually heard, and what remains.
+
+Evaluate execution responsiveness, request-change handling, interruption recovery, omission rate, and duplicate delivery separately.
+
 ### Full-Duplex-Bench v3
 
 FDB-v3 uses real human audio with natural disfluencies and chained tool-use scenarios, scoring accuracy, latency, and turn-taking separately.
@@ -148,13 +164,22 @@ Source: https://arxiv.org/abs/2604.04847
 
 Use it as a model for STAR's voice regression set: natural hesitations, self-corrections, interrupted phrases, overlapping speakers, background speech, and multi-step requests. Do not collapse all results into one conversational-naturalness score.
 
-### InteractionBench
+### Speech InteractionBench
 
-InteractionBench evaluates conversational timing, spoken-task accuracy, whisper/volume control, and groundedness over long conversations. Its published evaluation uses 221 items per system across 13 scenarios and reports the dimensions separately.
+Speech InteractionBench evaluates conversational timing, spoken-task accuracy, whisper/volume control, and groundedness over long conversations. Its published evaluation uses 221 items per system across 13 scenarios and reports the dimensions separately.
 
-Source: https://www.fullduplex.ai/benchmarks/interactionbench
+Source: https://www.fullduplex.ai/benchmarks/interactionbench  
+Paper: https://arxiv.org/abs/2611.02430
 
 **STAR implication:** voice quality is not just ASR accuracy plus a pleasant TTS voice. Add tests for speaking too early, missing a floor handoff, failing to lower volume, and losing grounding after a long stream.
+
+### Video InteractionBench
+
+A separate 2026 benchmark evaluates real-time video assistants on query responses, event triggers, ongoing updates, timing accuracy, and silence compliance. It includes 69 negative streams and 53 near-miss suites; its reported native real-time system emitted on 89.9% of negative streams.
+
+Source: https://arxiv.org/abs/2610.05775
+
+**STAR implication:** a VTuber should not narrate every detected object or visual change. Add negative-stream and near-miss tests so STAR reacts only when an event is relevant, sufficiently certain, and worth interrupting the current conversation.
 
 ## 4. Real-time avatar behavior
 
@@ -175,7 +200,7 @@ For the Live2D avatar, keep the existing latest-wins frame transport for time-sa
 
 Human-like streaming should mean natural timing, grounded reactions, varied prosody, appropriate silence, and coherent continuity. STAR should remain transparently presented as an AI VTuber character, not impersonate a real human.
 
-## 5. Faster inference without making STAR less intelligent
+## 6. Faster inference without making STAR less intelligent
 
 The official llama.cpp server supports parallel decoding, continuous batching, prompt caching, speculative decoding, monitoring, structured outputs, and tool calling.
 
@@ -208,7 +233,7 @@ Do not optimize only tokens per second. Measure:
 
 Use paired, identical workloads. Require independent held-out quality evidence. A faster model configuration that degrades correctness, game control, or stream quality is a regression, not an optimization.
 
-## 6. STAR Gamer: learn games through verified skills
+## 7. STAR Gamer: learn games through verified skills
 
 Research anchors:
 
@@ -251,7 +276,7 @@ Recommended two-timescale gaming architecture:
 
 Do not train or mutate foundation-model weights directly from unverified gameplay. Use versioned procedural skills and evidence first.
 
-## 7. STAR Creator: complete games, not just scripts
+## 8. STAR Creator: complete games, not just scripts
 
 GameDevBench evaluates 333 Godot tasks spanning gameplay logic, UI, 2D graphics/animation, and 3D graphics/animation.
 
@@ -278,7 +303,7 @@ Recommended Creator completion gate:
 
 A successful compile, screenshot, or generated script is not proof that a game is complete.
 
-## 8. General knowledge and practical learning
+## 9. General knowledge and practical learning
 
 Mem2ActBench evaluates whether long-term memory actually improves later tool selection and parameter grounding rather than merely answering explicit recall questions.
 
@@ -313,7 +338,7 @@ Recommended knowledge record:
 
 Use authoritative primary sources first. Similarity retrieval alone is not enough for temporal or causal facts. The memory system should be able to say that a remembered fact is stale, conflicting, or insufficiently supported.
 
-## 9. Acceptance plan
+## 10. Acceptance plan
 
 ### Voice and streaming
 
@@ -341,7 +366,7 @@ Use authoritative primary sources first. Similarity retrieval alone is not enoug
 - Creator completion includes engine launch, player journey, save/reopen, and visual evidence.
 - Failures remain visible; no fabricated mastery or completion claim.
 
-## 10. Rollout sequence
+## 11. Rollout sequence
 
 1. Finish the exact-head CI for the current Live2D frame-pump PR.
 2. Validate this incremental-thinker policy with offline tests.
@@ -355,7 +380,7 @@ Use authoritative primary sources first. Similarity retrieval alone is not enoug
 10. Run held-out Roblox/OpenGameEval-style tasks and complete-game journeys.
 11. Tune local inference only after mixed streaming/game benchmarks establish a baseline.
 
-## 11. Explicit implementation boundaries
+## 12. Explicit implementation boundaries
 
 This branch adds an offline policy module and tests only.
 
@@ -383,5 +408,7 @@ Those are separate integration and hardware-validation milestones.
 9. Mem2ActBench: https://arxiv.org/abs/2601.19935
 10. SIMA 2: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
 11. Voyager: https://github.com/MineDojo/Voyager
-12. InteractionBench: https://www.fullduplex.ai/benchmarks/interactionbench
-13. Remember When It Matters: https://arxiv.org/abs/2607.08716
+12. Speech InteractionBench: https://arxiv.org/abs/2611.02430
+13. Video InteractionBench: https://arxiv.org/abs/2610.05775
+14. Joi-Bench-Task: https://arxiv.org/abs/2611.12118
+15. Remember When It Matters: https://arxiv.org/abs/2607.08716
