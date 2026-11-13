@@ -127,10 +127,11 @@ class IncrementalThinkAdmissionBridge:
             raise ValueError("configuration_fingerprint must be a lowercase SHA-256 hex value")
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pending must be in 1..256")
-        for name in ("cpu_millicores", "ram_mb", "vram_mb"):
-            value = getattr(resources, name)
-            if type(value) is not int or not 0 <= value <= _MAX_RESOURCE_UNITS:
-                raise ValueError(f"resources.{name} is outside the supported range")
+        if resources is not None:
+            for name in ("cpu_millicores", "ram_mb", "vram_mb"):
+                value = getattr(resources, name)
+                if type(value) is not int or not 0 <= value <= _MAX_RESOURCE_UNITS:
+                    raise ValueError(f"resources.{name} is outside the supported range")
         self._runtime = runtime
         self._resources = resources
         self._resource_profile = resource_profile
