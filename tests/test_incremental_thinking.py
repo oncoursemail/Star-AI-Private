@@ -291,6 +291,16 @@ def test_input_validation_rejects_bool_confidence_and_oversized_text() -> None:
             semantic_score=0.9,
         )
 
+    with pytest.raises(ValueError):
+        PartialHypothesis(
+            utterance_id="turn-overflow",
+            sequence=0,
+            captured_ms=1000,
+            text="hello",
+            asr_confidence=10**10000,
+            semantic_score=0.9,
+        )
+
 
 def test_replay_guard_capacity_fails_closed() -> None:
     coordinator = IncrementalThinkCoordinator(max_seen_utterances=1)
