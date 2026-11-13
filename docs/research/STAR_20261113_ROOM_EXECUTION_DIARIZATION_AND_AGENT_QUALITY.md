@@ -19,6 +19,8 @@ This branch adds that missing host API while preserving a strict separation:
 
 The new API does not grant the model tools or permissions. Room text is passed as untrusted user content to the voice Brain only.
 
+A queue-lifetime audit found that an eight-second default would expire ordinary viewer questions while STAR was still speaking a longer answer. The default room policy and payload event-age limit are now 60 seconds, with a 45-second maximum queue residence time. The queue and payload byte/item limits remain bounded, and hosts can choose shorter TTLs for latency-sensitive game events. Tests explicitly verify that a queued question survives a 20-second spoken response and that short custom TTLs still expire correctly.
+
 ## 1. New research: streaming speaker diarization
 
 ### Nemotron 3 Diarization
