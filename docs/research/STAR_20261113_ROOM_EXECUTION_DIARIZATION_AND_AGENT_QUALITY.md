@@ -224,3 +224,85 @@ General knowledge should use the same evidence discipline as code and gameplay:
 - OpenGameEval: https://github.com/Roblox/open-game-eval
 - CEGame-Bench (2026-10-19): https://arxiv.org/abs/2610.26098
 - Voyager: https://github.com/MineDojo/Voyager
+
+
+## 10. Broader capability expansion map
+
+These are candidate systems, not claims that the current branch already implements them. Each should be an independently testable adapter or skill family that shares the session/runtime contracts above.
+
+### Live creator and community features
+
+| Feature | What STAR should do | Required guard/evaluation |
+|---|---|---|
+| Stream co-host | Track the current segment, topic, game objective, and unanswered questions | Session-state replay and stale-event tests |
+| Live Q&A | Group duplicate questions, prioritize direct questions, answer after the current sentence | Queue fairness, duplicate rate, answer latency |
+| Captions | Emit aligned captions from the audio actually played | Word/audio alignment and cancellation tests |
+| Multilingual chat | Detect language, translate for comprehension, answer in configured language | Human-reviewed translation holdouts |
+| Community events | Run polls, trivia, viewer challenges, and opt-in minigames | Explicit host approval for scene or platform writes |
+| Highlight assistant | Mark exciting moments and prepare clip candidates | Never publish automatically; require owner review |
+| Stream recap | Summarize segments, answered/unanswered questions, and game progress | Source-linked recap and no invented viewer quotes |
+| Soundboard | Trigger approved sounds in response to game/social events | Curated asset allowlist, cooldowns, volume cap |
+| Stream scene director | Recommend scene/overlay changes based on the current activity | Suggest first; actual OBS writes require a host policy |
+| Accessibility | Live captions, adjustable speech rate, volume normalization, and optional translation | Latency, intelligibility, and user preference tests |
+
+### General-purpose gamer features
+
+| Feature | What STAR should do | Required guard/evaluation |
+|---|---|---|
+| Game adapter registry | Identify a supported game and load its observation/action adapter | Explicit process/window allowlist |
+| Screen understanding | Track HUD, objectives, map, inventory, and visible events | Ground each claim in current frame/state |
+| Game-state memory | Keep a compact map of discovered locations, objectives, and resources | Session scope, expiry, correction path |
+| Practice coach | Generate small drills for aiming, movement, timing, and mechanics | Repeatable score and held-out seeds |
+| Strategy comparison | Replay candidate routes/builds and compare objective completion | Same seed/settings and logged baseline |
+| Team coordination | Communicate roles, cooldowns, and shared objectives | No unsolicited external messages |
+| Game safety | Detect menus, purchases, account prompts, and irreversible actions | Pause and require owner approval |
+| Cross-game transfer | Reuse abstract skills such as navigation, inventory planning, and timing | Evaluate on unseen games/maps; do not assume transfer |
+| Spectator learning | Observe expert play and extract candidate skills | Human review and replay before promotion |
+| Accessibility co-pilot | Explain controls, objectives, and options while playing | Don't obscure or override the player's input |
+
+### Creator and production features
+
+- **Project memory:** retain design decisions, assets, TODOs, and verified build steps per game.
+- **Visual QA:** compare screenshots and live scene captures against authored reference layouts, spacing, readability, and style constraints.
+- **Asset pipeline:** track source, license, resolution, texture format, rig, animation clips, and import settings.
+- **Blender integration:** create/edit scenes and assets through bounded scripts, then render preview frames for inspection.
+- **Audio pipeline:** generate or select sound effects/music, normalize levels, and validate loop points and licensing.
+- **Game QA:** test input, respawn, save/load, networking, UI scaling, objective paths, endings, and performance on a fixed test matrix.
+- **Release candidate:** produce a reproducible build manifest and test report; publication remains a separate owner-approved action.
+
+### Knowledge and research features
+
+- **Research dossiers:** every important claim carries a source, date, scope, and confidence.
+- **Contradiction workbench:** show conflicting claims side by side and explain which source is more authoritative or recent.
+- **Knowledge freshness:** expire or recheck prices, APIs, game patches, security guidance, and other time-sensitive facts.
+- **Learning curriculum:** choose the next topic based on a demonstrated gap, then test with unseen questions or practical tasks.
+- **Teach-back mode:** explain a topic, ask a short check question, and update the lesson only from verified performance.
+- **Personal project search:** retrieve prior decisions and files with citations, while keeping private project data local.
+- **General problem solving:** plan, use approved tools, inspect results, and verify the outcome rather than stopping after a plausible answer.
+
+### Autonomy and reliability features
+
+- **Goal/commitment ledger:** record task owner, success condition, deadline, dependencies, and next action.
+- **Service supervisor:** health checks, restart with backoff, dependency readiness, and clear degraded-mode reporting.
+- **Checkpoint/recovery:** checkpoint long tasks, persist only approved artifacts, and resume after a crash without duplicating external actions.
+- **Self-improvement lab:** generate candidate changes in isolated worktrees, run independent tests, compare paired holdouts, and retain rollback artifacts.
+- **Capability registry:** list each capability's adapter, required permissions, supported environments, tests, and current confidence.
+- **Resource governor:** reserve CPU/GPU/RAM and latency budget for audio and gameplay; background research pauses under load.
+- **Owner approval queue:** irreversible actions, public publishing, purchases, account changes, destructive edits, and external messages remain gated.
+
+### Character consistency without deception
+
+STAR can have a stable character voice, preferences, humor, recurring interests, expressive reactions, and a recognizable streaming style. These should be represented as an explicit character profile and session state, not as claims of biological feelings or human identity. Keep a clear AI disclosure in the channel/about information and avoid inventing private viewer relationships or memories. A consistent character is more trustworthy than pretending to be a human.
+
+## 11. Implementation order for the broader map
+
+1. Finish room dispatch and host event propagation.
+2. Add speaker-evidence/ASR adapter contracts and offline replay fixtures.
+3. Add a stream session-state model, captions, and a response scheduler.
+4. Add VTube Studio and OBS adapters with authenticated opt-in connections.
+5. Add game observation/action adapters one game at a time, beginning with a deterministic sandbox.
+6. Add skill versioning, held-out practice, and game-completion evaluation.
+7. Add creator QA and project memory for Roblox/Blender first.
+8. Add research dossiers, contradiction/freshness checks, and teach-back evaluation.
+9. Add service supervision, checkpoint/recovery, and paired self-improvement gates.
+10. Expand integrations only after per-adapter acceptance tests pass.
