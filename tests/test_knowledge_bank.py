@@ -6,7 +6,7 @@ import pytest
 
 from star import knowledge_bank as kb
 from star.desktop_core import Settings, stable_memory
-from star import warmup
+from star import warmup, turn_memory
 import star.desktop_core as core
 
 
@@ -116,5 +116,8 @@ def test_real_and_warmup_prefixes_include_the_same_bank(tmp_path, monkeypatch):
     assert checkpoint.startswith("[STAR VERSIONED REFERENCE DATA")
     from star.agent import make_system_message
     expected = make_system_message(checkpoint, tools_attached=False)
+    # This test specifies the fresh-process/plain-chat shape. Other tests may have
+    # populated the process-local sticky tool shape for the same project scope.
+    turn_memory.forget()
     warmed = warmup.prefix_request(settings, home, None)
     assert warmed["messages"][0] == expected
