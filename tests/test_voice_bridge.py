@@ -250,7 +250,10 @@ def test_room_host_auto_dispatches_queued_chat_and_keeps_it_out_of_saved_turns(t
         dispatches = [d for c, d in events if c == "room-call" and d["type"] == "room_dispatch"]
         assert any(d["status"] == "dispatched" and d["event_id"] == "room-second" for d in dispatches)
         assert saved == [(TEXT, "Microphone call is working.")]
-        assert bridge.handle("voiceStatus", {})["roomEnabled"] is True
-        assert bridge.handle("voiceStatus", {})["roomPending"] == 0
+        status = bridge.handle("voiceStatus", {})
+        assert status["roomEnabled"] is True
+        assert status["roomPending"] == 0
+        assert status["roomStats"]["accepted"] == 2
+        assert status["roomStats"]["dispatch_started"] == 1
     finally:
         bridge.close()
