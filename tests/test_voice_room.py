@@ -303,3 +303,20 @@ def test_session_reset_clears_resolution_link():
     )
     assert result.action is RoomAction.IGNORE
     assert result.reason == "no_active_response"
+
+
+
+def test_matching_human_resolution_can_cancel_before_first_audio():
+    director = RoomTurnDirector()
+    director.set_assistant_playback(False, "response-pending", "question-pending")
+    result = director.decide(
+        cue(
+            "resolution-pending",
+            intent=CueIntent.HUMAN_RESOLUTION,
+            addressed=False,
+            resolves_event_id="question-pending",
+        ),
+        now=10.0,
+    )
+    assert result.action is RoomAction.STOP
+    assert result.cancel_response_id == "response-pending"
