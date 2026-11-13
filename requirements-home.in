@@ -16,7 +16,7 @@ pygetwindow>=0.0.5
 pyrect                             # needed by pygetwindow
 mouseinfo
 pyperclip                          # needed by mouseinfo
-comtypes>=1.4
+comtypes>=1.5.0
 mss>=10
 dxcam>=0.3
 opencv-python-headless>=5          # dxcam converts frames to RGB with OpenCV (star/play/capture.py asks for RGB)
