@@ -13,7 +13,7 @@ import math
 import re
 from threading import Condition, Thread, current_thread
 import time
-from typing import Callable, Protocol
+from typing import Callable, Protocol, cast
 
 from .stream_motion import MotionFrame
 from .stream_stage import StagePlan
@@ -48,9 +48,12 @@ class _FrameRequest:
 
 
 def _finite(value: object, label: str, low: float, high: float) -> float:
-    if type(value) not in (int, float):
+    if type(value) is int:
+        number = float(cast(int, value))
+    elif type(value) is float:
+        number = cast(float, value)
+    else:
         raise ValueError(f"{label} must be a finite number")
-    number = float(value)
     if not math.isfinite(number) or not low <= number <= high:
         raise ValueError(f"{label} is outside its supported range")
     return number
