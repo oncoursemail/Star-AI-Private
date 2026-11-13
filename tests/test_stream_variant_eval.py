@@ -350,6 +350,13 @@ def test_invalid_speed_limit_configuration_is_rejected():
         StreamVariantLimits()
 
 
+def test_limit_configuration_rejects_impossible_coverage_and_zero_speed_goal():
+    with pytest.raises(ValueError, match="supported domain count"):
+        limits(min_holdout_domains=6)
+    with pytest.raises(ValueError, match="positive improvement"):
+        limits(min_first_audible_improvement_fraction=0.0)
+
+
 def test_invalid_boolean_or_nonfinite_measurements_are_rejected():
     case = cases(1)[0]
     with pytest.raises(ValueError, match="first_audible_ms"):
