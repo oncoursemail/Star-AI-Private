@@ -109,6 +109,7 @@ class WorkloadRequest:
         request_id = self.request_id.strip()
         if not request_id or len(request_id) > 128 or "\x00" in request_id:
             raise ValueError("request_id must be non-empty and at most 128 characters")
+        object.__setattr__(self, "request_id", request_id)
         if not isinstance(self.kind, WorkloadKind):
             raise TypeError("kind must be a WorkloadKind assigned by the host")
         _number(self.estimated_cpu_percent, "estimated_cpu_percent", minimum=0, maximum=100)
