@@ -93,7 +93,7 @@ def test_asr_revision_cancels_old_thinker_before_new_revision() -> None:
     coordinator = IncrementalThinkCoordinator()
     start_thinker(coordinator)
     revised = coordinator.observe(
-        hypothesis(2, "I want to build a new game in Roblox"),
+        hypothesis(2, "I want to make a new game in Roblox"),
         now_ms=1200,
     )
     assert revised.action is ThinkAction.CANCEL
@@ -102,7 +102,7 @@ def test_asr_revision_cancels_old_thinker_before_new_revision() -> None:
     assert coordinator.metrics()["thinking"] is False
 
     restarted = coordinator.observe(
-        hypothesis(3, "I want to build a new game in Roblox with friends"),
+        hypothesis(3, "I want to make a new game in Roblox with friends"),
         now_ms=1300,
     )
     assert restarted.action is ThinkAction.START
