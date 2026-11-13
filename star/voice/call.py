@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import queue
+from enum import Enum
 import threading
 import time
 import uuid
@@ -34,6 +35,7 @@ from .pcm import FRAME_MS, rms
 from .persona import system_message
 from .room import RoomAction, RoomCue, RoomDecision, RoomTurnDirector
 from .room_queue import RoomCueQueue, RoomQueueResult
+from .room_payloads import RoomPayload, RoomPayloadKind, RoomPayloadStore, RoomPayloadStoreResult
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
 
@@ -92,6 +94,22 @@ class _Sentence:
     end: float
 
 
+class RoomDispatchStatus(str, Enum):
+    DISPATCHED = "dispatched"
+    BUSY = "busy"
+    EMPTY = "empty"
+    STOPPED = "stopped"
+    MISSING_PAYLOAD = "missing_payload"
+    CUE_MISMATCH = "cue_mismatch"
+
+
+@dataclass(frozen=True)
+class RoomDispatchResult:
+    status: RoomDispatchStatus
+    event_id: str | None = None
+    reason: str = ""
+
+
 class _Reply:
     def __init__(self, turn: int) -> None:
         self.response_id = uuid.uuid4().hex
@@ -106,6 +124,9 @@ class _Reply:
         self.audio_seconds = 0.0
         self.heard_seconds: float | None = None
         self.error: Exception | None = None
+        # Ordinary microphone turns carry unheard speech into the next turn.
+        # One-shot room messages must not be merged into unrelated microphone speech.
+        self.carry_on_interrupt = True
 
 
 class CallSession:
@@ -116,19 +137,25 @@ class CallSession:
                  on_event: Callable[[dict], None] | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  room_director: RoomTurnDirector | None = None,
-                 room_queue: RoomCueQueue | None = None) -> None:
+                 room_queue: RoomCueQueue | None = None,
+                 room_payload_store: RoomPayloadStore | None = None) -> None:
         if room_director is not None and not isinstance(room_director, RoomTurnDirector):
             raise TypeError("room_director must be a RoomTurnDirector or None")
         if room_queue is not None and not isinstance(room_queue, RoomCueQueue):
             raise TypeError("room_queue must be a RoomCueQueue or None")
         if room_queue is not None and room_director is None:
             raise ValueError("room_queue requires a configured room_director")
+        if room_payload_store is not None and not isinstance(room_payload_store, RoomPayloadStore):
+            raise TypeError("room_payload_store must be a RoomPayloadStore or None")
+        if room_payload_store is not None and (room_director is None or room_queue is None):
+            raise ValueError("room_payload_store requires a configured room_director and room_queue")
         self.config = config or CallConfig()
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
         self.room_director = room_director
         self.room_queue = room_queue if room_queue is not None else (
             RoomCueQueue() if room_director is not None else None
         )
+        self.room_payload_store = room_payload_store
         self._room_lock = threading.RLock()
         self._room_response_id: str | None = None
         self._room_last_played_seconds = 0.0
@@ -174,6 +201,8 @@ class CallSession:
             reply.done.wait(3.0)
         if self.room_queue is not None:
             self.room_queue.reset()
+        if self.room_payload_store is not None:
+            self.room_payload_store.reset()
         if self.room_director is not None:
             self.room_director.reset_session()
         self.detector.reset()
@@ -709,7 +738,7 @@ class CallSession:
                 if spoken:
                     self.history.append({"role": "user", "content": reply.user_text})
                     self.history.append({"role": "assistant", "content": spoken})
-                elif interrupted and metrics.interrupt_reason != "call_ended":
+                elif interrupted and metrics.interrupt_reason != "call_ended" and reply.carry_on_interrupt:
                     self._carry = reply.user_text        # nothing was heard: the next words continue this turn
             if reply.user_text:
                 self.turns.append(metrics)
