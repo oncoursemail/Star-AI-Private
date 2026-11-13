@@ -161,6 +161,7 @@ class VoiceBridge:
             "roomEnabled": bool(call and call.room_host and not call.room_host.closed),
             "roomSources": sorted(source.value for source in call.room_sources) if call else [],
             "roomPending": len(call.session.room_queue) if call and call.session and call.session.room_queue else 0,
+            "roomStats": asdict(call.room_host.stats) if call and call.room_host else {},
         }
 
     # -- actions ------------------------------------------------------------------------------
