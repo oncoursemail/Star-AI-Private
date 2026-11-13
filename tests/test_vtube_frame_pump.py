@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 import time
 
-import pytest
 
 from star.stream_motion import MotionFrame
 from star.stream_stage import StagePlan
