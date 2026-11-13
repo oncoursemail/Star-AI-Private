@@ -36,6 +36,10 @@ _ERROR_CATEGORIES = frozenset({
 })
 _OUTCOMES = frozenset({"success", "failure", "partial", "cancelled", "deferred", "unknown"})
 _DEVICES = frozenset({"cpu", "gpu", "auto", "remote"})
+_DELIVERY_STATES = frozenset({
+    "ready", "claimed", "playing", "partial", "failed",
+    "recovery_required", "delivered", "cancelled", "expired",
+})
 _EVENTS = frozenset({
     "request_received", "task_started", "task_checkpointed", "task_resumed",
     "turn_started", "turn_interrupted", "turn_resumed", "model_started",
@@ -44,7 +48,7 @@ _EVENTS = frozenset({
     "game_observed", "game_action", "budget_admitted", "budget_deferred",
     "task_finished", "stream_started", "stream_stopped", "obs_sampled",
     "inference_sampled", "hardware_sampled", "stream_director_sampled",
-    "speech_proposed", "speech_completed", "game_learning_sampled",
+    "speech_proposed", "speech_completed", "delivery_state_sampled", "game_learning_sampled",
     "task_checkpoint_sampled", "error",
 })
 
@@ -72,6 +76,10 @@ _ATTRIBUTE_RULES: dict[str, str] = {
     "stream_expired": "integer", "stream_evicted": "integer",
     "stream_completed": "integer", "stream_abandoned": "integer", "stream_queued": "integer",
     "speech_kind": "speech_kind", "untrusted_context": "boolean",
+    "delivery_state": "delivery_state", "delivery_version": "integer",
+    "task_version": "integer", "completed_segments": "integer",
+    "segment_count": "integer", "generation": "integer",
+    "recovery_required": "boolean",
     "learning_sessions": "integer", "learning_episodes": "integer",
     "learning_state_actions": "integer", "checkpoint_steps": "integer",
     "cache_hit": "boolean", "interrupted": "boolean", "cancelled": "boolean",
@@ -108,7 +116,7 @@ def _attributes(value: dict[str, Any] | None) -> dict[str, str | int | float | b
             if (type(item) is not str or not _OPAQUE_ID.fullmatch(item)
                     or "://" in item):
                 raise ValueError(f"{key} must be a short opaque identifier, not a URL or free text")
-        elif rule in {"outcome", "error", "device", "speech_kind"}:
+        elif rule in {"outcome", "error", "device", "speech_kind", "delivery_state"}:
             allowed = {
                 "outcome": _OUTCOMES,
                 "error": _ERROR_CATEGORIES,
@@ -117,6 +125,7 @@ def _attributes(value: dict[str, Any] | None) -> dict[str, str | int | float | b
                     "owner_interrupt", "game_danger", "game_success",
                     "viewer_question", "game_observation", "viewer_comment", "ambient",
                 }),
+                "delivery_state": _DELIVERY_STATES,
             }[rule]
             if type(item) is not str or item not in allowed:
                 raise ValueError(f"{key} has an unsupported enum value")
