@@ -254,3 +254,16 @@ def test_arm_requires_authenticated_and_registered_host():
         assert pump.arm(plan(), playback_epoch="epoch-2")
     finally:
         assert pump.close()
+
+
+def test_flush_is_safe_when_epoch_has_no_frames_and_does_not_revoke_other_epoch():
+    host = FakeHost()
+    pump = make_pump(host)
+    try:
+        assert pump.flush_epoch("never-armed")
+        p = plan()
+        assert pump.arm(p, playback_epoch="epoch-1")
+        assert not pump.flush_epoch("wrong-epoch")
+        assert pump.metrics()["active"] is True
+    finally:
+        assert pump.close()
