@@ -46,11 +46,12 @@ class ContextSpeaker(FakeSpeaker):
 
 def make_bridge(tmp_path, replies=("Yes, love. I can hear you.",), fail_engines=False,
                 room_moderator=None, brain_first_delay=0.0, brain_delay=0.0, tts_seconds_per_word=0.02):
-    events, saved, built = [], [], {"engines": 0}
+    events, saved, built = [], [], {"engines": 0, "microphones": 0, "input_enabled": None}
 
     class Factories:
         @staticmethod
-        def engines(settings, progress):
+        def engines(settings, progress, input_enabled=True):
+            built["input_enabled"] = input_enabled
             if fail_engines:
                 raise RuntimeError("Voice model file missing: kokoro-v1.0.onnx")
             built["engines"] += 1
@@ -63,6 +64,7 @@ def make_bridge(tmp_path, replies=("Yes, love. I can hear you.",), fail_engines=
 
         @staticmethod
         def microphone(device):
+            built["microphones"] += 1
             return FakeMicrophone()
 
         @staticmethod
@@ -255,5 +257,45 @@ def test_room_host_auto_dispatches_queued_chat_and_keeps_it_out_of_saved_turns(t
         assert status["roomPending"] == 0
         assert status["roomStats"]["accepted"] == 2
         assert status["roomStats"]["dispatch_started"] == 1
+    finally:
+        bridge.close()
+
+
+
+def test_room_only_call_skips_microphone_and_local_asr_vad_loading(tmp_path):
+    bridge, events, saved, built = make_bridge(
+        tmp_path,
+        replies=("A room-only response with no local microphone.",),
+        room_moderator=lambda _cue, _text: True,
+    )
+    started = bridge.handle("voiceStartCall", {
+        "roomOnly": True,
+        "roomConsent": True,
+        "roomSources": ["chat"],
+        # No micConsent: room-only mode never opens the microphone.
+    }, "room-only-call")
+    assert started["roomOnly"] is True and started["roomEnabled"] is True
+    try:
+        assert wait_for(lambda: ("room-only-call", {"type": "state", "state": "listening"}) in events)
+        assert built["engines"] == 1
+        assert built["input_enabled"] is False
+        assert built["microphones"] == 0
+        decision = bridge.submit_room_message(
+            "room-only-call",
+            _room_cue("room-only-question"),
+            "Can you explain what you are building?",
+        )
+        assert decision.action is RoomAction.RESPOND
+        assert wait_for(lambda: any(
+            call_id == "room-only-call" and data["type"] == "room_message_received"
+            for call_id, data in events
+        ))
+        assert wait_for(lambda: any(
+            call_id == "room-only-call" and data["type"] == "turn_metrics"
+            for call_id, data in events
+        ))
+        status = bridge.handle("voiceStatus", {})
+        assert status["roomOnly"] is True and status["roomEnabled"] is True
+        assert saved == []
     finally:
         bridge.close()
