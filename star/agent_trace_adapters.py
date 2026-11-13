@@ -12,6 +12,7 @@ import time
 from typing import Any, Callable
 
 from .agent_trace import AgentTrace, TraceContext
+from .delivery_ledger import DeliveryRecord, DeliveryState
 from .llama_metrics import LlamaCppMetricsDelta
 from .stream_director import SpeechIntent
 from .stream_hardware_telemetry import HardwareSnapshot
@@ -172,6 +173,52 @@ class AgentTraceAdapters:
             {
                 "outcome": "success" if spoken else "cancelled",
                 "interrupted": interrupted,
+            },
+            span,
+        )
+
+    def record_delivery_state(
+        self,
+        record: DeliveryRecord,
+        *,
+        span: TraceContext | None = None,
+    ) -> int:
+        """Record a validated delivery snapshot without IDs, hashes, or speech content.
+
+        Call after the ledger mutation has committed, from the host/control loop.
+        This is diagnostic telemetry only; it does not advance delivery state,
+        authenticate playback, or prove that a remote viewer heard the stream.
+        """
+        if type(record) is not DeliveryRecord:
+            raise TypeError("record must be a DeliveryRecord")
+        if type(record.state) is not DeliveryState:
+            raise ValueError("record.state must be a DeliveryState")
+        if type(record.segment_sha256s) is not tuple or not 1 <= len(record.segment_sha256s) <= 256:
+            raise ValueError("record must contain 1..256 ordered segment digests")
+        bounded = (
+            ("task_version", record.task_version, 1),
+            ("delivery_version", record.version, 1),
+            ("generation", record.generation, 0),
+            ("completed_segments", record.completed_segments, 0),
+        )
+        for label, value, minimum in bounded:
+            if type(value) is not int or not minimum <= value <= 1_000_000_000:
+                raise ValueError(f"{label} is outside the supported range")
+        segment_count = len(record.segment_sha256s)
+        if record.completed_segments > segment_count:
+            raise ValueError("completed_segments cannot exceed segment_count")
+        if record.state is DeliveryState.DELIVERED and record.completed_segments != segment_count:
+            raise ValueError("delivered records must have every segment acknowledged")
+        return self._record(
+            "delivery_state_sampled",
+            {
+                "delivery_state": record.state.value,
+                "delivery_version": record.version,
+                "task_version": record.task_version,
+                "completed_segments": record.completed_segments,
+                "segment_count": segment_count,
+                "generation": record.generation,
+                "recovery_required": record.state is DeliveryState.RECOVERY_REQUIRED,
             },
             span,
         )
