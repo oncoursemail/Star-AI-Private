@@ -175,6 +175,7 @@ def test_queue_stores_only_metadata_fields():
     assert set(RoomCue.__dataclass_fields__) == {
         "event_id", "speaker_id", "source", "intent", "addressed_to_star",
         "confidence", "started_at", "ended_at", "overlap_ms", "urgency", "final",
+        "resolves_event_id",
     }
 
 
