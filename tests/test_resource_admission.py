@@ -251,3 +251,16 @@ def test_rejects_invalid_policy_limits():
 def test_rejects_invalid_evaluation_clock():
     with pytest.raises(ValueError, match="now_monotonic"):
         evaluate(now=float("nan"))
+
+
+
+def test_normalizes_request_id_before_it_can_be_used_as_an_idempotency_key():
+    req = request(request_id="  background-1  ")
+    assert req.request_id == "background-1"
+
+
+def test_snapshot_window_must_be_positive_and_finite():
+    with pytest.raises(ValueError, match="window_seconds"):
+        snapshot(window_seconds=0)
+    with pytest.raises(ValueError, match="window_seconds"):
+        snapshot(window_seconds=float("inf"))
