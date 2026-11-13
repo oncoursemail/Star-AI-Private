@@ -174,7 +174,7 @@ def test_invalid_cue_metadata_is_rejected(kwargs):
 def test_director_rejects_an_untyped_configuration():
     with pytest.raises(TypeError):
         RoomTurnDirector({})
-    
+
 
 def test_config_rejects_invalid_thresholds_and_unbounded_dedupe():
     with pytest.raises(ValueError):
