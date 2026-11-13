@@ -27,8 +27,8 @@ def cases(count=30, *, split="holdout"):
         "knowledge": ("groundedness",),
     }
     required_metrics = {
-        "voice": ("first_content_ms", "first_audible_ms", "audio_underrun_rate"),
-        "gaming": ("game_frame_p99_ms", "audio_underrun_rate", "peak_vram_mib"),
+        "voice": ("first_content_ms", "first_audible_ms", "audio_underrun_rate", "obs_output_skip_rate"),
+        "gaming": ("game_frame_p99_ms", "audio_underrun_rate", "obs_output_skip_rate", "peak_vram_mib"),
         "creator": ("first_content_ms", "peak_cpu_millicores", "peak_ram_mib"),
         "knowledge": ("first_content_ms", "tokens_per_second", "memory_tokens"),
     }
@@ -55,20 +55,20 @@ def trial(case, variant, i, **changes):
         "environment_sha256": ENV,
         "execution_status": "completed",
         "task_success": True,
-        "turn_taking_success": True,
-        "groundedness_success": True,
-        "held_out_skill_success": True,
-        "game_completion_success": True,
-        "first_content_ms": 400.0 if candidate else 450.0,
-        "first_audible_ms": 520.0 if candidate else 600.0,
-        "game_frame_p99_ms": 17.2 if candidate else 17.0,
-        "audio_underrun_rate": 0.001,
-        "obs_output_skip_rate": 0.001,
-        "peak_cpu_millicores": 3100 if candidate else 3000,
-        "peak_ram_mib": 6100 if candidate else 6000,
-        "peak_vram_mib": 7100 if candidate else 7000,
-        "tokens_per_second": 23.0 if candidate else 20.0,
-        "memory_tokens": 1250 if candidate else 1200,
+        "turn_taking_success": True if "turn_taking" in case.required_dimensions else None,
+        "groundedness_success": True if "groundedness" in case.required_dimensions else None,
+        "held_out_skill_success": True if "held_out_skill" in case.required_dimensions else None,
+        "game_completion_success": True if "game_completion" in case.required_dimensions else None,
+        "first_content_ms": (400.0 if candidate else 450.0) if "first_content_ms" in case.required_metrics else None,
+        "first_audible_ms": (520.0 if candidate else 600.0) if "first_audible_ms" in case.required_metrics else None,
+        "game_frame_p99_ms": (17.2 if candidate else 17.0) if "game_frame_p99_ms" in case.required_metrics else None,
+        "audio_underrun_rate": 0.001 if "audio_underrun_rate" in case.required_metrics else None,
+        "obs_output_skip_rate": 0.001 if "obs_output_skip_rate" in case.required_metrics else None,
+        "peak_cpu_millicores": (3100 if candidate else 3000) if "peak_cpu_millicores" in case.required_metrics else None,
+        "peak_ram_mib": (6100 if candidate else 6000) if "peak_ram_mib" in case.required_metrics else None,
+        "peak_vram_mib": (7100 if candidate else 7000) if "peak_vram_mib" in case.required_metrics else None,
+        "tokens_per_second": (23.0 if candidate else 20.0) if "tokens_per_second" in case.required_metrics else None,
+        "memory_tokens": (1250 if candidate else 1200) if "memory_tokens" in case.required_metrics else None,
         "evidence_sha256": f"{i + (1000 if candidate else 0):064x}",
         "observed_unix_s": NOW - 60,
     }
@@ -171,7 +171,7 @@ def test_cpu_and_ram_pressure_regressions_are_gated():
     roster = cases()
 
     def degrade(item, case, variant, i):
-        if variant == "candidate":
+        if variant == "candidate" and case.domain == "creator":
             return replace(item, peak_cpu_millicores=5000, peak_ram_mib=9000)
         return item
 
@@ -186,7 +186,7 @@ def test_candidate_must_meet_an_explicit_speed_goal():
     roster = cases()
 
     def too_small(item, case, variant, i):
-        if variant == "candidate":
+        if variant == "candidate" and case.domain == "voice":
             return replace(item, first_audible_ms=590.0)
         return item
 
@@ -291,8 +291,8 @@ def test_asymmetric_optional_metric_is_rejected():
     roster = cases()
 
     def asymmetry(item, case, variant, i):
-        if i == 0 and variant == "candidate":
-            return replace(item, peak_vram_mib=None)
+        if i == 0 and variant == "baseline":
+            return replace(item, peak_cpu_millicores=3000)
         return item
 
     with pytest.raises(ValueError, match="asymmetric metric availability"):
