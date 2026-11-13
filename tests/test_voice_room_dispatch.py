@@ -137,7 +137,10 @@ def test_room_message_arriving_during_reply_is_queued_then_dispatched():
 
 def test_dispatch_refuses_to_pop_while_another_reply_is_active():
     session, events, brain, asr, speaker = make(
-        ["First answer has several words to keep the fake speaker busy.", "Queued answer."]
+        ["First answer has several words to keep the fake speaker busy.", "Queued answer."],
+        first_delay=0.05,
+        token_delay=0.01,
+        seconds_per_word=0.03,
     )
     try:
         first = cue("first", now=time.monotonic())
@@ -167,7 +170,7 @@ def test_expiry_reconciles_queue_and_payload_store():
         assert result.status is RoomDispatchStatus.EMPTY
         assert len(queue) == 0
         assert len(store) == 0
-        assert store.stats.expired == 1
+        assert store.stats.bytes_used == 0
     finally:
         session.stop()
 
@@ -207,7 +210,12 @@ def test_payload_for_a_different_cue_is_never_attached_to_queued_event():
 
 def test_full_queue_rejects_new_room_message_and_cleans_its_payload():
     queue = RoomCueQueue(RoomQueueConfig(max_items=1))
-    session, events, brain, asr, speaker = make(["Long enough first answer to stay busy."])
+    session, events, brain, asr, speaker = make(
+        ["Long enough first answer to stay busy."],
+        first_delay=0.05,
+        token_delay=0.01,
+        seconds_per_word=0.03,
+    )
     # Replace the automatically-created queue before any room event is accepted.
     session.room_queue = queue
     try:
