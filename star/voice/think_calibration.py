@@ -207,6 +207,8 @@ class ThinkCalibrationSession:
         if self._closed:
             raise RuntimeError("calibration session is already closed")
         now = self._check_live(now_ms)
+        if self._last_active_ms is not None and now < self._last_active_ms:
+            raise ValueError("calibration clock moved before latest sample")
         if len(self._deltas) < self._min_samples:
             raise ValueError("insufficient paired calibration samples")
         if self._last_active_ms is None or now - self._last_active_ms > self._max_observation_age_ms:
@@ -236,6 +238,8 @@ class ThinkCalibrationSession:
     def summary(self, *, now_ms: int) -> dict[str, int | bool]:
         """Return content-free aggregate calibration progress."""
         now = self._check_live(now_ms)
+        if self._last_active_ms is not None and now < self._last_active_ms:
+            raise ValueError("calibration clock moved before latest sample")
         return {
             "samples": len(self._deltas),
             "minimum_samples": self._min_samples,
