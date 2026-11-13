@@ -389,6 +389,10 @@ class IncrementalThinkAdmissionBridge:
             ):
                 raise RuntimeError("startup receipt is not expected in this state")
             if started:
+                if now >= binding.lease.expires_monotonic_ms:
+                    binding.state = ThinkBindingState.RECOVERY_REQUIRED
+                    self._counts["start_uncertain"] += 1
+                    return False
                 if binding.state is ThinkBindingState.STARTING:
                     binding.state = ThinkBindingState.RUNNING
                 # If cancellation raced with startup, retain STOP_REQUESTED or
