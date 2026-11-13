@@ -28,6 +28,7 @@ class WorkloadLane(str, Enum):
     VOICE = "voice"
     AVATAR = "avatar"
     CHAT = "chat"
+    VOICE_PREP = "voice_prep"
     INTERACTIVE = "interactive"
     RESEARCH = "research"
     LEARNING = "learning"
@@ -40,10 +41,11 @@ _LANE_PRIORITY = {
     WorkloadLane.VOICE: 1,
     WorkloadLane.AVATAR: 1,
     WorkloadLane.CHAT: 2,
-    WorkloadLane.INTERACTIVE: 3,
-    WorkloadLane.RESEARCH: 4,
-    WorkloadLane.LEARNING: 4,
-    WorkloadLane.ASSET_GENERATION: 4,
+    WorkloadLane.VOICE_PREP: 3,
+    WorkloadLane.INTERACTIVE: 4,
+    WorkloadLane.RESEARCH: 5,
+    WorkloadLane.LEARNING: 5,
+    WorkloadLane.ASSET_GENERATION: 5,
 }
 _PROTECTED_LANES = frozenset({
     WorkloadLane.AUDIO,
