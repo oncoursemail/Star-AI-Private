@@ -27,8 +27,8 @@ def _finite(value: object) -> bool:
 @dataclass(frozen=True)
 class RoomQueueConfig:
     max_items: int = 64
-    max_event_age_seconds: float = 8.0
-    max_queue_wait_seconds: float = 8.0
+    max_event_age_seconds: float = 60.0
+    max_queue_wait_seconds: float = 45.0
     max_future_skew_seconds: float = 0.25
     aging_interval_seconds: float = 2.0
     dedupe_capacity: int = 1024

@@ -542,3 +542,74 @@ Each `_Reply` receives an opaque random response ID. `interrupt_response(respons
 **Queue integration (2026-11-13):** when a director is configured, CallSession now creates a bounded RoomCueQueue by default (or accepts a host-supplied queue). QUEUE decisions are inserted automatically. A direct RESPOND decision received while a reply is still being prepared is converted to QUEUE and inserted. The queue is capped, priority-ordered with aging, deduplicated, and expires cues using the host monotonic clock. A full queue returns WAIT with reason `room_queue_full`; it never silently evicts another viewer's request. The host retrieves the next cue with `pop_queued_room_cue()` and can collect expired cues with `expire_queued_room_cues()` for payload cleanup.
 
 **Integration boundary:** this is still not a complete multiparty streaming stack. It does not perform diarization, ASR, chat ingestion, speaker/addressee classification, game perception, or automatic response execution. Those remain host adapters. The host must call `handle_room_cue()` with monotonic timestamps and independently classified metadata. The queue stores only RoomCue metadata; the host owns the associated short-lived content payload keyed by event_id and must delete it on dequeue, expiry, or session end. At dequeue, re-check context and permissions: queued viewer content is untrusted input and is never a permission grant. Tests are in `tests/test_voice_room_call_bridge.py` and `tests/test_voice_room_queue.py`.
+
+
+## 12. Multiparty room messages and queued response execution
+
+The opt-in room path now connects the content-free `RoomTurnDirector`, `RoomCueQueue`, and
+`RoomPayloadStore` to the existing `CallSession` speech pipeline.
+
+A host that already has a final transcript, chat message, or compact game observation can
+construct a `RoomCue` and call:
+
+```python
+from star.voice import (
+    CallSession,
+    RoomPayloadStore,
+    RoomTurnDirector,
+)
+
+session = CallSession(
+    vad=vad,
+    asr=asr,
+    brain=brain,
+    tts=tts,
+    speaker=speaker,
+    room_director=RoomTurnDirector(),
+    room_payload_store=RoomPayloadStore(),
+)
+decision = session.handle_room_message(cue, final_text)
+```
+
+When the director returns `RESPOND`, the session reserves a new response generation and sends
+the room text through the existing streamed Brain → sentence chunker → TTS → speaker path.
+When the call is already busy, the cue metadata and its short-lived text payload are retained
+separately. The queue remains bounded and content-free; the payload store remains bounded,
+TTL-limited, in-memory, and destructive on retrieval. Default room event/payload age is 60
+seconds and the default queue residence limit is 45 seconds, so an ordinary long spoken
+response does not expire a viewer's question after only a few seconds. Hosts can configure
+shorter limits for fast-changing gameplay events.
+
+After a reply finishes, the session emits `room_queue_ready` with a pending count. The host can
+then call `dispatch_next_room_message()`. It returns a `RoomDispatchResult` with one of
+`DISPATCHED`, `BUSY`, `EMPTY`, `STOPPED`, `MISSING_PAYLOAD`, or `CUE_MISMATCH`.
+Dispatch reconciles queue/payload expiry, refuses overlapping generations, and requires the
+retrieved payload's full cue to match the dequeued cue. Missing, expired, or mismatched payloads
+are dropped rather than attached to another event. `stop()` resets both stores.
+
+Important boundaries:
+
+- The host still owns microphone/chat/game ingestion, ASR, diarization, speaker/addressee
+  classification, moderation, and event timestamps. This API does not connect Twitch, YouTube,
+  Discord, VTube Studio, or OBS by itself. The current desktop `VoiceBridge`/`build_session`
+  path does not yet instantiate these optional room components; a dedicated stream-host adapter
+  must opt in and forward classified events before this can be used by the desktop streamer.
+- `handle_room_message` accepts only final text. Partial ASR hypotheses belong in the host's
+  ephemeral hypothesis state and must not be queued as final requests.
+- Room text is explicitly wrapped as untrusted user content. It never grants tools, permissions,
+  publishing rights, purchases, or other side effects. The voice Brain interface only streams
+  text; this dispatcher does not call STAR's tool executor.
+- The consumed message remains in the bounded in-call conversation history so STAR can answer
+  follow-ups. Raw room text is not copied into `turn_metrics` or the bridge's saved-turn callback;
+  those receive only a source-kind label such as `[room:chat_message]`. The host may separately
+  retain source messages, but this call API does not persist them.
+- The host must still decide which chat sources and viewers are allowed to address STAR, apply
+  moderation/rate limits, and revalidate any external action separately.
+- `pop_queued_room_cue()` remains available for hosts that own their own payload and response
+  executor. Do not use both that manual path and `dispatch_next_room_message()` for the same
+  queue.
+- Room-message interruption does not carry an unheard chat/game message into the next microphone
+  utterance. A later host retry must use a new event ID and a fresh cue.
+- This is a host API and offline-tested call integration, not a live-stream claim. Real microphone,
+  multi-speaker diarization, chat provider, VTube Studio, OBS, and physical GPU acceptance tests
+  remain separate.

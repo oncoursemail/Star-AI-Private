@@ -93,7 +93,7 @@ def test_low_confidence_cue_waits_and_is_deduplicated():
 
 
 def test_stale_and_future_cues_fail_closed():
-    d = RoomTurnDirector()
+    d = RoomTurnDirector(RoomPolicyConfig(max_event_age_seconds=8.0))
     assert d.decide(cue(ended=1.0, started=0.5), now=10.0).reason == "stale_event"
     assert d.decide(cue("future", ended=20.0, started=19.0), now=10.0).reason == "future_timestamp"
 
@@ -174,10 +174,16 @@ def test_invalid_cue_metadata_is_rejected(kwargs):
 def test_director_rejects_an_untyped_configuration():
     with pytest.raises(TypeError):
         RoomTurnDirector({})
-    
+
 
 def test_config_rejects_invalid_thresholds_and_unbounded_dedupe():
     with pytest.raises(ValueError):
         RoomPolicyConfig(min_confidence=1.5)
     with pytest.raises(ValueError):
         RoomPolicyConfig(dedupe_capacity=100_000)
+
+
+def test_default_director_accepts_a_queued_question_after_a_long_reply():
+    director = RoomTurnDirector()
+    result = director.decide(cue(ended=10.0, started=9.8), now=30.0)
+    assert result.action is RoomAction.RESPOND

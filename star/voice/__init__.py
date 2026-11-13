@@ -5,7 +5,7 @@ Engines and audio devices (optional dependencies from requirements-voice.txt): e
 File-driven test mode and the command line: filecall, `python -m star.voice`.
 See docs/STAR_VOICE_CALLS.md.
 """
-from .call import CallConfig, CallSession
+from .call import CallConfig, CallSession, RoomDispatchResult, RoomDispatchStatus
 from .chunker import SentenceChunker, speakable
 from .metrics import TurnMetrics, latency_table
 from .room_payloads import (
@@ -22,6 +22,8 @@ from .turn import EchoGate, TurnConfig, TurnDetector, TurnEvent
 __all__ = [
     "CallConfig",
     "CallSession",
+    "RoomDispatchResult",
+    "RoomDispatchStatus",
     "EchoGate",
     "SentenceChunker",
     "TurnConfig",

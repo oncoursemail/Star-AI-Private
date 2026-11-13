@@ -79,7 +79,7 @@ class RoomPolicyConfig:
     min_confidence: float = 0.72
     interrupt_confidence: float = 0.90
     interrupt_overlap_ms: int = 288
-    max_event_age_seconds: float = 8.0
+    max_event_age_seconds: float = 60.0
     max_future_skew_seconds: float = 0.25
     min_game_urgency: float = 0.82
     dedupe_capacity: int = 512
