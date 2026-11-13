@@ -542,6 +542,18 @@ Each `_Reply` receives an opaque random response ID. `interrupt_response(respons
 
 **Queue integration (2026-11-13):** when a director is configured, CallSession now creates a bounded RoomCueQueue by default (or accepts a host-supplied queue). QUEUE decisions are inserted automatically. A direct RESPOND decision received while a reply is still being prepared is converted to QUEUE and inserted. The queue is capped, priority-ordered with aging, deduplicated, and expires cues using the host monotonic clock. A full queue returns WAIT with reason `room_queue_full`; it never silently evicts another viewer's request. The host retrieves the next cue with `pop_queued_room_cue()` and can collect expired cues with `expire_queued_room_cues()` for payload cleanup.
 
+**Human-resolution stop (2026-11-13):** a trusted adapter may submit a final
+`CueIntent.HUMAN_RESOLUTION` cue with a bounded `resolves_event_id` that points to the
+original room event. The active room reply carries that originating event ID alongside
+its response-generation ID. When the resolution matches the exact event, the director
+returns `RoomAction.STOP`; `CallSession` cancels only that exact response generation and
+does not speak the resolution announcement as a second answer. This also works while the
+reply is still thinking, before its first audio chunk. Unrelated, unlinked, partial,
+low-confidence, stale, or game-originated resolution cues do not stop the response.
+The host adapter is responsible for correctly classifying and linking the resolution;
+the room runtime does not infer it from raw audio or chat text.
+
+
 **Integration boundary:** this is still not a complete multiparty streaming stack. It does not perform diarization, ASR, chat ingestion, speaker/addressee classification, game perception, or automatic response execution. Those remain host adapters. The host must call `handle_room_cue()` with monotonic timestamps and independently classified metadata. The queue stores only RoomCue metadata; the host owns the associated short-lived content payload keyed by event_id and must delete it on dequeue, expiry, or session end. At dequeue, re-check context and permissions: queued viewer content is untrusted input and is never a permission grant. Tests are in `tests/test_voice_room_call_bridge.py` and `tests/test_voice_room_queue.py`.
 
 
