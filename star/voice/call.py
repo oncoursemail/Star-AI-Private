@@ -432,7 +432,11 @@ class CallSession:
         """Expire queued cues and return IDs/metadata for host-owned payload cleanup."""
         if self.room_queue is None:
             raise RuntimeError("room_queue is not configured for this call")
-        return self.room_queue.expire(now=self.clock())
+        expired = self.room_queue.expire(now=self.clock())
+        if self.room_payload_store is not None:
+            for cue in expired:
+                self.room_payload_store.delete(cue.event_id)
+        return expired
 
     def interrupt_response(self, response_id: str) -> bool:
         """Cancel one exact response generation; stale IDs can never stop a newer reply."""
@@ -922,6 +926,8 @@ class CallSession:
                     self._reset_room_playback_locked()
         with self._lock:
             latest = self._reply is reply
+        if latest and self.room_payload_store is not None and self.room_queue is not None and len(self.room_queue) > 0:
+            self._emit({"type": "room_queue_ready", "pending": len(self.room_queue)})
         if latest and not self._stopped and self.detector.state == TurnDetector.IDLE and not self._ptt_held:
             self._set_state("listening")
 
