@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import ctypes
 import os
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -37,10 +38,8 @@ def _integer(value: object, label: str, *, minimum: int = 0, maximum: int = _MAX
 
 
 def _opaque(value: object, label: str) -> str:
-    if type(value) is not str or not value or len(value) > 80:
-        raise ValueError(f"{label} must be a nonempty opaque identifier of at most 80 characters")
-    if any(ord(char) < 33 or ord(char) > 126 for char in value):
-        raise ValueError(f"{label} must contain printable non-space ASCII only")
+    if type(value) is not str or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}", value) is None:
+        raise ValueError(f"{label} must be a bounded opaque identifier")
     return value
 
 
@@ -141,7 +140,7 @@ class ThinkProcessWindowAccumulator:
         configuration_fingerprint: str,
         started_monotonic_ms: int,
         max_duration_ms: int = 60_000,
-        max_sample_gap_ms: int = 1_000,
+        max_sample_gap_ms: int = 500,
         max_samples: int = 1024,
     ) -> None:
         self._sample_id = _opaque(sample_id, "sample_id")
