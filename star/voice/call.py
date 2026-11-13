@@ -422,7 +422,8 @@ class CallSession:
             metrics.speech_end = payload.cue.ended_at
             metrics.turn_end = self.clock()
             metrics.transcript_at = self.clock()
-            metrics.user_text = reply.user_text
+            metrics.user_text = f"[room:{payload.kind.value}]"  # keep viewer text out of telemetry events
+            metrics.end_reason = "room_message"
             self._emit({"type": "room_message_received", "turn": metrics.turn,
                         "event_id": payload.cue.event_id, "source": payload.kind.value})
             self.speaker.reset()
