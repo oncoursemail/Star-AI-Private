@@ -88,7 +88,7 @@ def _revision(value: object) -> int:
 class IncrementalThinkAdmissionBridge:
     """Admit bounded, read-only speculative reasoning without stealing reserves.
 
-    Thinker work uses WorkloadLane.CHAT: it is lower priority than audio, game
+    Thinker work uses WorkloadLane.VOICE_PREP: it is lower priority than audio, game
     control, voice, and avatar work; it cannot consume the hard realtime reserve;
     and it is eligible during a healthy stream/game only from unreserved
     capacity. Stale or degraded host telemetry blocks this non-protected lane.
@@ -333,8 +333,6 @@ class IncrementalThinkAdmissionBridge:
                 return None
             if binding.state is not ThinkBindingState.QUEUED:
                 raise RuntimeError("duplicate or out-of-order scheduler lease")
-            if lease.granted_monotonic_ms > now:
-                raise ValueError("scheduler lease cannot be future-dated")
             if now >= lease.expires_monotonic_ms:
                 self._runtime.release(lease.lease_id, now, host_confirmed_stopped=True)
                 self._remove(binding)
@@ -416,13 +414,13 @@ class IncrementalThinkAdmissionBridge:
         reason: str = "owner_or_asr_cancel",
     ) -> ThinkStopRequest | None:
         """Return a host stop request for one exact worker generation."""
-        now = _now(now_ms)
+        _now(now_ms)
         if type(reason) is not str or not 1 <= len(reason) <= 64:
             raise ValueError("reason must be a short nonempty label")
         with self._lock:
             key = self._key(utterance_id, revision)
             result = self._cancel_exact(
-                utterance_id, revision, now_ms=now, reason=reason
+                utterance_id, revision, reason=reason
             )
             if result.status != "stop_required":
                 return None
