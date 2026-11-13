@@ -189,7 +189,7 @@ async def benchmark_local_model_streaming(
             try:
                 async with asyncio.timeout(total_timeout_seconds):
                     async with asyncio.timeout(first_content_timeout_seconds):
-                        stream = await active_client.chat.completions.create(
+                        active_stream = await active_client.chat.completions.create(
                             model=model,
                             messages=[
                                 {
@@ -206,7 +206,8 @@ async def benchmark_local_model_streaming(
                             stream=True,
                             stream_options={"include_usage": True},
                         )
-                        iterator = stream.__aiter__()
+                        stream = active_stream
+                        iterator = active_stream.__aiter__()
                         while first_content_ms is None:
                             consume(await anext(iterator))
                     async for chunk in iterator:
