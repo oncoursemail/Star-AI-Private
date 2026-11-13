@@ -97,6 +97,10 @@ Sources:
 - https://www.fullduplex.ai/benchmarks/mp-bench
 - https://www.full-duplex.ai/benchmarks/fdb-v3
 
+**τ-Voice** (ICML 2026) complements these benchmarks by testing grounded, multi-turn tasks under realistic audio. Its 278-task evaluation reports a substantial gap between text and voice-agent task completion, especially with noise and diverse accents. STAR should therefore score both conversation quality and whether the requested task was actually completed; a fluent response is not proof of correct execution.
+
+Source: https://proceedings.mlr.press/v306/ray26a.html
+
 ### 4. Local inference optimization
 
 The current llama.cpp server documents CPU/GPU inference, parallel decoding, continuous batching, monitoring endpoints, schema-constrained outputs, speculative decoding, and prompt/KV-prefix reuse. Its SPEED-Bench client compares per-category latency/throughput and speculative-draft acceptance.
@@ -116,6 +120,24 @@ Sources:
 - https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
 - https://github.com/ggml-org/llama.cpp/tree/master/tools/server/bench/speed-bench
 - https://github.com/vllm-project/vllm
+
+#### Pipeline-aware voice routing: PAVO
+
+**PAVO: Pipeline-Aware Voice Orchestration** (TMLR 2026) treats ASR → LLM → TTS as one coupled pipeline rather than optimizing each stage independently. Its research highlights error propagation: a low-quality transcript can push downstream factual accuracy over a cliff, so the cheapest ASR choice is not always the fastest successful end-to-end choice.
+
+Important provenance caveat: the public PAVO repository distinguishes direct H100/M3 measurements from a 50K-turn routing simulation. Some headline aggregate results are manuscript-level and do not have a standalone raw trace in the repository. The released wrapper also documents that its 48 action indices do not map to deployable stage tuples and that route() fails rather than inventing a mapping. STAR should borrow the evaluation method and quality-coupling idea, not blindly install the controller or repeat its headline numbers as STAR results.
+
+For STAR, first define a small set of real, measured profiles for ASR, reasoning, and TTS (local CPU, local GPU, and explicitly enabled remote provider). Route only among profiles whose quality and latency have been measured on the target hardware. If ASR confidence is low, ask for repetition or escalate to a stronger recognizer rather than allowing a weak transcript to drive a high-impact action.
+
+Sources:
+- https://github.com/vnmoorthy/pavo-bench
+- https://openreview.net/pdf/6896e13d57a1fb9a543c388831c7f7c6fd18f97c.pdf
+
+#### Distributed inference research: OServe
+
+OServe (ICML 2026) studies workload-aware placement and switching across heterogeneous multi-device serving systems, reporting up to 2× and 1.5× average improvements in its evaluated deployment. This is a possible direction for STAR's separate Linux worker/server, not a claim that the system will accelerate a single 8 GB Windows GPU. Use it only after the local/remote split has clear network-latency, queueing, privacy, and failure-recovery measurements.
+
+Source: https://proceedings.mlr.press/v306/jiang26k.html
 
 ### 5. Memory must improve actions, not just recall
 
