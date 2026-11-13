@@ -147,8 +147,8 @@ class CallSession:
             raise ValueError("room_queue requires a configured room_director")
         if room_payload_store is not None and not isinstance(room_payload_store, RoomPayloadStore):
             raise TypeError("room_payload_store must be a RoomPayloadStore or None")
-        if room_payload_store is not None and (room_director is None or room_queue is None):
-            raise ValueError("room_payload_store requires a configured room_director and room_queue")
+        if room_payload_store is not None and room_director is None:
+            raise ValueError("room_payload_store requires a configured room_director")
         self.config = config or CallConfig()
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
         self.room_director = room_director
