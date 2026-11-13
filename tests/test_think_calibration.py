@@ -207,6 +207,15 @@ def test_session_rejects_stale_latest_sample_at_finalize() -> None:
         session.finalize(now_ms=last_active + 30_001)
 
 
+def test_session_rejects_clock_regression_at_finalize_and_summary() -> None:
+    session = make_session(min_samples=8)
+    last_active = add_samples(session, 8)
+    with pytest.raises(ValueError, match="clock moved before latest sample"):
+        session.finalize(now_ms=last_active - 1)
+    with pytest.raises(ValueError, match="clock moved before latest sample"):
+        session.summary(now_ms=last_active - 1)
+
+
 def test_session_rejects_samples_after_maximum_duration() -> None:
     session = ThinkCalibrationSession(
         session_id="short-session",
