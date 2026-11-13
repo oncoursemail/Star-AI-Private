@@ -234,6 +234,12 @@ def test_room_host_auto_dispatches_queued_chat_and_keeps_it_out_of_saved_turns(t
     assert started["roomEnabled"] is True and started["roomSources"] == ["chat"]
     try:
         assert wait_for(lambda: len([d for c, d in events if c == "room-call" and d["type"] == "turn_metrics"]) >= 1)
+        assert wait_for(
+            lambda: bridge._call is not None
+            and bridge._call.session is not None
+            and bridge._call.session.state == "listening"
+            and not bridge._call.session.busy()
+        )
         first = bridge.submit_room_message("room-call", _room_cue("room-first"), "Say hello to the stream.")
         assert first.action is RoomAction.RESPOND
         second = bridge.submit_room_message("room-call", _room_cue("room-second"), "What are we building today?")
