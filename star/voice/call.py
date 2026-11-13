@@ -262,10 +262,11 @@ class CallSession:
         content for the voice Brain only. The optional store keeps content separate from
         the metadata-only queue and consumes immediate responses destructively.
         """
-        if self.room_payload_store is None:
+        store = self.room_payload_store
+        if store is None:
             raise RuntimeError("room_payload_store is not configured for this call")
         now = self.clock()
-        stored = self.room_payload_store.put(cue, text, now=now)
+        stored = store.put(cue, text, now=now)
         if stored is not RoomPayloadStoreResult.STORED:
             action = RoomAction.IGNORE if stored in {
                 RoomPayloadStoreResult.DUPLICATE, RoomPayloadStoreResult.STALE
@@ -278,7 +279,7 @@ class CallSession:
         try:
             decision = self.handle_room_cue(cue)
         except Exception:
-            self.room_payload_store.delete(cue.event_id)
+            store.delete(cue.event_id)
             raise
 
         if decision.action in (RoomAction.RESPOND, RoomAction.INTERRUPT):
@@ -291,7 +292,7 @@ class CallSession:
                 if self._stopped:
                     unavailable_reason = "call_ended"
                 elif not active:
-                    payload = self.room_payload_store.take(cue.event_id, now=self.clock())
+                    payload = store.take(cue.event_id, now=self.clock())
                     if payload is None:
                         unavailable_reason = "payload_expired_before_response"
                     elif payload.cue != cue:
@@ -304,7 +305,7 @@ class CallSession:
                             "action": decision.action.value, "reason": decision.reason})
                 return decision
             if not active:
-                self.room_payload_store.delete(cue.event_id)
+                store.delete(cue.event_id)
                 unavailable = RoomDecision(RoomAction.WAIT, cue.event_id,
                                             unavailable_reason or "room_response_reservation_failed")
                 self._emit({"type": "room_message_decision", "event_id": cue.event_id,
@@ -316,13 +317,13 @@ class CallSession:
             queued = self._enqueue_room_payload(cue, decision.priority, now=self.clock(),
                                                 reason="room_response_deferred")
             if queued.action is not RoomAction.QUEUE:
-                self.room_payload_store.delete(cue.event_id)
+                store.delete(cue.event_id)
             self._emit({"type": "room_message_decision", "event_id": cue.event_id,
                         "action": queued.action.value, "reason": queued.reason})
             return queued
 
         if decision.action is not RoomAction.QUEUE:
-            self.room_payload_store.delete(cue.event_id)
+            store.delete(cue.event_id)
         self._emit({"type": "room_message_decision", "event_id": cue.event_id,
                     "action": decision.action.value, "reason": decision.reason})
         return decision
@@ -350,13 +351,15 @@ class CallSession:
         one-shot and must match the exact queued cue; missing or mismatched content is
         dropped rather than being attached to another viewer/game event.
         """
-        if self.room_queue is None or self.room_payload_store is None:
+        room_queue = self.room_queue
+        payload_store = self.room_payload_store
+        if room_queue is None or payload_store is None:
             raise RuntimeError("room_queue and room_payload_store must be configured for this call")
         now = self.clock()
-        for expired in self.room_queue.expire(now=now):
-            self.room_payload_store.delete(expired.event_id)
-        for event_id in self.room_payload_store.expire(now=now):
-            self.room_queue.discard(event_id)
+        for expired in room_queue.expire(now=now):
+            payload_store.delete(expired.event_id)
+        for event_id in payload_store.expire(now=now):
+            room_queue.discard(event_id)
 
         payload: RoomPayload | None = None
         reply: _Reply | None = None
@@ -367,11 +370,11 @@ class CallSession:
             active = self._reply is not None and not self._reply.done.is_set()
             if active:
                 return RoomDispatchResult(RoomDispatchStatus.BUSY, reason="reply_in_progress")
-            cue = self.room_queue.pop_next(now=now)
+            cue = room_queue.pop_next(now=now)
             if cue is None:
                 return RoomDispatchResult(RoomDispatchStatus.EMPTY, reason="no_pending_cue")
             event_id = cue.event_id
-            payload = self.room_payload_store.take(event_id, now=now)
+            payload = payload_store.take(event_id, now=now)
             if payload is None:
                 return RoomDispatchResult(RoomDispatchStatus.MISSING_PAYLOAD, event_id,
                                           "payload_expired_or_missing")
