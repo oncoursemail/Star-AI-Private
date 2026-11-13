@@ -46,11 +46,11 @@ def make_window(*, sample_id: str, start_ms: int, end_ms: int,
     )
     accumulator.observe(
         ProcessCounters(identity, cpu_start, ram_mib * MIB, None if gpu_mib is None else gpu_mib * MIB),
-        at_ms=start_ms,
+        at_ms=start_ms, clock_epoch=epoch, configuration_fingerprint=fingerprint,
     )
     accumulator.observe(
         ProcessCounters(identity, cpu_end, ram_mib * MIB, None if gpu_mib is None else gpu_mib * MIB),
-        at_ms=end_ms,
+        at_ms=end_ms, clock_epoch=epoch, configuration_fingerprint=fingerprint,
     )
     return accumulator.finalize(now_ms=end_ms)
 
@@ -83,9 +83,9 @@ def test_window_computes_average_cpu_and_observed_memory_peaks():
         configuration_fingerprint=FINGERPRINT,
         started_monotonic_ms=1000,
     )
-    accumulator.observe(sample(cpu=1_000_000, ram_mib=90, gpu_mib=180), at_ms=1000)
-    accumulator.observe(sample(cpu=1_100_000, ram_mib=100, gpu_mib=200), at_ms=1050)
-    accumulator.observe(sample(cpu=1_200_000, ram_mib=95, gpu_mib=190), at_ms=1100)
+    accumulator.observe(sample(cpu=1_000_000, ram_mib=90, gpu_mib=180), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    accumulator.observe(sample(cpu=1_100_000, ram_mib=100, gpu_mib=200), at_ms=1050, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    accumulator.observe(sample(cpu=1_200_000, ram_mib=95, gpu_mib=190), at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     result = accumulator.finalize(now_ms=1100)
     assert result.cpu_millicores == 200
     assert result.peak_working_set_bytes == 100 * MIB
@@ -119,9 +119,9 @@ def test_one_missing_gpu_sample_invalidates_the_whole_window():
         sample_id="partial-gpu", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    accumulator.observe(sample(cpu=0, ram_mib=50, gpu_mib=10), at_ms=1000)
-    accumulator.observe(sample(cpu=100_000, ram_mib=55, gpu_mib=None), at_ms=1100)
-    accumulator.observe(sample(cpu=200_000, ram_mib=60, gpu_mib=12), at_ms=1200)
+    accumulator.observe(sample(cpu=0, ram_mib=50, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    accumulator.observe(sample(cpu=100_000, ram_mib=55, gpu_mib=None), at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    accumulator.observe(sample(cpu=200_000, ram_mib=60, gpu_mib=12), at_ms=1200, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     result = accumulator.finalize(now_ms=1200)
     assert result.peak_gpu_memory_bytes is None
 
@@ -140,10 +140,10 @@ def test_pid_reuse_or_worker_restart_is_rejected():
         sample_id="pid-reuse", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000)
+    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     replacement = ProcessCounters(ProcessIdentity(4321, 987655), 100_000, 11 * MIB, 11 * MIB)
     with pytest.raises(ValueError, match="identity changed"):
-        accumulator.observe(replacement, at_ms=1100)
+        accumulator.observe(replacement, at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
 
 
 def test_cpu_counter_rollback_is_rejected():
@@ -152,9 +152,9 @@ def test_cpu_counter_rollback_is_rejected():
         sample_id="cpu-rollback", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    accumulator.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1000)
+    accumulator.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(ValueError, match="moved backwards"):
-        accumulator.observe(sample(cpu=99, ram_mib=10, gpu_mib=10), at_ms=1100)
+        accumulator.observe(sample(cpu=99, ram_mib=10, gpu_mib=10), at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
 
 
 def test_duplicate_timestamp_and_large_sampling_gap_are_rejected():
@@ -163,11 +163,11 @@ def test_duplicate_timestamp_and_large_sampling_gap_are_rejected():
         sample_id="bad-clock", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000)
+    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(ValueError, match="timestamps must increase"):
-        accumulator.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=1000)
+        accumulator.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(IncompleteProcessTelemetry, match="sampling gap"):
-        accumulator.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=2200)
+        accumulator.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=2200, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
 
 
 def test_finalization_requires_fresh_observations_and_minimum_duration():
@@ -176,8 +176,8 @@ def test_finalization_requires_fresh_observations_and_minimum_duration():
         sample_id="short", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    short.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000)
-    short.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=1050)
+    short.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    short.observe(sample(cpu=1, ram_mib=10, gpu_mib=10), at_ms=1050, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(ValueError, match="at least 100 ms"):
         short.finalize(now_ms=1050)
 
@@ -185,8 +185,8 @@ def test_finalization_requires_fresh_observations_and_minimum_duration():
         sample_id="stale", identity=identity, clock_epoch=EPOCH,
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
     )
-    stale.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000)
-    stale.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1100)
+    stale.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    stale.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(IncompleteProcessTelemetry, match="stale"):
         stale.finalize(now_ms=2200)
 
@@ -198,10 +198,10 @@ def test_window_capacity_and_abort_are_one_shot():
         configuration_fingerprint=FINGERPRINT, started_monotonic_ms=1000,
         max_samples=2,
     )
-    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000)
-    accumulator.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1100)
+    accumulator.observe(sample(cpu=0, ram_mib=10, gpu_mib=10), at_ms=1000, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
+    accumulator.observe(sample(cpu=100, ram_mib=10, gpu_mib=10), at_ms=1100, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
     with pytest.raises(OverflowError):
-        accumulator.observe(sample(cpu=200, ram_mib=10, gpu_mib=10), at_ms=1200)
+        accumulator.observe(sample(cpu=200, ram_mib=10, gpu_mib=10), at_ms=1200, clock_epoch=EPOCH, configuration_fingerprint=FINGERPRINT)
 
     assert accumulator.abort() is True
     assert accumulator.abort() is False
@@ -403,3 +403,36 @@ def test_process_windows_feed_existing_calibration_session():
     assert profile.sample_count == 8
     assert (profile.resources.cpu_millicores, profile.resources.ram_mb,
             profile.resources.vram_mb) == (250, 63, 63)
+
+
+
+def test_observation_revalidates_clock_epoch_and_configuration_each_sample():
+    identity = ProcessIdentity(4321, 987654)
+    accumulator = ThinkProcessWindowAccumulator(
+        sample_id="epoch-check",
+        identity=identity,
+        clock_epoch=EPOCH,
+        configuration_fingerprint=FINGERPRINT,
+        started_monotonic_ms=1000,
+    )
+    counters = sample(cpu=0, ram_mib=10, gpu_mib=10)
+    with pytest.raises(ValueError, match="clock epoch changed"):
+        accumulator.observe(
+            counters, at_ms=1000, clock_epoch="boot-next",
+            configuration_fingerprint=FINGERPRINT,
+        )
+    with pytest.raises(ValueError, match="configuration changed"):
+        accumulator.observe(
+            counters, at_ms=1000, clock_epoch=EPOCH,
+            configuration_fingerprint="b" * 64,
+        )
+    accumulator.observe(
+        counters, at_ms=1000, clock_epoch=EPOCH,
+        configuration_fingerprint=FINGERPRINT,
+    )
+    accumulator.observe(
+        sample(cpu=100_000, ram_mib=11, gpu_mib=11),
+        at_ms=1100, clock_epoch=EPOCH,
+        configuration_fingerprint=FINGERPRINT,
+    )
+    assert accumulator.finalize(now_ms=1100).sample_count == 2
