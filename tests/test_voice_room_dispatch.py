@@ -277,3 +277,20 @@ def test_room_dispatch_api_is_opt_in():
     finally:
         session.stop()
         plain.stop()
+
+
+def test_dispatch_does_not_speak_over_an_active_user_turn():
+    session, _events, brain = make(["must not be spoken"])
+    try:
+        item = cue("during-user-turn", now=time.monotonic())
+        assert session.room_payload_store.put(item, "Wait until I finish.", now=time.monotonic()).value == "stored"
+        assert session.room_queue.enqueue(item, queued(item), now=time.monotonic()).value == "added"
+        session.state = "user_speaking"
+        result = session.dispatch_next_room_message()
+        assert result.status is RoomDispatchStatus.BUSY
+        assert result.reason == "user_input_in_progress"
+        assert len(session.room_queue) == 1
+        assert len(session.room_payload_store) == 1
+        assert brain.requests == []
+    finally:
+        session.stop()
