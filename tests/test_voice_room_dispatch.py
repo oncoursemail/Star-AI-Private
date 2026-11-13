@@ -76,11 +76,11 @@ def make(
         room_payload_store=store if store is not None else RoomPayloadStore(),
     )
     session.start()
-    return session, events, brain, asr, speaker
+    return session, events, brain
 
 
 def test_direct_room_message_is_spoken_without_running_microphone_asr():
-    session, events, brain, asr, speaker = make(["Oh, hello! I can help with that."])
+    session, events, brain = make(["Oh, hello! I can help with that."])(["Oh, hello! I can help with that."])
     try:
         decision = session.handle_room_message(
             cue("chat-1", now=time.monotonic()),
@@ -88,7 +88,7 @@ def test_direct_room_message_is_spoken_without_running_microphone_asr():
         )
         assert decision.action is RoomAction.RESPOND
         assert session.wait_idle(5)
-        assert asr.calls == 0
+        assert session.asr.calls == 0
         assert len(brain.requests) == 1
         user_message = brain.requests[0][-1]["content"]
         assert user_message.startswith("[UNTRUSTED LIVESTREAM CHAT MESSAGE:")
@@ -106,7 +106,7 @@ def test_direct_room_message_is_spoken_without_running_microphone_asr():
 
 
 def test_room_message_arriving_during_reply_is_queued_then_dispatched():
-    session, events, brain, asr, speaker = make(
+    session, events, brain = make((
         [
             "First response has enough words to keep playback active for a little while.",
             "Second response is now ready.",
@@ -139,7 +139,7 @@ def test_room_message_arriving_during_reply_is_queued_then_dispatched():
 
 
 def test_dispatch_refuses_to_pop_while_another_reply_is_active():
-    session, events, brain, asr, speaker = make(
+    session, _, _ = make((
         ["First answer has several words to keep the fake speaker busy.", "Queued answer."],
         first_delay=0.05,
         token_delay=0.01,
@@ -163,7 +163,7 @@ def test_expiry_reconciles_queue_and_payload_store():
     clock_value = [10.0]
     queue = RoomCueQueue(RoomQueueConfig(max_event_age_seconds=2.0, max_queue_wait_seconds=2.0))
     store = RoomPayloadStore(RoomPayloadStoreConfig(max_age_seconds=2.0))
-    session, events, brain, asr, speaker = make(["unused"], clock=lambda: clock_value[0], queue=queue, store=store)
+    session, _, _ = make(["unused"], clock=lambda: clock_value[0], queue=queue, store=store)(["unused"], clock=lambda: clock_value[0], queue=queue, store=store)
     try:
         item = cue("expired", now=10.0)
         assert store.put(item, "old question", now=10.0).value == "stored"
@@ -180,7 +180,7 @@ def test_expiry_reconciles_queue_and_payload_store():
 
 def test_missing_payload_is_reported_and_cue_is_consumed():
     queue = RoomCueQueue()
-    session, events, brain, asr, speaker = make(["unused"], queue=queue)
+    session, _, _ = make(["unused"], queue=queue)(["unused"], queue=queue)
     try:
         item = cue("missing", now=time.monotonic())
         assert queue.enqueue(item, queued(item), now=time.monotonic()).value == "added"
@@ -195,7 +195,7 @@ def test_missing_payload_is_reported_and_cue_is_consumed():
 def test_payload_for_a_different_cue_is_never_attached_to_queued_event():
     queue = RoomCueQueue()
     store = RoomPayloadStore()
-    session, events, brain, asr, speaker = make(["unused"], queue=queue, store=store)
+    session, _, brain = make(["unused"], queue=queue, store=store)(["unused"], queue=queue, store=store)
     try:
         now = time.monotonic()
         queued_cue = cue("same-id", now=now, speaker_id="speaker-a")
@@ -213,7 +213,7 @@ def test_payload_for_a_different_cue_is_never_attached_to_queued_event():
 
 def test_full_queue_rejects_new_room_message_and_cleans_its_payload():
     queue = RoomCueQueue(RoomQueueConfig(max_items=1))
-    session, events, brain, asr, speaker = make(
+    session, _, _ = make((
         ["Long enough first answer to stay busy."],
         first_delay=0.05,
         token_delay=0.01,
@@ -240,7 +240,7 @@ def test_full_queue_rejects_new_room_message_and_cleans_its_payload():
 def test_stop_wipes_pending_room_payloads_and_queue():
     queue = RoomCueQueue()
     store = RoomPayloadStore()
-    session, events, brain, asr, speaker = make(["unused"], queue=queue, store=store)
+    session, _, _ = make(["unused"], queue=queue, store=store)(["unused"], queue=queue, store=store)
     item = cue("pending", now=time.monotonic())
     try:
         assert store.put(item, "pending text", now=time.monotonic()).value == "stored"
@@ -265,7 +265,7 @@ def test_payload_store_requires_room_director():
 
 
 def test_room_dispatch_api_is_opt_in():
-    session, events, brain, asr, speaker = make(["unused"])
+    session, _, _ = make(["unused"])(["unused"])
     # This helper always enables room features; build a plain session for the opt-in check.
     plain = CallSession(vad=FakeVAD(), asr=FakeASR({}), brain=FakeBrain(["unused"]),
                         tts=FakeTTS(), speaker=FakeSpeaker())
