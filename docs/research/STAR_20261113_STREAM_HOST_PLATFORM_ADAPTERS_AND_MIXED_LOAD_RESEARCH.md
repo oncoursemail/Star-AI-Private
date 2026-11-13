@@ -120,9 +120,11 @@ Engineering implications:
 
 Paper: [arXiv:2611.12246](https://arxiv.org/abs/2611.12246)
 
-The paper extends streaming Sortformer to support up to eight speakers, with a simplified Transformer encoder and 10 ms-resolution predictions derived from coarser encoder representations. It reports training-memory, training-speed, and inference-throughput improvements on its own evaluated workloads.
+The paper extends streaming Sortformer to support up to eight concurrent speakers, with a simplified Transformer encoder and 10 ms-resolution predictions derived from coarser encoder representations. It reports training-memory, training-speed, and inference-throughput improvements on its own evaluated workloads.
 
-For STAR, the model is a candidate adapter, not a default dependency. The relevant evaluation is not only diarization error rate. Measure:
+A complementary paper, [Slots Are Not Speakers (20 October 2026)](https://arxiv.org/abs/2610.28053), addresses a different limitation: a diarizer's fixed output slots bound concurrent speakers, not the number of distinct people who may appear over a long session. Its causal linker uses short speaker segments and an embedding bank to relabel returning speakers. It reports improved speaker confusion on courtroom sessions with up to 23 speakers. For STAR, only borrow this as a session-local linking experiment: do not persist voiceprints or link people across streams; delete transient embeddings when the stream session ends.
+
+For STAR, these models are candidate adapters, not default dependencies. The relevant evaluation is not only diarization error rate. Measure:
 - end-to-end audio chunk look-ahead plus model time;
 - first-use model load and warm-up;
 - speaker switch and overlap errors;
@@ -141,7 +143,7 @@ Official sources:
 - [Roblox newsroom introduction](https://about.roblox.com/newsroom/2025/12/opengameeval-benchmark-agentic-ai-assistants-roblox-studio)
 - [OpenGameEval repository and paper](https://github.com/Roblox/open-game-eval)
 
-The benchmark runs agents inside reproducible, stateful Roblox Studio sessions. It separates observation from editing and scores both the resulting scene and simulated play behavior with executable checks. The 2026 paper reports 84 human-curated core tasks and 16 attempts per task; it also finds that inspecting touched objects before editing correlates with better success.
+The benchmark runs agents inside reproducible, stateful Roblox Studio sessions. It separates observation from editing and scores both the resulting scene and simulated play behavior with executable checks. The 2026 paper reports 84 human-curated core tasks and 16 attempts per task; the repository also maintains an expanded 87-evaluation leaderboard. It finds that inspecting touched objects before editing correlates with better success.
 
 STAR Creator should therefore use this loop:
 
