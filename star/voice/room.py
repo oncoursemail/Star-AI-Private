@@ -36,6 +36,7 @@ class CueIntent(str, Enum):
     SIDE_CONVERSATION = "side_conversation"
     NARRATION = "narration"
     GAME_EVENT = "game_event"
+    HUMAN_RESOLUTION = "human_resolution"
     UNKNOWN = "unknown"
 
 
@@ -46,6 +47,7 @@ class RoomAction(str, Enum):
     IGNORE = "ignore"
     WAIT = "wait"
     INTERRUPT = "interrupt"
+    STOP = "stop"
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ class RoomCue:
     overlap_ms: int = 0
     urgency: float = 0.0
     final: bool = True
+    resolves_event_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,7 @@ class RoomTurnDirector:
         self.config = config or RoomPolicyConfig()
         self._assistant_speaking = False
         self._response_id: str | None = None
+        self._trigger_event_id: str | None = None
         self._seen_order: deque[str] = deque()
         self._seen: set[str] = set()
 
@@ -139,23 +143,35 @@ class RoomTurnDirector:
     def assistant_speaking(self) -> bool:
         return self._assistant_speaking
 
-    def set_assistant_playback(self, speaking: bool, response_id: str | None = None) -> None:
-        """Update playback state from the actual speaker, not from generated text."""
+    def set_assistant_playback(
+        self,
+        speaking: bool,
+        response_id: str | None = None,
+        trigger_event_id: str | None = None,
+    ) -> None:
+        """Update actual playback and the room event that caused this response."""
         if type(speaking) is not bool:
             raise ValueError("speaking must be a boolean")
         if speaking:
             if not isinstance(response_id, str) or not response_id or len(response_id) > 128:
                 raise ValueError("an active playback requires a non-empty response_id of at most 128 characters")
+            if trigger_event_id is not None and (
+                not isinstance(trigger_event_id, str) or not trigger_event_id or len(trigger_event_id) > 128
+            ):
+                raise ValueError("trigger_event_id must be None or a non-empty string of at most 128 characters")
             self._assistant_speaking = True
             self._response_id = response_id
+            self._trigger_event_id = trigger_event_id
         else:
             self._assistant_speaking = False
             self._response_id = None
+            self._trigger_event_id = None
 
     def reset_session(self) -> None:
         """Clear ephemeral room state when a stream/session ends."""
         self._assistant_speaking = False
         self._response_id = None
+        self._trigger_event_id = None
         self._seen_order.clear()
         self._seen.clear()
 
@@ -173,6 +189,24 @@ class RoomTurnDirector:
 
         if cue.confidence < self.config.min_confidence:
             return RoomDecision(RoomAction.WAIT, cue.event_id, "low_classification_confidence")
+
+        if cue.intent is CueIntent.HUMAN_RESOLUTION:
+            if cue.source not in {CueSource.AUDIO, CueSource.CHAT}:
+                action = RoomAction.CONTINUE if self._assistant_speaking else RoomAction.IGNORE
+                return RoomDecision(action, cue.event_id, "human_resolution_wrong_source")
+            if not self._assistant_speaking:
+                return RoomDecision(RoomAction.IGNORE, cue.event_id, "no_active_response")
+            if self._trigger_event_id is None:
+                return RoomDecision(RoomAction.CONTINUE, cue.event_id, "active_response_unlinked")
+            if cue.resolves_event_id != self._trigger_event_id:
+                return RoomDecision(RoomAction.CONTINUE, cue.event_id, "unrelated_human_resolution")
+            return RoomDecision(
+                RoomAction.STOP,
+                cue.event_id,
+                "human_resolved_request",
+                95,
+                cancel_response_id=self._response_id,
+            )
 
         if cue.intent in _NON_INTERRUPT_INTENTS:
             action = RoomAction.CONTINUE if self._assistant_speaking else RoomAction.IGNORE
@@ -230,6 +264,16 @@ class RoomTurnDirector:
                 raise ValueError(f"{name} must be a non-empty string of at most 128 characters")
         if not isinstance(cue.source, CueSource) or not isinstance(cue.intent, CueIntent):
             raise ValueError("source and intent must use their enum values")
+        if cue.intent is CueIntent.HUMAN_RESOLUTION:
+            if (
+                not isinstance(cue.resolves_event_id, str)
+                or not cue.resolves_event_id
+                or len(cue.resolves_event_id) > 128
+                or cue.resolves_event_id == cue.event_id
+            ):
+                raise ValueError("human resolution requires a distinct bounded resolves_event_id")
+        elif cue.resolves_event_id is not None:
+            raise ValueError("resolves_event_id is only valid for human resolution cues")
         if type(cue.addressed_to_star) is not bool or type(cue.final) is not bool:
             raise ValueError("addressed_to_star and final must be booleans")
         for name, value in (("confidence", cue.confidence), ("urgency", cue.urgency)):
