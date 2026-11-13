@@ -80,7 +80,7 @@ Source: [MP-Bench](https://www.fullduplex.ai/benchmarks/mp-bench).
 
 Source: [Full-Duplex-Bench v3](https://www.full-duplex.ai/benchmarks/fdb-v3).
 
-**Realtime-Venus** is a useful architecture study because it combines listening while speaking, audio/visual context, and asynchronous delegation. Its published report is a research result, not proof that the same model or system will run efficiently on STAR's local hardware.
+**Realtime-Venus** is a useful architecture study because it separates a live perception/speech loop from an asynchronous delegated-task loop, then returns delegated results to the same conversation. Its frontend decides when a prepared reply should actually be spoken, and playback tracking confirms delivery. The project page reports continuation rates of 97% for user backchannels, 88% for speech directed at others, and 86% for background speech on its Full-Duplex-Bench v1.5 evaluation; it reports interruption response separately. These are results from that project's September 9, 2026 manuscript, not expected STAR scores or proof that its 9B models will fit STAR's local hardware.
 
 Source: [Realtime-Venus project and technical report](https://realtime-venus.github.io/).
 
