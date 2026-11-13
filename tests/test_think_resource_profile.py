@@ -127,6 +127,17 @@ def test_profile_rejects_non_vector_measurements() -> None:
         )
 
 
+def test_profile_rejects_zero_resource_measurements() -> None:
+    samples = tuple(ResourceVector() for _ in range(8))
+    with pytest.raises(ValueError, match="nonzero measured resource usage"):
+        ThinkResourceProfile.from_samples(
+            samples,
+            configuration_fingerprint=FINGERPRINT,
+            calibrated_monotonic_ms=1000,
+            trusted_host=True,
+        )
+
+
 def test_profile_requires_explicit_trusted_host_assertion() -> None:
     with pytest.raises(PermissionError, match="trusted host"):
         ThinkResourceProfile.from_samples(
