@@ -8,7 +8,7 @@ from star.stream_rehearsal_eval import RehearsalLimits, evaluate_rehearsal
 
 def snapshot(**changes):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "private-rehearsal-001",
         "first_content_latency_ms": [180.0] * 20,
         "first_audible_latency_ms": [420.0] * 20,
@@ -29,6 +29,14 @@ def snapshot(**changes):
         "duplicate_speech_replays": 0,
         "held_out_skill_trials": 20,
         "held_out_skill_successes": 17,
+        "spoken_task_trials": 20,
+        "spoken_task_successes": 19,
+        "whisper_control_trials": 20,
+        "whisper_control_successes": 20,
+        "volume_control_trials": 20,
+        "volume_control_successes": 19,
+        "groundedness_trials": 20,
+        "groundedness_successes": 19,
     }
     value.update(changes)
     return value
@@ -48,6 +56,10 @@ def limits(**changes):
         "min_turn_recall": 0.9,
         "min_task_recovery_rate": 0.9,
         "min_held_out_skill_transfer_rate": 0.8,
+        "min_spoken_task_accuracy": 0.9,
+        "min_whisper_control_rate": 0.9,
+        "min_volume_control_rate": 0.9,
+        "min_groundedness_rate": 0.9,
         "max_stale_task_resumes": 0,
         "max_duplicate_speech_replays": 0,
     }
@@ -59,12 +71,16 @@ def test_complete_rehearsal_passes_all_configured_gates():
     report = evaluate_rehearsal(snapshot(), limits())
 
     assert report["overall"] == "PASS"
-    assert len(report["gates"]) == 13
+    assert len(report["gates"]) == 17
     assert all(gate["status"] == "PASS" for gate in report["gates"])
     assert report["metrics"]["turn_precision"] == 0.95
     assert report["metrics"]["turn_recall"] == 0.95
     assert report["metrics"]["task_recovery_rate"] == 0.95
     assert report["metrics"]["held_out_skill_transfer_rate"] == 0.85
+    assert report["metrics"]["spoken_task_accuracy"] == 0.95
+    assert report["metrics"]["whisper_control_rate"] == 1.0
+    assert report["metrics"]["volume_control_rate"] == 0.95
+    assert report["metrics"]["groundedness_rate"] == 0.95
     assert report["metrics"]["audio_underrun_rate"] == 0.0
 
 
@@ -112,6 +128,14 @@ def test_zero_denominators_are_inconclusive():
             task_recovery_successes=0,
             held_out_skill_trials=0,
             held_out_skill_successes=0,
+            spoken_task_trials=0,
+            spoken_task_successes=0,
+            whisper_control_trials=0,
+            whisper_control_successes=0,
+            volume_control_trials=0,
+            volume_control_successes=0,
+            groundedness_trials=0,
+            groundedness_successes=0,
         ),
         limits(),
     )
@@ -189,6 +213,10 @@ def test_unexpected_private_payload_fields_are_rejected():
         ("obs_render_skipped_frames", 10_001),
         ("task_recovery_successes", 21),
         ("held_out_skill_successes", 21),
+        ("spoken_task_successes", 21),
+        ("whisper_control_successes", 21),
+        ("volume_control_successes", 21),
+        ("groundedness_successes", 21),
     ],
 )
 def test_inconsistent_or_invalid_counters_are_rejected(field, value):
@@ -223,3 +251,32 @@ def test_evaluator_is_deterministic_and_does_not_mutate_input():
 
     assert first == second
     assert data == before
+
+
+def test_schema_v1_remains_readable_but_new_interaction_gates_are_inconclusive():
+    legacy = snapshot()
+    legacy["schema_version"] = 1
+    for name in (
+        "spoken_task_trials", "spoken_task_successes",
+        "whisper_control_trials", "whisper_control_successes",
+        "volume_control_trials", "volume_control_successes",
+        "groundedness_trials", "groundedness_successes",
+    ):
+        del legacy[name]
+
+    report = evaluate_rehearsal(legacy, limits())
+    by_name = {gate["name"]: gate["status"] for gate in report["gates"]}
+
+    assert report["overall"] == "INCONCLUSIVE"
+    assert by_name["spoken_task_accuracy"] == "INCONCLUSIVE"
+    assert by_name["whisper_control_rate"] == "INCONCLUSIVE"
+    assert by_name["volume_control_rate"] == "INCONCLUSIVE"
+    assert by_name["groundedness_rate"] == "INCONCLUSIVE"
+
+
+def test_new_interaction_rates_reject_successes_without_trials():
+    with pytest.raises(ValueError, match="groundedness successes"):
+        evaluate_rehearsal(
+            snapshot(groundedness_trials=0, groundedness_successes=1),
+            limits(),
+        )
