@@ -91,7 +91,7 @@ Current acknowledgement granularity is report-level. The future speech adapter s
 ### Durability and bounds
 
 - Explicit SQLite path required; no implicit global database.
-- WAL mode for file-backed databases.
+- WAL mode for file-backed databases, with FULL synchronous commits by default; NORMAL is an explicit speed/durability trade-off.
 - BEGIN IMMEDIATE serializes cross-connection claims.
 - One connection per ledger instance is protected by an RLock.
 - Default caps: 10,000 tasks, 10,000 reports, 8,192 recent events.
@@ -163,6 +163,14 @@ This work evaluates stale-memory reuse and conflict reconciliation.
 
 **STAR implication:** persistent facts should have provenance, scope, last-confirmed time, and a way to be superseded. An old model, path, branch, or preference must not silently override a newer explicit correction.
 
+### EM²Mem — event-centric multimodal memory (Findings EMNLP 2026)
+
+https://aclanthology.org/2026.findings-emnlp.903/
+
+EM²Mem organizes long-video information around events and evidence rather than repeatedly processing entire videos. Its reported evaluations improve event-level evidence recall and reduce per-query latency and inference tokens on three long-video QA benchmarks.
+
+**STAR implication:** for streams and games, retain timestamped event summaries with references to the relevant frame/audio segment and game state. Retrieve only the events needed for the current question; do not continuously resend entire VODs or store raw audio by default.
+
 ## Inference speed and intelligence research
 
 ### llama.cpp measurement before tuning
@@ -188,6 +196,14 @@ Measure the same model, prompt set, context, quantization, concurrency, and ther
 TurboQuant explores low-bit KV-cache compression; UlaCache explores logical addressing across GPU and CPU memory for sparse serving. Published results use specific models and accelerator/server configurations. UlaCache's reported H200/B300 results are not a prediction for a single 8 GB RTX 4060.
 
 **STAR adoption rule:** do not enable a cache format or offload policy because a paper reports a speedup on a different GPU. Test long-context recall, coding accuracy, tool-use accuracy, TTFT, decode rate, transfer overhead, game frame-time p95/p99, and audio underruns on the actual host.
+
+### KVGuard — KV-cache memory safety (4 November 2026)
+
+https://arxiv.org/abs/2611.06138
+
+KVGuard describes cache-block lifetime, ownership, initialization, and request-isolation bugs that can silently corrupt LLM outputs without crashing. Its prototype covers 29 historical bugs across two serving systems and reports eight additional violations in its evaluation.
+
+**STAR implication:** any future custom KV-cache allocator, offload path, or cache reuse layer needs request-isolation, stale-block, initialization, and ownership tests. Prefer upstream runtimes until STAR can validate these invariants; never trade cache correctness for a benchmark speedup.
 
 ### Model routing and best-of-N
 
@@ -230,15 +246,16 @@ benchmarks/task_coordination_bench.py exercises the full lifecycle:
 
 create -> accept -> claim -> checkpoint -> complete with evidence -> queue report -> playback acknowledgement.
 
-The script defaults to an in-memory database and accepts an explicit database path for a durable-WAL comparison. It reports tasks/sec, ledger operations/sec, and p50/p95 per-task latency. It is a local microbenchmark, not a production SLA.
+The script defaults to an in-memory database and accepts an explicit database path plus FULL/NORMAL sync mode for a durable-WAL comparison. It reports tasks/sec, ledger operations/sec, and p50/p95 per-task latency. It is a local microbenchmark, not a production SLA.
 
-In the isolated Python environment used while preparing this change, 1,000 in-memory tasks completed 7,000 ledger operations in approximately 0.28 seconds (about 3.6k full task lifecycles/sec). This does not represent STAR's Windows machine, disk-backed WAL performance, or production concurrency.
+In the isolated Python 3.13 environment used while preparing this change, 1,000 in-memory tasks completed 7,000 ledger operations in approximately 0.28 seconds (about 3.56k full task lifecycles/sec). On the same environment, 1,000 file-backed WAL tasks measured about 2.61 seconds with FULL sync (about 383 lifecycles/sec) and 0.52 seconds with NORMAL sync (about 1.93k lifecycles/sec). FULL is the default because task durability is more important than shaving milliseconds from background ledger writes; NORMAL is an explicit opt-in. These are not measurements of STAR's Windows machine or its SSD.
 
 ## Acceptance plan for the next integration stage
 
 | Area | Acceptance test |
 |---|---|
 | Durable restart | Task/checkpoint/report state survives process restart |
+| Sync durability | File-backed databases default to FULL; NORMAL is explicit opt-in |
 | Worker race | Two processes cannot claim the same unexpired task |
 | Worker crash | Expired lease can be reclaimed with a new generation |
 | Stale completion | Old generation cannot checkpoint or complete after reclaim |
@@ -286,7 +303,7 @@ Implemented in this branch:
 - checkpoint/result/evidence references;
 - report queue and actual-playback acknowledgement;
 - stale report exclusion;
-- 22 focused tests;
+- 23 focused tests;
 - a standard-library lifecycle benchmark.
 
 Not implemented by this change:
