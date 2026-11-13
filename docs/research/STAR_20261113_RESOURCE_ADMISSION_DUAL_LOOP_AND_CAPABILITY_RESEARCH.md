@@ -58,7 +58,7 @@ The initial values are safety-oriented defaults to be measured and tuned on each
 | Audio underruns | 0 in sample window | Audio quality takes priority |
 | OBS dropped-frame rate | <= 1% | Protect stream output |
 
-These are not universal values. Calibrate with 5–10 minute representative mixed-load runs on the actual machine. Record the 95th percentile, not just the average. The 8 GB RTX 4060 target is especially sensitive to model residency, game texture allocation, OBS encoder choice, avatar rendering, and transient VRAM spikes.
+These are not universal values. Calibrate with 5–10 minute representative mixed-load runs on the actual machine. Record the 95th percentile, not just the average. The 8 GB RTX 4060 target is especially sensitive to model residency, game texture allocation, OBS encoder choice, avatar rendering, and transient VRAM spikes. CPU/GPU utilization estimates are coarse admission heuristics, not hard reservations; derive them from repeated workload profiles and keep a single trusted supervisor responsible for serializing admission. The VRAM/RAM reserve checks are hard free-memory floors based on the snapshot, but they still cannot prevent an external process from allocating memory immediately afterward. For OBS, the host must use a consistent valid denominator and must not combine render-thread and output-thread counters from different sampling bases.
 
 ## Current research findings
 
