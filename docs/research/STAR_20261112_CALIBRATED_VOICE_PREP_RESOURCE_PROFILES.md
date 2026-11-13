@@ -15,7 +15,7 @@ This change adds a configuration-bound `ThinkResourceProfile`. The bridge can no
 
 ### `star/voice/think_resource_profile.py`
 
-- Builds a profile from 8–4096 bounded `ResourceVector` measurements.
+- Builds a profile from 8–4096 bounded, host-calibrated `ResourceVector` allocation samples.
 - Requires an explicit `trusted_host=True` assertion from the host adapter.
 - Computes the per-dimension maximum across samples, then adds a configurable integer safety margin (default 25%) using ceiling arithmetic.
 - Stores only the resulting envelope, sample count, configuration fingerprint, calibration monotonic time, margin, and expiry. It does not retain raw samples, model paths, host IDs, transcripts, or credentials.
@@ -38,7 +38,7 @@ The `trusted_host` boolean is a contract assertion, **not** a security boundary.
 
 ## Calibration contract for the future Windows host
 
-The host should collect incremental resource deltas for one thinker worker while the normal stream workload is already running. Measure the worker's added resource use, not total system use, otherwise the profile will double-count OBS, the game, audio, and avatar processes.
+The host should collect incremental resource deltas for one thinker worker while the normal stream workload is already running. Measure the worker's added resource use, not total system use, otherwise the profile will double-count OBS, the game, audio, and avatar processes. `ResourceVector` fields are scheduler allocation units, not a promise that raw OS counters can be copied directly into the vector. The Windows collector must calibrate a stable mapping from physical CPU/RAM/VRAM deltas into the same units used by `ResourceBudget`.
 
 The configuration fingerprint should be a SHA-256 of a canonical, sorted, non-secret manifest containing at least:
 
@@ -58,7 +58,7 @@ Recommended sampling procedure:
 2. Record a stable baseline with no speculative thinker.
 3. Run the exact thinker configuration through warm-up and steady-state requests.
 4. Collect at least 8 independent per-worker peak-delta samples; prefer 30–50 repetitions across short and long prefixes.
-5. Capture CPU millicores, incremental resident RAM, and incremental VRAM with the same monotonic sampling window.
+5. Capture CPU utilization, incremental resident RAM, and incremental VRAM with the same monotonic sampling window, then convert those measurements through the host's calibrated mapping into `ResourceVector` allocation units.
 6. Build the profile from the maximum observed value in each dimension plus a safety margin.
 7. Recalibrate after model, quantization, backend, context, offload, batch, driver, or major host changes.
 8. Expire the profile rather than silently carrying it forward.
