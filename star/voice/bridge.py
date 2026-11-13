@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .catalog import STYLES, VoiceEntry, find_voice, kokoro_recipe, load_catalog
+from .room import CueSource, RoomCue, RoomDecision
+from .room_host import RoomHostConfig, RoomStreamHost
 from .settings import ASR_MODELS, ENDPOINTERS, OUTPUT_MODES, TTS_ENGINES, VoiceSettings
 
 VOICE_ACTIONS = frozenset({
@@ -37,6 +39,8 @@ VOICE_ACTIONS = frozenset({
 })
 REQUIRED_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
                      "faster_whisper": "faster-whisper", "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
+ROOM_ONLY_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
+                      "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
 SPEAK_AHEAD_SECONDS = 1.5            # read-aloud synthesises at most this far ahead of what is playing
 PREVIEW_LINE = "Hi sweetheart, it's Star. I'm so glad you're here."
 
@@ -45,9 +49,9 @@ class _Factories:
     """The real engines and devices. Tests replace these with fakes."""
 
     @staticmethod
-    def engines(settings: VoiceSettings, progress):
+    def engines(settings: VoiceSettings, progress, input_enabled: bool = True):
         from .runtime import Engines
-        return Engines.load(settings, progress)
+        return Engines.load(settings, progress, input_enabled=input_enabled)
 
     @staticmethod
     def brain(settings: VoiceSettings):
@@ -77,9 +81,13 @@ class _Factories:
 
 
 class _Call:
-    def __init__(self, call_id: str, settings: VoiceSettings) -> None:
+    def __init__(self, call_id: str, settings: VoiceSettings,
+                 room_sources: frozenset[CueSource] = frozenset(), room_only: bool = False) -> None:
         self.id = call_id
         self.settings = settings
+        self.room_sources = room_sources
+        self.room_only = room_only
+        self.room_host: RoomStreamHost | None = None
         self.stop = threading.Event()
         self.session = None
         self.microphone = None
@@ -98,11 +106,13 @@ class _SpeechJob:
 
 class VoiceBridge:
     def __init__(self, emit: Callable[[str, dict], None], *, settings_path: Path | None = None,
-                 save_turn: Callable[[str, str], None] | None = None, factories=None) -> None:
+                 save_turn: Callable[[str, str], None] | None = None, factories=None,
+                 room_moderator: Callable[[RoomCue, str], bool] | None = None) -> None:
         self._emit_raw = emit                    # emit(call_id, data) -> UI event {kind: "voice", data}
         self._settings_path = settings_path
         self._save_turn = save_turn
         self._factories = factories or _Factories
+        self._room_moderator = room_moderator
         self._lock = threading.Lock()
         self._call: _Call | None = None
         self._engines = None
@@ -138,11 +148,23 @@ class VoiceBridge:
             wanted += ["silero_vad.onnx"] if settings.vad == "silero" else []
             wanted += ["smart-turn-v3.2-cpu.onnx"] if settings.endpointer == "smart-turn" else []
             models_missing = [name for name in wanted if not (models_dir() / name).is_file()]
+        room_missing = [package for module, package in ROOM_ONLY_PACKAGES.items()
+                        if importlib.util.find_spec(module) is None]
+        room_models_missing: list[str] = []
+        if not room_missing:
+            from .engines import models_dir
+            room_models_missing = [
+                name for name in ("kokoro-v1.0.onnx", "voices-v1.0.bin")
+                if not (models_dir() / name).is_file()
+            ]
         call = self._call
         from .brain import server_configured
         server = server_configured()      # Settings + keyring, or the environment override; no network
         return {
             "available": not missing and not models_missing,
+            "roomOnlyAvailable": not room_missing and not room_models_missing,
+            "roomOnlyMissingPackages": room_missing,
+            "roomOnlyMissingModels": room_models_missing,
             "missingPackages": missing,
             "missingModels": models_missing,
             "serverConfigured": server,
@@ -151,6 +173,11 @@ class VoiceBridge:
             "state": (call.session.state if call and call.session else ("starting" if call else "idle")),
             "muted": bool(call and call.session and call.session.muted),
             "speaking": self._speech is not None,
+            "roomEnabled": bool(call and call.room_host and not call.room_host.closed),
+            "roomOnly": bool(call and call.room_only),
+            "roomSources": sorted(source.value for source in call.room_sources) if call else [],
+            "roomPending": len(call.session.room_queue) if call and call.session and call.session.room_queue else 0,
+            "roomStats": asdict(call.room_host.stats) if call and call.room_host else {},
         }
 
     # -- actions ------------------------------------------------------------------------------
@@ -202,22 +229,55 @@ class VoiceBridge:
 
     def _start_call(self, body: dict, request_id: str) -> dict:
         settings = VoiceSettings.from_mapping(body.get("settings") or {}, self._load_settings())
-        if body.get("micConsent") is not True:
+        room_only = body.get("roomOnly") is True
+        if not room_only and body.get("micConsent") is not True:
             raise PermissionError("Starting a call needs your OK to use the microphone (the call screen asks first)")
+        room_sources_raw = body.get("roomSources", [])
+        if not isinstance(room_sources_raw, list) or any(not isinstance(item, str) for item in room_sources_raw):
+            raise ValueError("roomSources must be a list of source names")
+        if len(room_sources_raw) != len(set(room_sources_raw)):
+            raise ValueError("roomSources must not contain duplicates")
+        source_map = {source.value: source for source in CueSource}
+        unknown_sources = [item for item in room_sources_raw if item not in source_map]
+        if unknown_sources:
+            raise ValueError("roomSources contains an unsupported source")
+        if room_sources_raw and body.get("roomConsent") is not True:
+            raise PermissionError("Multiparty room input requires explicit roomConsent")
+        if body.get("roomConsent") is True and not room_sources_raw:
+            raise ValueError("roomConsent requires at least one explicitly selected room source")
+        room_sources = frozenset(source_map[item] for item in room_sources_raw)
+        if room_only and not room_sources:
+            raise ValueError("roomOnly requires roomConsent and at least one selected room source")
+        if CueSource.CHAT in room_sources and self._room_moderator is None:
+            raise ValueError("The chat source requires a configured local moderation callback")
         self.stop_speaking()
         with self._lock:
             if self._call is not None:
                 raise RuntimeError("A voice call is already running")
-            call = _Call(request_id or "voice", settings)
+            call = _Call(request_id or "voice", settings, room_sources, room_only)
             self._call = call
         call.thread = threading.Thread(target=self._run_call, args=(call,), name="star-voice-call", daemon=True)
         call.thread.start()
-        return {"callId": call.id, "settings": asdict(settings)}
+        return {"callId": call.id, "settings": asdict(settings),
+                "roomEnabled": bool(room_sources), "roomOnly": room_only,
+                "roomSources": sorted(source.value for source in room_sources)}
+
+    def submit_room_message(self, call_id: str, cue: RoomCue, text: str) -> RoomDecision:
+        """Host-only ingress; deliberately not registered as a frontend/IPC action."""
+        call = self._call
+        if call is None or call.id != call_id or call.stop.is_set():
+            raise RuntimeError("The requested voice call is not active")
+        host = call.room_host
+        if host is None:
+            raise PermissionError("Multiparty room input was not explicitly enabled for this call")
+        return host.submit(cue, text)
 
     def stop_call(self, wait: float = 5.0) -> bool:
         call = self._call
         if call is None:
             return False
+        if call.room_host is not None:
+            call.room_host.close()
         call.stop.set()
         if call.microphone is not None:
             try:
@@ -291,11 +351,16 @@ class VoiceBridge:
                 "appliesToNextCall": self._call is not None}
 
     # -- workers ------------------------------------------------------------------------------
-    def _get_engines(self, settings: VoiceSettings, progress):
+    def _get_engines(self, settings: VoiceSettings, progress, *, input_enabled: bool = True):
         key = (settings.tts_engine, settings.asr_engine, settings.asr_model, settings.asr_prompt, settings.device,
-               settings.vad, settings.endpointer)
+               settings.vad, settings.endpointer, input_enabled)
         if self._engines is None or self._engines_key != key:
-            self._engines = self._factories.engines(settings, progress)
+            if input_enabled:
+                # Preserve the original injected-factory contract for ordinary microphone
+                # calls. Only the opt-in room-only path needs the new keyword.
+                self._engines = self._factories.engines(settings, progress)
+            else:
+                self._engines = self._factories.engines(settings, progress, input_enabled=False)
             self._engines_key = key
         _apply_voice(self._engines.tts, settings)
         return self._engines
@@ -305,34 +370,60 @@ class VoiceBridge:
         session = None
         try:
             self._emit(call.id, {"type": "state", "state": "starting"})
-            engines = self._get_engines(call.settings, lambda m: self._emit(call.id, {"type": "progress", "message": m}))
+            engines = self._get_engines(
+                call.settings,
+                lambda m: self._emit(call.id, {"type": "progress", "message": m}),
+                input_enabled=not call.room_only,
+            )
             if call.stop.is_set():
                 return
             brain = self._factories.brain(call.settings)
             speaker = self._factories.speaker(int(getattr(engines.tts, "sample_rate", 24000)),
                                               call.settings.output_device)
-            call.microphone = self._factories.microphone(call.settings.input_device)
+            if not call.room_only:
+                call.microphone = self._factories.microphone(call.settings.input_device)
 
             def forward(event: dict) -> None:
                 self._emit(call.id, event)
-                if event.get("type") == "turn_metrics" and self._save_turn and event.get("user_text"):
+                if (event.get("type") == "turn_metrics" and event.get("end_reason") != "room_message"
+                        and self._save_turn and event.get("user_text")):
                     try:
                         self._save_turn(event["user_text"], event.get("reply_text", ""))
                     except Exception:
                         pass              # history is best effort; never break the call for it
+                if event.get("type") == "room_queue_ready" and call.room_host is not None:
+                    result = call.room_host.dispatch_pending()
+                    self._emit(call.id, {"type": "room_dispatch", "status": result.status.value,
+                                         "event_id": result.event_id, "reason": result.reason})
 
-            session = build_session(call.settings, engines, speaker, brain=brain, on_event=forward)
+            session = build_session(call.settings, engines, speaker, brain=brain, on_event=forward,
+                                    room_enabled=bool(call.room_sources))
             call.session = session
-            with call.microphone, speaker:
+            if call.room_sources:
+                call.room_host = RoomStreamHost(
+                    session,
+                    RoomHostConfig(allowed_sources=call.room_sources),
+                    moderate_chat=self._room_moderator,
+                )
+            with speaker:
                 session.start()
-                for frame in call.microphone:
-                    if call.stop.is_set():
-                        break
-                    session.feed(frame)
+                if call.room_only:
+                    # Provider adapters feed final classified cues through submit_room_message.
+                    # No local microphone is opened or ASR/VAD model loaded in this mode.
+                    while not call.stop.wait(0.1):
+                        pass
+                else:
+                    with call.microphone:
+                        for frame in call.microphone:
+                            if call.stop.is_set():
+                                break
+                            session.feed(frame)
         except Exception as exc:
             self._emit(call.id, {"type": "error", "message": f"{str(exc)[:300] or type(exc).__name__}"})
         finally:
             turns = []
+            if call.room_host is not None:
+                call.room_host.close()
             if session is not None:
                 try:
                     session.stop()

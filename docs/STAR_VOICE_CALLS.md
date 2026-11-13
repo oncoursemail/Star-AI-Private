@@ -68,6 +68,7 @@ optional packages.
 | `engines.py` | Silero VAD, Smart Turn, faster-whisper, Kokoro; the registries where new engines plug in |
 | `devices.py` | Real microphone and speaker (`sounddevice`) |
 | `runtime.py` | Loads engines once, warms them up, builds a session |
+| `room_host.py` | Opt-in, bounded, trusted-host ingress and automatic queued-room dispatch |
 | `__main__.py` | `python -m star.voice setup | call | file-call | make-test-audio | say | devices` |
 
 Adding an engine: write a class with `synthesize(text) -> iterable of (pcm16_bytes, sample_rate)` (text to speech) or
@@ -591,9 +592,9 @@ Important boundaries:
 
 - The host still owns microphone/chat/game ingestion, ASR, diarization, speaker/addressee
   classification, moderation, and event timestamps. This API does not connect Twitch, YouTube,
-  Discord, VTube Studio, or OBS by itself. The current desktop `VoiceBridge`/`build_session`
-  path does not yet instantiate these optional room components; a dedicated stream-host adapter
-  must opt in and forward classified events before this can be used by the desktop streamer.
+  Discord, VTube Studio, or OBS by itself. The desktop bridge can now instantiate the optional
+  room components when the call explicitly supplies roomConsent and roomSources; see section 13.
+  Platform provider adapters remain separate.
 - `handle_room_message` accepts only final text. Partial ASR hypotheses belong in the host's
   ephemeral hypothesis state and must not be queued as final requests.
 - Room text is explicitly wrapped as untrusted user content. It never grants tools, permissions,
@@ -613,3 +614,140 @@ Important boundaries:
 - This is a host API and offline-tested call integration, not a live-stream claim. Real microphone,
   multi-speaker diarization, chat provider, VTube Studio, OBS, and physical GPU acceptance tests
   remain separate.
+
+
+
+## 13. Opt-in desktop room host and provider-adapter boundary (2026-11-13)
+
+The desktop `VoiceBridge` can now instantiate the optional room components for one call.
+This is disabled by default and is not a new frontend action.
+
+For a mixed local-microphone + room call, the trusted local call starter supplies microphone
+consent and explicit room consent, plus a non-empty list of allowed sources:
+
+```python
+bridge.handle("voiceStartCall", {
+    "micConsent": True,
+    "roomConsent": True,
+    "roomSources": ["chat", "audio"],
+})
+```
+
+For a provider-driven VTuber stream, use room-only mode instead:
+
+```python
+bridge.handle("voiceStartCall", {
+    "roomOnly": True,
+    "roomConsent": True,
+    "roomSources": ["chat", "audio", "game"],
+})
+```
+
+Room-only mode does not request or open the local microphone and skips loading local VAD,
+end-of-turn, and ASR models. It keeps STAR's Brain, TTS, speaker, room director, queue, and
+payload store available. A trusted provider/desktop adapter must submit final classified
+events through `submit_room_message`. Because this is a Python host API, the current React
+call screen does not yet expose the room-only control.
+
+`voiceStatus` reports `roomOnlyAvailable`, `roomOnlyMissingPackages`, and
+`roomOnlyMissingModels` separately from the full microphone-call requirements, so a missing
+faster-whisper install does not falsely make a TTS-only room host appear unusable.
+
+Allowed source names are `audio`, `chat`, and `game`. A chat-enabled call must be created
+with a local moderation callback injected into `VoiceBridge(room_moderator=...)`; if no
+moderator is configured, startup is rejected. The callback must be fast, local, and fail
+closed. It must not perform blocking network work on the audio or event thread.
+
+A trusted local provider adapter submits a final, already-classified event through the
+Python host method:
+
+```python
+decision = bridge.submit_room_message(call_id, room_cue, final_text)
+```
+
+`submit_room_message` is deliberately not part of `VOICE_ACTIONS` and is not exposed as
+a renderer/IPC action. The provider adapter must authenticate its own provider session,
+obtain the required owner consent, apply platform policy and moderation, assign opaque
+session-scoped speaker IDs, translate provider timestamps into the call's monotonic clock,
+and classify intent/addressee before constructing `RoomCue`. Raw chat text is untrusted
+data and never grants tools, permissions, purchases, publishing rights, or other side effects.
+
+`RoomStreamHost` adds a source allowlist, final-event requirement, UTF-8 payload bound,
+provider-event deduplication, per-source and per-speaker rolling rate limits, bounded
+speaker-key state, and mandatory chat moderation. It retains only aggregate counters; it does not log message text, persist
+viewer profiles, or connect to an external service. Aggregate host counters are available
+through `voiceStatus.roomStats`; no message text or viewer identity is included. The underlying
+`RoomPayloadStore` continues to own the bounded, TTL-limited one-shot text payload.
+
+When `CallSession` emits `room_queue_ready`, the bridge asks the host to dispatch one item.
+Dispatch now refuses to speak while a reply, hands-free user turn, or push-to-talk turn is
+active. If the user is speaking, the queued message remains pending and is retried after
+the user's turn completes. Room-message metrics are not sent to the bridge's canonical
+`save_turn` callback; viewer messages remain in the ephemeral in-call context only.
+
+### Provider research and implementation constraints
+
+**Twitch EventSub.** The `channel.chat.message` subscription requires the appropriate
+user/app authorization and chat scopes. EventSub WebSocket is server-to-client for
+notifications (apart from protocol ping/pong), begins with a Welcome message, and requires
+the client to create a subscription within the Welcome deadline. Notifications can be
+redelivered with the same message ID, so the adapter must deduplicate on provider message
+ID. A normal disconnect loses the session's subscriptions and has no replay for the gap;
+a planned reconnect must use the supplied reconnect URL and keep the old connection until
+the new Welcome arrives. See the official
+[chat subscription reference](https://dev.twitch.tv/docs/eventsub/reference/chat) and
+[WebSocket lifecycle guide](https://dev.twitch.tv/docs/eventsub/handling-websocket-events).
+
+**YouTube Live Chat.** Prefer the server-streaming `liveChatMessages.streamList` method
+over tight polling; Google's documentation says it pushes new messages and reduces
+constant polling/quota pressure. The live-chat resource is available while the live event
+is active and is no longer available after the event ends. The adapter must stop cleanly
+when the stream ends and deduplicate messages across reconnects using the provider's
+message identifiers. See the official
+[LiveChatMessages methods](https://developers.google.com/youtube/data/live/reference/rest/v3/liveChatMessages/streamList?hl=en).
+
+**VTube Studio.** The official API is a local WebSocket plugin API. The owner must enable
+API access and approve the plugin's authentication request; permissions can be separately
+requested and revoked. Store the returned plugin token in the OS credential store, request
+only the permissions STAR actually needs, and fail closed if authorization is revoked.
+See the [official VTube Studio API repository](https://github.com/DenchiSoft/VTubeStudio).
+
+**OBS.** obs-websocket 5.x uses a Hello → Identify → Identified handshake. If authentication
+is enabled, the client derives the response from the server-provided salt and challenge.
+Do not send requests before Identified, do not log the password or derived response, and
+keep the WebSocket on loopback unless the owner explicitly configures a secured remote
+transport. See the [official obs-websocket protocol documentation](https://github.com/obsproject/obs-websocket/blob/master/docs/docs/partials/introduction.md).
+
+**Speaker diarization.** Nemotron 3 Diarization (9 November 2026) extends streaming
+Sortformer to up to eight speakers and reports higher throughput in its own evaluation.
+That is a candidate for a separate adapter benchmark, not a dependency of the room host.
+Measure end-to-end chunk look-ahead, warm-up, CPU/GPU residency, speaker-switch errors,
+and false addressee decisions on STAR's actual mixed workload before choosing it.
+See [the paper](https://arxiv.org/abs/2611.12246).
+
+**Roblox/game development.** OpenGameEval separates observation from editing and scores
+both scene state and simulated play behavior. STAR's Creator should inspect every relevant
+object before editing, then verify the changed scene in Play mode with executable checks.
+A passing static script check is not a complete-game acceptance test. See
+[Roblox OpenGameEval](https://github.com/Roblox/open-game-eval).
+
+### Current scope and next gates
+
+Implemented here: desktop opt-in construction, host-only classified-message ingress,
+source consent, rate limiting, mandatory chat moderation, queue-ready auto-dispatch,
+user-input dispatch protection, and exclusion of room messages from canonical save-turn.
+
+Not implemented: Twitch/YouTube OAuth and EventSub clients, ASR streaming, diarization,
+intent/addressee classifiers, VTube Studio or OBS adapters, avatar animation, gameplay
+perception, game input, or a live stream. These require separate provider permissions,
+desktop UI consent, device tests, and platform-specific acceptance suites.
+
+Recommended acceptance sequence:
+1. Fake-provider contract tests for duplicate delivery, reconnect, revocation, rate limits,
+   moderation, and clean shutdown.
+2. Local VTube Studio/OBS handshake tests with explicit user approval and credential-store
+   integration.
+3. Recorded multi-speaker audio tests with diarization and addressee hard negatives.
+4. Live chat rehearsal with moderator, allowlist, slow mode, and owner-controlled stop.
+5. Mixed-load rehearsal measuring first audible audio, queue wait, frame-time p99, audio
+   underruns, OBS skipped frames, CPU/RAM/VRAM, and held-out response quality.

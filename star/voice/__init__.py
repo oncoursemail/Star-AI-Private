@@ -17,6 +17,7 @@ from .room_payloads import (
     RoomPayloadStoreStats,
 )
 from .room_queue import RoomCueQueue, RoomQueueConfig, RoomQueueResult, RoomQueueStats
+from .room_host import RoomHostConfig, RoomHostStats, RoomStreamHost
 from .turn import EchoGate, TurnConfig, TurnDetector, TurnEvent
 
 __all__ = [
@@ -42,4 +43,7 @@ __all__ = [
     "RoomPayloadStoreConfig",
     "RoomPayloadStoreResult",
     "RoomPayloadStoreStats",
+    "RoomHostConfig",
+    "RoomHostStats",
+    "RoomStreamHost",
 ]

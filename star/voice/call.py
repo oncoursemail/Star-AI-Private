@@ -368,8 +368,16 @@ class CallSession:
             if self._stopped:
                 return RoomDispatchResult(RoomDispatchStatus.STOPPED, reason="call_ended")
             active = self._reply is not None and not self._reply.done.is_set()
-            if active:
-                return RoomDispatchResult(RoomDispatchStatus.BUSY, reason="reply_in_progress")
+            with self._ptt_lock:
+                ptt_active = self._ptt_held
+            input_active = (
+                self.state != "listening"
+                or self.detector.state != TurnDetector.IDLE
+                or ptt_active
+            )
+            if active or input_active:
+                reason = "reply_in_progress" if active else "user_input_in_progress"
+                return RoomDispatchResult(RoomDispatchStatus.BUSY, reason=reason)
             cue = room_queue.pop_next(now=now)
             if cue is None:
                 return RoomDispatchResult(RoomDispatchStatus.EMPTY, reason="no_pending_cue")
