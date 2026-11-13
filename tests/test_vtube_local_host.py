@@ -124,6 +124,17 @@ class LocalHostTests(unittest.TestCase):
         self.assertTrue(self.host.ready)
         self.assertEqual(self.socket.timeout, 0.1)
 
+
+    def test_ready_requires_authentication_and_parameter_registration(self):
+        self.assertFalse(self.host.ready)
+        self.connect(register=False)
+        self.assertTrue(self.host.connected)
+        self.assertFalse(self.host.ready)
+        self.host.register_parameters()
+        self.assertTrue(self.host.ready)
+        self.host.close()
+        self.assertFalse(self.host.ready)
+
     def test_first_pairing_requires_owner_specific_flag(self):
         with self.assertRaises(PermissionError):
             self.host.connect()
