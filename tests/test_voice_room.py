@@ -161,6 +161,7 @@ def test_playback_start_requires_a_response_generation_id():
 
 @pytest.mark.parametrize("kwargs", [
     {"confidence": float("nan")},
+    {"confidence": 10**10000},
     {"urgency": 1.1},
     {"overlap": -1},
     {"ended": 8.0, "started": 9.0},
