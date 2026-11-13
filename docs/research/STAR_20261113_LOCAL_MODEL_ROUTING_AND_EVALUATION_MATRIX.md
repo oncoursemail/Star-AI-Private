@@ -45,6 +45,8 @@ The official IBM Granite card describes an 8B dense reasoning model, Apache 2.0 
 
 Source: [ibm-granite/granite-4.2-8b model card](https://huggingface.co/ibm-granite/granite-4.2-8b).
 
+IBM's card reports SWE-Bench Verified 47.67, Terminal-Bench 2.1 20.56, tau-three benchmark average 58.06, BFCL v4 52.39, AIME25 86.67, GPQA 64.14, and MMLU-Pro 74.04 for the 8B variant. These are publisher-reported results under IBM's evaluation setup; do not compare them directly with Qwen's scores or assume they predict STAR's repository/game/voice tasks.
+
 Use it as a candidate for longer planning, repository analysis, and multi-step tool tasks on the CPU/RAM server or a quantized/partial-offload configuration. The model card's BF16 configuration is not a claim that it fits in an 8 GB GPU.
 
 ## Recommended STAR model roles
