@@ -148,6 +148,14 @@ Source: https://arxiv.org/abs/2604.04847
 
 Use it as a model for STAR's voice regression set: natural hesitations, self-corrections, interrupted phrases, overlapping speakers, background speech, and multi-step requests. Do not collapse all results into one conversational-naturalness score.
 
+### InteractionBench
+
+InteractionBench evaluates conversational timing, spoken-task accuracy, whisper/volume control, and groundedness over long conversations. Its published evaluation uses 221 items per system across 13 scenarios and reports the dimensions separately.
+
+Source: https://www.fullduplex.ai/benchmarks/interactionbench
+
+**STAR implication:** voice quality is not just ASR accuracy plus a pleasant TTS voice. Add tests for speaking too early, missing a floor handoff, failing to lower volume, and losing grounding after a long stream.
+
 ## 4. Real-time avatar behavior
 
 Realtime-Venus studies an agent that listens while speaking, uses audio/video context, and delegates longer work asynchronously.
@@ -204,8 +212,8 @@ Use paired, identical workloads. Require independent held-out quality evidence. 
 
 Research anchors:
 
-- SIMA 2: https://deepmind.google/discover/blog/sima-2-an-agent-that-plays-explores-and-learns-in-virtual-worlds/
-- Voyager: https://voyager.minedojo.org/
+- SIMA 2: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+- Voyager: https://github.com/MineDojo/Voyager
 - OpenGameEval: https://github.com/Roblox/open-game-eval
 
 OpenGameEval evaluates agents in reproducible, stateful Roblox Studio sessions, using executable scene checks and simulated play checks. Its released benchmark contains 84 curated core tasks with repeated attempts. It also separates observation actions from editing actions, allowing exploration behavior to be evaluated.
@@ -249,7 +257,7 @@ GameDevBench evaluates 333 Godot tasks spanning gameplay logic, UI, 2D graphics/
 
 Source: https://github.com/waynchi/gamedevbench
 
-The current repository leaderboard reports strong frontier-agent results, but the benchmark remains incomplete even for leading systems, and multimodal/graphics-heavy tasks remain difficult. Its research also shows that visual feedback can materially improve results.
+**Leaderboard snapshot retrieved 2026-11-12:** the repository reports Claude Opus 5.5 at 70.6%, GPT-6.1 Sol at 70.0%, and GPT-6 Astra (High) at 68.8% on the 333-task suite. These are the benchmark maintainers' reported results for those agent configurations, not STAR measurements or a guarantee of reproducibility across harnesses. Even these results leave substantial task failure, especially on graphics-heavy work. The research also shows that visual feedback can materially improve results.
 
 OpenGameEval provides a complementary Roblox Studio evaluation surface.
 
@@ -275,6 +283,12 @@ A successful compile, screenshot, or generated script is not proof that a game i
 Mem2ActBench evaluates whether long-term memory actually improves later tool selection and parameter grounding rather than merely answering explicit recall questions.
 
 Source: https://arxiv.org/abs/2601.19935
+
+The paper *Remember When It Matters* studies a proactive memory agent that monitors trajectory state and selectively injects decision-relevant reminders. Its central design lesson is useful for STAR: memory should intervene when it changes the next decision, not dump the entire memory bank into every prompt.
+
+Source: https://arxiv.org/abs/2607.08716
+
+**STAR implication:** keep episodic memory, procedural skill memory, and active working state distinct. A memory controller should decide whether a reminder is relevant, stale, contradicted, or unnecessary; always-on memory injection risks context bloat and interference.
 
 STAR's general-knowledge system should measure:
 
@@ -367,5 +381,7 @@ Those are separate integration and hardware-validation milestones.
 7. GameDevBench: https://github.com/waynchi/gamedevbench
 8. OpenGameEval: https://github.com/Roblox/open-game-eval
 9. Mem2ActBench: https://arxiv.org/abs/2601.19935
-10. SIMA 2: https://deepmind.google/discover/blog/sima-2-an-agent-that-plays-explores-and-learns-in-virtual-worlds/
-11. Voyager: https://voyager.minedojo.org/
+10. SIMA 2: https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+11. Voyager: https://github.com/MineDojo/Voyager
+12. InteractionBench: https://www.fullduplex.ai/benchmarks/interactionbench
+13. Remember When It Matters: https://arxiv.org/abs/2607.08716
