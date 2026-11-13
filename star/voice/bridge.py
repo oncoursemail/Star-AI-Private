@@ -355,7 +355,12 @@ class VoiceBridge:
         key = (settings.tts_engine, settings.asr_engine, settings.asr_model, settings.asr_prompt, settings.device,
                settings.vad, settings.endpointer, input_enabled)
         if self._engines is None or self._engines_key != key:
-            self._engines = self._factories.engines(settings, progress, input_enabled=input_enabled)
+            if input_enabled:
+                # Preserve the original injected-factory contract for ordinary microphone
+                # calls. Only the opt-in room-only path needs the new keyword.
+                self._engines = self._factories.engines(settings, progress)
+            else:
+                self._engines = self._factories.engines(settings, progress, input_enabled=False)
             self._engines_key = key
         _apply_voice(self._engines.tts, settings)
         return self._engines
