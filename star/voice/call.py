@@ -186,6 +186,8 @@ class CallSession:
             if not playback_known:
                 return RoomDecision(RoomAction.WAIT, cue.event_id, "playback_state_unavailable")
             decision = self.room_director.decide(cue, now=now)
+        if decision.action is RoomAction.RESPOND and self.busy():
+            return RoomDecision(RoomAction.QUEUE, decision.event_id, "assistant_reply_in_progress", decision.priority)
         if decision.action is RoomAction.INTERRUPT:
             response_id = decision.cancel_response_id
             if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
