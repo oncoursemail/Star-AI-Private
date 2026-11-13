@@ -104,6 +104,17 @@ def test_profile_rejects_fewer_than_eight_samples() -> None:
         )
 
 
+def test_profile_rejects_non_integer_sample_threshold() -> None:
+    with pytest.raises(ValueError, match="min_samples"):
+        ThinkResourceProfile.from_samples(
+            measurements(),
+            configuration_fingerprint=FINGERPRINT,
+            calibrated_monotonic_ms=1000,
+            trusted_host=True,
+            min_samples=8.0,  # type: ignore[arg-type]
+        )
+
+
 def test_profile_rejects_non_vector_measurements() -> None:
     samples = list(measurements())
     samples[-1] = object()  # type: ignore[list-item]
