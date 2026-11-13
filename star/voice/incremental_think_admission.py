@@ -89,7 +89,7 @@ class IncrementalThinkAdmissionBridge:
     """Admit bounded, read-only speculative reasoning without stealing reserves.
 
     Thinker work uses WorkloadLane.VOICE_PREP: it is lower priority than audio, game
-    control, voice, and avatar work; it cannot consume the hard realtime reserve;
+    control, voice, avatar, and chat work; it cannot consume the hard realtime reserve;
     and it is eligible during a healthy stream/game only from unreserved
     capacity. Stale or degraded host telemetry blocks this non-protected lane.
 
@@ -104,7 +104,7 @@ class IncrementalThinkAdmissionBridge:
         runtime: StreamWorkloadRuntime,
         *,
         resources: ResourceVector,
-            max_pending: int = 64,
+        max_pending: int = 64,
     ) -> None:
         if type(runtime) is not StreamWorkloadRuntime:
             raise TypeError("runtime must be StreamWorkloadRuntime")
