@@ -104,15 +104,12 @@ class IncrementalThinkAdmissionBridge:
         runtime: StreamWorkloadRuntime,
         *,
         resources: ResourceVector,
-        request_ttl_ms: int = 1_500,
-        max_pending: int = 64,
+            max_pending: int = 64,
     ) -> None:
         if type(runtime) is not StreamWorkloadRuntime:
             raise TypeError("runtime must be StreamWorkloadRuntime")
         if type(resources) is not ResourceVector:
             raise TypeError("resources must be an explicit ResourceVector")
-        if type(request_ttl_ms) is not int or not 100 <= request_ttl_ms <= 30_000:
-            raise ValueError("request_ttl_ms must be in 100..30000")
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pending must be in 1..256")
         for name in ("cpu_millicores", "ram_mb", "vram_mb"):
@@ -121,7 +118,6 @@ class IncrementalThinkAdmissionBridge:
                 raise ValueError(f"resources.{name} is outside the supported range")
         self._runtime = runtime
         self._resources = resources
-        self._request_ttl_ms = request_ttl_ms
         self._max_pending = max_pending
         self._bindings: dict[tuple[str, int], _Binding] = {}
         self._by_lease: dict[str, tuple[str, int]] = {}
@@ -162,7 +158,6 @@ class IncrementalThinkAdmissionBridge:
         utterance_id: str,
         revision: int,
         *,
-        now_ms: int,
         reason: str,
     ) -> ThinkAdmissionResult:
         key = self._key(utterance_id, revision)
@@ -207,6 +202,8 @@ class IncrementalThinkAdmissionBridge:
         now = _now(now_ms)
         if type(directive) is not ThinkDirective:
             raise TypeError("directive must be ThinkDirective")
+        if type(directive.action) is not ThinkAction or type(directive.cancel_previous) is not bool:
+            raise ValueError("directive action and cancellation flag must be explicit")
         if directive.may_speak is not False or directive.may_execute_tools is not False:
             raise PermissionError("incremental thinker directives cannot speak or execute tools")
 
@@ -227,7 +224,6 @@ class IncrementalThinkAdmissionBridge:
                     prior = self._cancel_exact(
                         directive.cancel_utterance_id,
                         directive.cancel_revision,
-                        now_ms=now,
                         reason="asr_revision_replaced",
                     )
                     if prior.status not in ("cancelled", "not_found"):
@@ -254,15 +250,13 @@ class IncrementalThinkAdmissionBridge:
                     self._counts["expired_or_rejected"] += 1
                     return ThinkAdmissionResult("rejected", "pending_capacity_reached")
 
-                if now + self._request_ttl_ms > _MAX_CLOCK_MS:
-                    raise ValueError("request deadline exceeds supported monotonic clock")
                 request_id = self._request_id(key)
                 request = WorkloadRequest(
                     request_id=request_id,
                     lane=WorkloadLane.CHAT,
                     resources=self._resources,
                     enqueued_monotonic_ms=now,
-                    deadline_monotonic_ms=now + self._request_ttl_ms,
+                    deadline_monotonic_ms=None,
                 )
                 submission = self._runtime.submit(request)
                 if submission.status != "queued":
@@ -300,7 +294,6 @@ class IncrementalThinkAdmissionBridge:
                 return self._cancel_exact(
                     directive.cancel_utterance_id,
                     directive.cancel_revision,
-                    now_ms=now,
                     reason=directive.reason or "coordinator_cancelled",
                 )
 
@@ -308,7 +301,6 @@ class IncrementalThinkAdmissionBridge:
                 return self._cancel_exact(
                     directive.utterance_id,
                     directive.revision,
-                    now_ms=now,
                     reason="final_transcript_committed",
                 )
 
@@ -452,6 +444,8 @@ class IncrementalThinkAdmissionBridge:
     ) -> bool:
         """Release capacity only after the host proves the worker is stopped."""
         now = _now(now_ms)
+        if type(host_confirmed_stopped) is not bool:
+            raise ValueError("host_confirmed_stopped must be an explicit boolean")
         if host_confirmed_stopped is not True:
             with self._lock:
                 key = self._by_lease.get(lease_id)
