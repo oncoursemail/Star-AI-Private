@@ -88,7 +88,7 @@ class ThinkResourceProfile:
             raise PermissionError("trusted host measurements are required")
         if type(samples) not in (tuple, list):
             raise TypeError("samples must be a bounded tuple or list")
-        if not _MIN_SAMPLES <= min_samples <= 512:
+        if type(min_samples) is not int or not _MIN_SAMPLES <= min_samples <= 512:
             raise ValueError("min_samples must be in 8..512")
         if not _MIN_SAMPLES <= len(samples) <= _MAX_SAMPLES:
             raise ValueError("samples must contain 8..4096 measurements")
