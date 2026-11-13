@@ -121,7 +121,19 @@ class LocalHostTests(unittest.TestCase):
         self.host.register_parameters()
         self.assertEqual(len(self.socket.sent), 16)
         self.assertTrue(self.host.connected)
+        self.assertTrue(self.host.ready)
         self.assertEqual(self.socket.timeout, 0.1)
+
+
+    def test_ready_requires_authentication_and_parameter_registration(self):
+        self.assertFalse(self.host.ready)
+        self.connect(register=False)
+        self.assertTrue(self.host.connected)
+        self.assertFalse(self.host.ready)
+        self.host.register_parameters()
+        self.assertTrue(self.host.ready)
+        self.host.close()
+        self.assertFalse(self.host.ready)
 
     def test_first_pairing_requires_owner_specific_flag(self):
         with self.assertRaises(PermissionError):
@@ -209,6 +221,7 @@ class LocalHostTests(unittest.TestCase):
         with self.assertRaises(VTSHostError):
             self.host.send_frame("plan", playback_epoch="p", frame="x", audible_cursor_s=0, sampled_ms=100000)
         self.assertFalse(self.host.connected)
+        self.assertFalse(self.host.ready)
         self.assertTrue(self.socket.closed)
 
     def test_close_and_fresh_reconnect(self):

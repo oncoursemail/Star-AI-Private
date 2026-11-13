@@ -84,6 +84,12 @@ class VTubeLocalHost:
         with self._lock:
             return self._socket is not None
 
+    @property
+    def ready(self) -> bool:
+        """True only after authentication and custom-parameter registration."""
+        with self._lock:
+            return self._socket is not None and self._registered
+
     def _close_locked(self) -> None:
         sock, self._socket = self._socket, None
         self._registered = False
