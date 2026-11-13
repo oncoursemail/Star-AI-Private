@@ -6,6 +6,7 @@ import pytest
 
 from star.voice.room import CueIntent, CueSource, RoomCue
 from star.voice.room_payloads import (
+    RoomPayload,
     RoomPayloadKind,
     RoomPayloadStore,
     RoomPayloadStoreConfig,
