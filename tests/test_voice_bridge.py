@@ -299,3 +299,28 @@ def test_room_only_call_skips_microphone_and_local_asr_vad_loading(tmp_path):
         assert saved == []
     finally:
         bridge.close()
+
+
+def test_status_distinguishes_room_only_requirements_from_local_asr(tmp_path, monkeypatch):
+    from importlib.machinery import ModuleSpec
+
+    bridge, _events, _saved, _built = make_bridge(tmp_path)
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "kokoro-v1.0.onnx").write_bytes(b"model")
+    (models / "voices-v1.0.bin").write_bytes(b"voices")
+    monkeypatch.setenv("STAR_VOICE_MODELS", str(models))
+
+    def fake_find_spec(module):
+        return None if module == "faster_whisper" else ModuleSpec(module, loader=None)
+
+    monkeypatch.setattr("star.voice.bridge.importlib.util.find_spec", fake_find_spec)
+    try:
+        status = bridge.handle("voiceStatus", {})
+        assert status["available"] is False
+        assert status["missingPackages"] == ["faster-whisper"]
+        assert status["roomOnlyAvailable"] is True
+        assert status["roomOnlyMissingPackages"] == []
+        assert status["roomOnlyMissingModels"] == []
+    finally:
+        bridge.close()
