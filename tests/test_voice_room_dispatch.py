@@ -213,7 +213,7 @@ def test_payload_for_a_different_cue_is_never_attached_to_queued_event():
 
 def test_full_queue_rejects_new_room_message_and_cleans_its_payload():
     queue = RoomCueQueue(RoomQueueConfig(max_items=1))
-    session, _, _ = make((
+    session, _, _ = make(
         ["Long enough first answer to stay busy."],
         first_delay=0.05,
         token_delay=0.01,
