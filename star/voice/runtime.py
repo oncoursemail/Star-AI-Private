@@ -11,6 +11,26 @@ from .persona import system_message
 from .settings import VoiceSettings
 
 
+class _SilentVAD:
+    """No microphone input is opened in a room-only stream session."""
+
+    @staticmethod
+    def probability(_frame: bytes) -> float:
+        return 0.0
+
+    @staticmethod
+    def reset() -> None:
+        return None
+
+
+class _SilentASR:
+    """No local ASR model is loaded when a stream host supplies final transcripts."""
+
+    @staticmethod
+    def transcribe(_pcm: bytes, _sample_rate: int = 16000) -> str:
+        return ""
+
+
 @dataclass
 class Engines:
     """Loaded models. Loading takes seconds, so keep this object and reuse it between calls."""
@@ -21,7 +41,10 @@ class Engines:
     load_seconds: dict
 
     @classmethod
-    def load(cls, settings: VoiceSettings, progress: Callable[[str], None] | None = None) -> "Engines":
+    def load(cls, settings: VoiceSettings, progress: Callable[[str], None] | None = None,
+             *, input_enabled: bool = True) -> "Engines":
+        if type(input_enabled) is not bool:
+            raise TypeError("input_enabled must be a boolean")
         from . import engines
         say = progress or (lambda message: None)
         timings = {}
@@ -33,11 +56,18 @@ class Engines:
             timings[label] = round(time.perf_counter() - started, 2)
             return value
 
-        vad = timed("Loading voice activity detector", lambda: engines.make_vad(settings.vad))
-        endpointer = timed("Loading end-of-turn model", lambda: engines.make_endpointer(settings.endpointer))
-        asr = timed("Loading speech recognition",
-                    lambda: engines.make_asr(settings.asr_engine, settings.asr_model, settings.device,
-                                             settings.asr_prompt))
+        if input_enabled:
+            vad = timed("Loading voice activity detector", lambda: engines.make_vad(settings.vad))
+            endpointer = timed("Loading end-of-turn model", lambda: engines.make_endpointer(settings.endpointer))
+            asr = timed("Loading speech recognition",
+                        lambda: engines.make_asr(settings.asr_engine, settings.asr_model, settings.device,
+                                                 settings.asr_prompt))
+        else:
+            say("Skipping local microphone, VAD, endpointer, and ASR for room-only streaming")
+            vad = _SilentVAD()
+            endpointer = None
+            asr = _SilentASR()
+
         tts = timed("Loading Star's voice",
                     lambda: engines.make_tts(settings.tts_engine, settings.voice, settings.speed, settings.device,
                                              lang=settings.tts_lang, gap_ms=settings.sentence_gap_ms,
@@ -46,9 +76,10 @@ class Engines:
         def warm() -> None:
             if hasattr(tts, "warm_up"):
                 tts.warm_up()
-            asr.transcribe(b"\x00\x00" * 16000, 16000)      # first call pays one-off set-up costs
-            if endpointer is not None:
-                endpointer.complete_probability(b"\x00\x00" * 16000)
+            if input_enabled:
+                asr.transcribe(b"\x00\x00" * 16000, 16000)      # first call pays one-off set-up costs
+                if endpointer is not None:
+                    endpointer.complete_probability(b"\x00\x00" * 16000)
 
         timed("Warming up", warm)
         return cls(vad, endpointer, asr, tts, timings)
