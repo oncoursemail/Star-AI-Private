@@ -70,7 +70,7 @@ The Linux reader converts user+system jiffies to the same 100-nanosecond time un
 
 The Windows reader uses PROCESS_MEMORY_COUNTERS_EX.WorkingSetSize. This is the current resident working set in bytes, not the process commit charge or page-file usage.
 
-The window accumulator records the maximum observed working set. A background sampler should normally poll every 100–250 ms. The default maximum accepted gap is 500 ms; a larger gap invalidates the window because a short-lived peak could have been missed.
+The window accumulator records the maximum observed working set. A background sampler should normally poll every 100–250 ms. The default maximum accepted gap is 500 ms; a larger gap invalidates the window because a short-lived peak could have been missed. Every observation call must also supply the current host clock epoch and inference-configuration fingerprint; the accumulator revalidates both on every sample rather than trusting only the values captured at construction.
 
 The Linux reader uses resident pages from /proc/<pid>/stat multiplied by the system page size.
 
@@ -277,7 +277,7 @@ The process telemetry adapter is acceptable only when:
 - It never enumerates processes; callers supply the exact PID.
 - PID reuse is detected using the process-start token.
 - Process CPU counters never move backwards within a window.
-- Every window uses one host clock epoch and one inference fingerprint.
+- Every observation re-presents the current host clock epoch and inference fingerprint; any mid-window change invalidates the sample.
 - A sampling gap above the configured maximum invalidates the window.
 - Unknown GPU memory is represented as None, never zero.
 - Windows WDDM never uses NVML usedGpuMemory as the process VRAM source.
