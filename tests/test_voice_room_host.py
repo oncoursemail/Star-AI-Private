@@ -172,3 +172,18 @@ def test_rate_limit_rejects_invalid_host_clock_without_accepting_content():
     finally:
         host.close()
         session.stop()
+
+
+def test_invalid_opaque_speaker_id_is_rejected_before_rate_limit_state():
+    config = RoomHostConfig(allowed_sources=frozenset({CueSource.AUDIO}))
+    host, session, _events, _brain = make_host(config)
+    try:
+        item = make_cue("invalid-speaker", source=CueSource.AUDIO, speaker_id="x" * 129)
+        decision = host.submit(item, "Question")
+        assert decision.action is RoomAction.WAIT
+        assert decision.reason == "invalid_room_cue"
+        assert host.stats.rejected_invalid == 1
+        assert len(host._speaker_times) == 0
+    finally:
+        host.close()
+        session.stop()
