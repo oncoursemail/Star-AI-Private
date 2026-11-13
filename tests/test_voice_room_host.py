@@ -295,3 +295,40 @@ def test_human_resolution_cancels_room_reply_while_thinking_before_audio():
     finally:
         host.close()
         session.stop()
+
+
+
+def test_room_host_rejects_malformed_resolution_link_before_payload_storage():
+    config = RoomHostConfig(allowed_sources=frozenset({CueSource.AUDIO}))
+    host, session, _events, _brain = make_host(config)
+    try:
+        missing = host.submit(
+            make_cue(
+                "resolution-missing-link",
+                source=CueSource.AUDIO,
+                intent=CueIntent.HUMAN_RESOLUTION,
+                addressed=False,
+            ),
+            "Someone answered.",
+        )
+        assert missing.action is RoomAction.WAIT
+        assert missing.reason == "invalid_room_cue"
+        assert host.stats.rejected_invalid == 1
+        assert len(session.room_payload_store) == 0
+
+        misplaced = host.submit(
+            make_cue(
+                "question-with-resolution-link",
+                source=CueSource.AUDIO,
+                intent=CueIntent.DIRECT_QUESTION,
+                resolves_event_id="question-0",
+            ),
+            "What happened?",
+        )
+        assert misplaced.action is RoomAction.WAIT
+        assert misplaced.reason == "invalid_room_cue"
+        assert host.stats.rejected_invalid == 2
+        assert len(session.room_payload_store) == 0
+    finally:
+        host.close()
+        session.stop()
