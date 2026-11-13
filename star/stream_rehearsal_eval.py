@@ -41,7 +41,18 @@ _COUNT_FIELDS = (
     "held_out_skill_trials",
     "held_out_skill_successes",
 )
-_REQUIRED_KEYS = frozenset({"schema_version", "run_id", *_SERIES_FIELDS, *_COUNT_FIELDS})
+_INTERACTION_COUNT_FIELDS = (
+    "spoken_task_trials",
+    "spoken_task_successes",
+    "whisper_control_trials",
+    "whisper_control_successes",
+    "volume_control_trials",
+    "volume_control_successes",
+    "groundedness_trials",
+    "groundedness_successes",
+)
+_REQUIRED_KEYS_V1 = frozenset({"schema_version", "run_id", *_SERIES_FIELDS, *_COUNT_FIELDS})
+_REQUIRED_KEYS_V2 = _REQUIRED_KEYS_V1 | frozenset(_INTERACTION_COUNT_FIELDS)
 _RATE_LIMITS = frozenset({
     "max_audio_underrun_rate",
     "max_obs_render_skip_rate",
@@ -50,6 +61,10 @@ _RATE_LIMITS = frozenset({
     "min_turn_recall",
     "min_task_recovery_rate",
     "min_held_out_skill_transfer_rate",
+    "min_spoken_task_accuracy",
+    "min_whisper_control_rate",
+    "min_volume_control_rate",
+    "min_groundedness_rate",
 })
 
 
@@ -118,6 +133,10 @@ class RehearsalLimits:
     min_turn_recall: float | None = None
     min_task_recovery_rate: float | None = None
     min_held_out_skill_transfer_rate: float | None = None
+    min_spoken_task_accuracy: float | None = None
+    min_whisper_control_rate: float | None = None
+    min_volume_control_rate: float | None = None
+    min_groundedness_rate: float | None = None
     max_stale_task_resumes: int | None = None
     max_duplicate_speech_replays: int | None = None
 
@@ -137,6 +156,10 @@ class RehearsalLimits:
             "min_turn_recall",
             "min_task_recovery_rate",
             "min_held_out_skill_transfer_rate",
+            "min_spoken_task_accuracy",
+            "min_whisper_control_rate",
+            "min_volume_control_rate",
+            "min_groundedness_rate",
         ):
             value = getattr(self, name)
             if value is None:
@@ -166,16 +189,24 @@ def evaluate_rehearsal(
     """
     if type(limits) is not RehearsalLimits:
         raise TypeError("limits must be RehearsalLimits")
-    if type(snapshot) is not dict or set(snapshot) != _REQUIRED_KEYS:
-        raise ValueError("snapshot must contain exactly the documented aggregate fields")
-    if type(snapshot.get("schema_version")) is not int or snapshot["schema_version"] != 1:
+    if type(snapshot) is not dict:
+        raise ValueError("snapshot must be a dictionary")
+    version = snapshot.get("schema_version")
+    if type(version) is not int or version not in {1, 2}:
         raise ValueError("unsupported rehearsal snapshot schema")
+    expected_keys = _REQUIRED_KEYS_V1 if version == 1 else _REQUIRED_KEYS_V2
+    if set(snapshot) != expected_keys:
+        raise ValueError("snapshot must contain exactly the documented aggregate fields")
     run_id = snapshot.get("run_id")
     if type(run_id) is not str or not _RUN_ID.fullmatch(run_id):
         raise ValueError("run_id must be a bounded opaque identifier")
 
     samples = {name: _series(snapshot[name], name) for name in _SERIES_FIELDS}
     counts = {name: _count(snapshot[name], name) for name in _COUNT_FIELDS}
+    counts.update({
+        name: (_count(snapshot[name], name) if version == 2 else 0)
+        for name in _INTERACTION_COUNT_FIELDS
+    })
 
     if counts["audio_underrun_chunks"] > counts["audio_playback_chunks"]:
         raise ValueError("audio underrun chunks cannot exceed playback chunks")
@@ -187,6 +218,9 @@ def evaluate_rehearsal(
         raise ValueError("task recovery successes cannot exceed attempts")
     if counts["held_out_skill_successes"] > counts["held_out_skill_trials"]:
         raise ValueError("held-out skill successes cannot exceed trials")
+    for prefix in ("spoken_task", "whisper_control", "volume_control", "groundedness"):
+        if counts[f"{prefix}_successes"] > counts[f"{prefix}_trials"]:
+            raise ValueError(f"{prefix} successes cannot exceed trials")
 
     tp = counts["turn_true_positives"]
     fp = counts["turn_false_positives"]
@@ -195,6 +229,10 @@ def evaluate_rehearsal(
     turn_recall_n = tp + fn
     recovery_n = counts["task_recovery_attempts"]
     transfer_n = counts["held_out_skill_trials"]
+    spoken_task_n = counts["spoken_task_trials"]
+    whisper_n = counts["whisper_control_trials"]
+    volume_n = counts["volume_control_trials"]
+    groundedness_n = counts["groundedness_trials"]
     audio_n = counts["audio_playback_chunks"]
     render_n = counts["obs_render_total_frames"]
     output_n = counts["obs_output_total_frames"]
@@ -211,6 +249,10 @@ def evaluate_rehearsal(
         "turn_recall": _rate(tp, turn_recall_n),
         "task_recovery_rate": _rate(counts["task_recovery_successes"], recovery_n),
         "held_out_skill_transfer_rate": _rate(counts["held_out_skill_successes"], transfer_n),
+        "spoken_task_accuracy": _rate(counts["spoken_task_successes"], spoken_task_n),
+        "whisper_control_rate": _rate(counts["whisper_control_successes"], whisper_n),
+        "volume_control_rate": _rate(counts["volume_control_successes"], volume_n),
+        "groundedness_rate": _rate(counts["groundedness_successes"], groundedness_n),
         "counts": counts,
         "sample_counts": {name: len(values) for name, values in samples.items()},
     }
@@ -278,6 +320,18 @@ def evaluate_rehearsal(
     add_gate("held_out_skill_transfer_rate", metrics["held_out_skill_transfer_rate"],
              limits.min_held_out_skill_transfer_rate, direction="min",
              observations=transfer_n, minimum=min_n)
+    add_gate("spoken_task_accuracy", metrics["spoken_task_accuracy"],
+             limits.min_spoken_task_accuracy, direction="min",
+             observations=spoken_task_n, minimum=min_n)
+    add_gate("whisper_control_rate", metrics["whisper_control_rate"],
+             limits.min_whisper_control_rate, direction="min",
+             observations=whisper_n, minimum=min_n)
+    add_gate("volume_control_rate", metrics["volume_control_rate"],
+             limits.min_volume_control_rate, direction="min",
+             observations=volume_n, minimum=min_n)
+    add_gate("groundedness_rate", metrics["groundedness_rate"],
+             limits.min_groundedness_rate, direction="min",
+             observations=groundedness_n, minimum=min_n)
     add_gate("stale_task_resumes", counts["stale_task_resumes"],
              limits.max_stale_task_resumes, direction="max",
              observations=recovery_n, minimum=1)
@@ -292,7 +346,7 @@ def evaluate_rehearsal(
         "INCONCLUSIVE" if "INCONCLUSIVE" in statuses else "PASS"
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "overall": overall,
         "metrics": metrics,
@@ -303,6 +357,9 @@ def evaluate_rehearsal(
             "OBS render skips and output skips are separate loss channels.",
             "Turn precision/recall require human-labeled or otherwise trusted outcomes.",
             "Held-out skill transfer is not training-set practice success.",
+            "Spoken-task, whisper, volume, and groundedness outcomes require independent scoring.",
+            "Groundedness trials must cover conversations longer than twenty turns.",
+            "Schema-v1 snapshots remain readable; new interaction gates are inconclusive without schema-v2 evidence.",
             "A PASS applies only to configured limits and supplied observations.",
             "No raw chat, transcript, audio, video, screenshot, viewer identity, or prompt is retained.",
         ],
