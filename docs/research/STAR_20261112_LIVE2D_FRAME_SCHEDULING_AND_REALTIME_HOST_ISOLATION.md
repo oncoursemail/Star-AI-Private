@@ -26,6 +26,19 @@ Sources:
 - https://arxiv.org/abs/2609.22913
 - https://www.alphaxiv.org/abs/2609.22913
 
+#### AVTR-1 streaming details that matter to STAR
+
+The paper's serving layer separates three concurrent worklets: transport, conversation engine, and rendering. They communicate through a type-routed event bus with independent consumer queues. A shared session media clock schedules deadlines and accounts for overruns. The speech scheduler models each utterance as start marker, audio fragments, and end marker; on interruption it reports the admitted/heard prefix and discarded suffix so the voice agent can remove unheard speech from its dialogue state.
+
+These ideas suggest two future STAR improvements beyond this frame pump:
+
+1. A typed local media event bus separating voice transport, conversation state, avatar rendering, OBS status, and control-plane lifecycle.
+2. Heard-prefix reconciliation: when speech is interrupted, feed only the playback-confirmed portion back into dialogue state and remove generated-but-unheard text/audio from the model's conversational history. DeliveryLedger already tracks acknowledged segments, but it does not yet rewrite the voice model's dialogue state.
+
+Important queue distinction: AVTR-1's continuous audio/video media path preserves media timestamps and does not skip frames to catch up, because dropping encoded media frames can corrupt synchronization. STAR's latest-wins pump is deliberately narrower: it coalesces Live2D parameter-state updates sent to VTube Studio, not audio packets or timestamped WebRTC video frames. If STAR later adds a WebRTC avatar transport, it needs a media-clock/jitter-buffer scheduler rather than reusing this latest-wins mailbox.
+
+The paper's offline five-frame request table reports 232 ms for 200 ms of output on an RTX 4060 (0.86x real-time factor) and 207 ms on an RTX 3060 Ti (0.97x). Those measurements are for AVTR-1's full rendering stack and its test configuration, not STAR; they show why this model should not become a default concurrent-stream dependency on STAR's consumer GPU. Keep it an optional isolated experiment until memory, quality, and mixed-workload latency are measured.
+
 ### 1.2 VTube Studio's API is a parameter-injection interface
 
 The official VTube Studio API supports plugin-created custom parameters and InjectParameterDataRequest. The model artist maps those parameters to Live2D inputs in the VTube Studio UI. This fits STAR's existing 14-parameter rig bridge.
