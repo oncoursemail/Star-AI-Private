@@ -594,6 +594,10 @@ Important boundaries:
 - Room text is explicitly wrapped as untrusted user content. It never grants tools, permissions,
   publishing rights, purchases, or other side effects. The voice Brain interface only streams
   text; this dispatcher does not call STAR's tool executor.
+- The consumed message remains in the bounded in-call conversation history so STAR can answer
+  follow-ups. Raw room text is not copied into `turn_metrics` or the bridge's saved-turn callback;
+  those receive only a source-kind label such as `[room:chat_message]`. The host may separately
+  retain source messages, but this call API does not persist them.
 - The host must still decide which chat sources and viewers are allowed to address STAR, apply
   moderation/rate limits, and revalidate any external action separately.
 - `pop_queued_room_cue()` remains available for hosts that own their own payload and response
