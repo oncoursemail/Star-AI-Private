@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from star.voice.think_process_telemetry import (
+from star.voice.think_calibration import ThinkCalibrationSession\nfrom star.voice.think_process_telemetry import (
     IncompleteProcessTelemetry,
     ProcessCounters,
     ProcessIdentity,
@@ -355,3 +355,51 @@ def test_process_telemetry_schema_contains_no_names_paths_or_command_lines():
     names = {item.name for item in fields(ProcessCounters)}
     assert names == {"identity", "cpu_time_100ns", "working_set_bytes", "gpu_memory_bytes"}
     assert not {"name", "path", "command_line", "username", "transcript"} & names
+
+
+
+def test_process_windows_feed_existing_calibration_session():
+    session = ThinkCalibrationSession(
+        session_id="process-session",
+        configuration_fingerprint=FINGERPRINT,
+        clock_epoch=EPOCH,
+        started_monotonic_ms=1000,
+        min_samples=8,
+        max_samples=8,
+    )
+    identity = ProcessIdentity(4321, 987654)
+    for index in range(8):
+        offset = index * 400
+        baseline = make_window(
+            sample_id=f"base-{index}",
+            start_ms=1000 + offset,
+            end_ms=1100 + offset,
+            cpu_start=1_000_000,
+            cpu_end=1_100_000,
+            ram_mib=100,
+            gpu_mib=200,
+            identity=identity,
+        )
+        active = make_window(
+            sample_id=f"active-{index}",
+            start_ms=1200 + offset,
+            end_ms=1300 + offset,
+            cpu_start=1_200_000,
+            cpu_end=1_500_000,
+            ram_mib=150,
+            gpu_mib=250,
+            identity=identity,
+        )
+        pair = build_think_calibration_pair(
+            sample_id=f"cal-{index}",
+            sequence=index + 1,
+            baseline=baseline,
+            active=active,
+        )
+        session.add(pair, now_ms=active.end_ms + 1, trusted_host=True)
+
+    profile = session.finalize(now_ms=1301 + 7 * 400, safety_margin_percent=25)
+    assert profile.clock_epoch == EPOCH
+    assert profile.sample_count == 8
+    assert (profile.resources.cpu_millicores, profile.resources.ram_mb,
+            profile.resources.vram_mb) == (250, 63, 63)
