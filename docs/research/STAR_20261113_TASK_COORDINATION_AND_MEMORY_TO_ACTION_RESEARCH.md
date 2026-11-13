@@ -286,7 +286,7 @@ Implemented in this branch:
 - checkpoint/result/evidence references;
 - report queue and actual-playback acknowledgement;
 - stale report exclusion;
-- 21 focused tests;
+- 22 focused tests;
 - a standard-library lifecycle benchmark.
 
 Not implemented by this change:
