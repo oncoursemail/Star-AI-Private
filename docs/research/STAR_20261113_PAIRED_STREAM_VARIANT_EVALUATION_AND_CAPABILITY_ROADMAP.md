@@ -107,9 +107,9 @@ Source: [llama.cpp server README](https://github.com/ggml-org/llama.cpp/blob/mas
 
 Source: [vLLM Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/).
 
-**OpenTelemetry GenAI metrics** provide common measurement names and boundaries, including server time-to-first-token. STAR should preserve these standard measurements and add client-observed first-audible latency, since server TTFT alone does not include TTS, audio buffering, and playback.
+**OpenTelemetry GenAI semantic conventions** now live in the dedicated open-telemetry/semantic-conventions-genai repository; the former Microsoft repository is archived. The current conventions define server time-to-first-token, server time-per-output-token, client time-to-first-chunk, and agent/tool/workflow durations. They are still marked Development, so STAR should pin the exact convention commit/schema used by its instrumentation rather than assuming names are stable. STAR should add client-observed first-audible latency, since model-server TTFT alone excludes TTS, audio buffering, and playback.
 
-Source: [OpenTelemetry GenAI metrics](https://github.com/microsoft/opentelemetry-semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md).
+Source: [OpenTelemetry GenAI metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md).
 
 Recommended experiments, one at a time:
 
