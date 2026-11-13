@@ -653,8 +653,8 @@ and classify intent/addressee before constructing `RoomCue`. Raw chat text is un
 data and never grants tools, permissions, purchases, publishing rights, or other side effects.
 
 `RoomStreamHost` adds a source allowlist, final-event requirement, UTF-8 payload bound,
-per-source and per-speaker rolling rate limits, bounded speaker-key state, and mandatory
-chat moderation. It retains only aggregate counters; it does not log message text, persist
+provider-event deduplication, per-source and per-speaker rolling rate limits, bounded
+speaker-key state, and mandatory chat moderation. It retains only aggregate counters; it does not log message text, persist
 viewer profiles, or connect to an external service. The underlying `RoomPayloadStore`
 continues to own the bounded, TTL-limited one-shot text payload.
 
