@@ -494,7 +494,7 @@ Implemented in this branch:
 - queued chat and game events;
 - high-confidence audio interruption bound to an exact response ID;
 - bounded configuration and numeric validation;
-- 25 offline tests in the isolated local check.
+- 26 offline tests in the isolated local check.
 
 Not implemented or tested in this branch:
 - speaker diarization or speaker identity;
