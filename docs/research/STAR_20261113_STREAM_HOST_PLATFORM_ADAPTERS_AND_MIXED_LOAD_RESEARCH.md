@@ -61,10 +61,10 @@ Official sources:
 
 Engineering implications:
 
-1. Use the channel.chat.message subscription and the required user/app authorization scopes; do not scrape the chat web page.
+1. Use the channel.chat.message subscription and the required scopes; do not scrape the chat web page. For a local installed chatbot, Twitch documents a user access token with user:read:chat. WebSocket subscriptions require a user token. The cloud-bot flow is different: an app token plus prior authorization for user:read:chat and user:bot on the bot identity, and channel:bot on the broadcaster identity.
 2. EventSub WebSocket is a server-to-client notification transport (apart from protocol ping/pong). Do not send arbitrary application messages to it.
 3. A new socket begins with session_welcome. Create the subscription within the welcome deadline.
-4. Provider notifications may be redelivered with the same metadata.message_id; deduplicate before constructing a RoomCue.
+4. Provider notifications are at-least-once and may be redelivered with the same metadata.message_id. Deduplicate before classification and before constructing a RoomCue; also reject stale message_timestamp values to reduce replay risk.
 5. For planned session_reconnect, connect to the supplied reconnect_url and keep the old socket until the new socket sends Welcome. Do not invent or rewrite the URL.
 6. For an unexpected disconnect, the new session loses old subscriptions and there is no replay for the gap. Resubscribe and mark the missing interval as a known coverage gap rather than pretending continuity.
 7. Use one WebSocket until there is a measured reason to split connections; respect the documented connection/subscription limits.
@@ -78,11 +78,12 @@ Official sources:
 
 Engineering implications:
 
-1. Prefer liveChatMessages.streamList over frequent list polling. It is server-streaming, pushes new messages, and avoids wasting quota on constant polling.
-2. Persist only the provider's resume cursor in the provider adapter if continuity is required; the room host itself remains ephemeral.
-3. On reconnect, resume with the last nextPageToken where supported and deduplicate by the provider message ID.
-4. Stop ingestion when the broadcast/chat ends. The live chat resource is only available while the live event is active.
-5. Treat fan-funding, poll, membership, and moderation events as distinct event types. Do not flatten every event into ordinary text; use separate intent and moderation policies.
+1. Prefer liveChatMessages.streamList over frequent list polling. It is server-streaming, pushes new messages, and has a documented quota cost of five units per call.
+2. The initial stream can include recent chat history. Apply an explicit startup cutoff so old messages are not unexpectedly spoken as new questions.
+3. Persist only the provider's resume cursor in the provider adapter if continuity is required; the room host itself remains ephemeral.
+4. On reconnect, resume with the last nextPageToken where supported and deduplicate by the provider message ID.
+5. Stop ingestion when the broadcast/chat ends. The live chat resource is only available while the live event is active.
+6. Treat fan-funding, poll, membership, and moderation events as distinct event types. Do not flatten every event into ordinary text; use separate intent and moderation policies.
 
 ### VTube Studio
 
