@@ -209,6 +209,38 @@ A general game agent should not ask a large language model to choose every frame
 - reject a skill that only memorizes one map or one seed;
 - measure transfer to unseen tasks before promotion.
 
+### 5.1 Real-time gameplay is not the same as paused reasoning
+
+**Gym-Anything-RT** (Aggarwal & Welleck, arXiv:2610.37567, 2026-10-27) constructs 100 visual minigames across six real-time interaction capabilities. The same environment can be run in real time, slowed, or paused. In the paper's reported evaluation, GPT-6 Astra xHigh passed 9.0% in real time and 75.0% when the environment was paused. This is a benchmark result, not a general claim about all games or devices.
+
+Source: https://arxiv.org/abs/2610.37567
+
+**STAR transfer:** Every gameplay skill should be evaluated in at least two modes:
+- **Deliberative:** pause/slow the environment to test perception, planning, and rule understanding.
+- **Real-time:** restore normal timing to test whether the controller can act before the world changes.
+
+A skill that works only while paused is a planning skill, not a real-time gameplay skill. Keep high-frequency movement, camera, and timing in a bounded reactive controller; use the language model for tactics, adaptation, and recovery. Never let a model-written script bypass the observation/action path during evaluation.
+
+### 5.2 Roblox creation requires exploration before editing
+
+**OpenGameEval** (Turkel et al., arXiv:2610.02563, 2026-10-01) evaluates agents in reproducible Roblox Studio sessions using 84 human-curated tasks, 8 tools, 13 frontier models, and 16 attempts per task. It checks both the edited scene and a simulated Play session. The paper reports a best single-attempt success rate of 51.7%; inspecting the objects touched by the reference solution correlated with 13.4 percentage points higher success on scene-only tasks and 9.8 points on script-only tasks.
+
+Sources:
+- Paper: https://arxiv.org/abs/2610.02563
+- Official evaluation repository: https://github.com/Roblox/open-game-eval
+
+**STAR Creator transfer:**
+1. Inspect the place hierarchy and relevant instances before editing.
+2. Record exact object paths, properties, scripts, and dependencies.
+3. Separate read-only observation tools from edit tools.
+4. Make a minimal patch with a reversible diff.
+5. Run executable scene checks.
+6. Start a Play session and verify behavior, not just syntax.
+7. Capture visual evidence and compare against acceptance criteria.
+8. Run regression tests and restore the prior snapshot if checks fail.
+
+Do not promote a generated script or scene edit as a completed game feature until the Play-session outcome passes.
+
 For Roblox, keep Studio inspection, editing, Play testing, and publishing as separate permission boundaries. A successful code generation is not a successful game: require Play-session evidence, regression checks, visual inspection, and rollback.
 
 ## 6. General knowledge and grounded explanations
