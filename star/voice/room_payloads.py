@@ -152,7 +152,15 @@ class RoomPayloadStore:
                 items=len(self._items),
                 bytes_used=self._bytes_used,
                 peak_bytes=self._peak_bytes,
-                **self._counts,
+                accepted=self._counts["accepted"],
+                taken=self._counts["taken"],
+                expired=self._counts["expired"],
+                deleted=self._counts["deleted"],
+                duplicates=self._counts["duplicates"],
+                rejected_full=self._counts["rejected_full"],
+                rejected_too_large=self._counts["rejected_too_large"],
+                rejected_stale=self._counts["rejected_stale"],
+                rejected_non_final=self._counts["rejected_non_final"],
             )
 
     def put(self, cue: RoomCue, text: str, *, now: float) -> RoomPayloadStoreResult:
@@ -162,6 +170,10 @@ class RoomPayloadStore:
             raise TypeError("text must be a string")
         if not text.strip():
             raise ValueError("text must not be empty")
+        if len(text) > self.config.max_payload_bytes:
+            with self._lock:
+                self._bump("rejected_too_large")
+            return RoomPayloadStoreResult.TOO_LARGE
         if not cue.final:
             with self._lock:
                 self._bump("rejected_non_final")
