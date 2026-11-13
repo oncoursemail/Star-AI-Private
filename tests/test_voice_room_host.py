@@ -11,28 +11,32 @@ from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVA
 
 
 def make_cue(event_id: str, *, source: CueSource = CueSource.CHAT,
-             speaker_id: str = "opaque-speaker", now: float | None = None) -> RoomCue:
+             speaker_id: str = "opaque-speaker", now: float | None = None,
+             intent: CueIntent = CueIntent.DIRECT_QUESTION, addressed: bool = True,
+             resolves_event_id: str | None = None) -> RoomCue:
     ended = time.monotonic() if now is None else now
     return RoomCue(
         event_id=event_id,
         speaker_id=speaker_id,
         source=source,
-        intent=CueIntent.DIRECT_QUESTION,
-        addressed_to_star=True,
+        intent=intent,
+        addressed_to_star=addressed,
         confidence=0.99,
         started_at=ended - 0.2,
         ended_at=ended,
+        resolves_event_id=resolves_event_id,
     )
 
 
-def make_host(config: RoomHostConfig, *, moderate_chat=None, replies=None, clock=time.monotonic):
+def make_host(config: RoomHostConfig, *, moderate_chat=None, replies=None, clock=time.monotonic,
+              tts_seconds_per_word: float = 0.01):
     events = Events()
     brain = FakeBrain(replies or ["Hello, I can hear you."])
     session = CallSession(
         vad=FakeVAD(),
         asr=FakeASR({}),
         brain=brain,
-        tts=FakeTTS(seconds_per_word=0.01),
+        tts=FakeTTS(seconds_per_word=tts_seconds_per_word),
         speaker=FakeSpeaker(),
         config=CallConfig(partial_transcripts=False),
         on_event=events,
@@ -214,6 +218,44 @@ def test_duplicate_provider_event_is_dropped_before_moderation():
         assert second.reason == "duplicate_room_event"
         assert moderated == ["provider-redelivery"]
         assert host.stats.rejected_duplicate == 1
+    finally:
+        host.close()
+        session.stop()
+
+
+
+def test_human_resolution_stops_matching_room_reply_without_speaking_again():
+    config = RoomHostConfig(allowed_sources=frozenset({CueSource.AUDIO}))
+    host, session, _events, brain = make_host(
+        config,
+        replies=["I can explain the solution in much more detail."],
+        tts_seconds_per_word=0.2,
+    )
+    try:
+        first = host.submit(
+            make_cue("question-1", source=CueSource.AUDIO, speaker_id="viewer-a"),
+            "What happened?",
+        )
+        assert first.action is RoomAction.RESPOND
+        assert wait_for(lambda: session.speaker.pending_seconds() > 0, timeout=2)
+
+        resolution = host.submit(
+            make_cue(
+                "resolution-1",
+                source=CueSource.AUDIO,
+                speaker_id="viewer-b",
+                intent=CueIntent.HUMAN_RESOLUTION,
+                addressed=False,
+                resolves_event_id="question-1",
+            ),
+            "Another viewer already answered that question.",
+        )
+        assert resolution.action is RoomAction.STOP
+        assert resolution.reason == "human_resolved_request"
+        assert session.wait_idle(5)
+        assert len(brain.requests) == 1
+        assert session.turns[0].interrupt_reason == "room_human_resolved_request"
+        assert session.speaker.stops >= 1
     finally:
         host.close()
         session.stop()
