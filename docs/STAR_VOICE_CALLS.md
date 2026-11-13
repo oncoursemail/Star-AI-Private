@@ -683,7 +683,7 @@ constant polling/quota pressure. The live-chat resource is available while the l
 is active and is no longer available after the event ends. The adapter must stop cleanly
 when the stream ends and deduplicate messages across reconnects using the provider's
 message identifiers. See the official
-[LiveChatMessages methods](https://developers.google.com/youtube/v3/live/docs/liveChatMessages).
+[LiveChatMessages methods](https://developers.google.com/youtube/data/live/reference/rest/v3/liveChatMessages/streamList?hl=en).
 
 **VTube Studio.** The official API is a local WebSocket plugin API. The owner must enable
 API access and approve the plugin's authentication request; permissions can be separately
