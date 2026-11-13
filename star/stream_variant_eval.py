@@ -49,19 +49,6 @@ _METRICS = frozenset({
     "tokens_per_second",
     "memory_tokens",
 })
-_LOWER_IS_BETTER = frozenset({
-    "first_content_ms",
-    "first_audible_ms",
-    "game_frame_p99_ms",
-    "audio_underrun_rate",
-    "obs_output_skip_rate",
-    "peak_cpu_millicores",
-    "peak_ram_mib",
-    "peak_vram_mib",
-    "memory_tokens",
-})
-
-
 def _identifier(value: object, label: str) -> str:
     if type(value) is not str or not _ID.fullmatch(value):
         raise ValueError(f"{label} must be a bounded opaque identifier")
@@ -358,9 +345,12 @@ def _metric_value(trial: StreamTrial, name: str) -> float | None:
     return None if value is None else float(value)
 
 
-def _metric_summary(pairs: list[tuple[StreamTrial, StreamTrial]], name: str) -> dict[str, float | int | None]:
-    baseline = [_metric_value(left, name) for left, _ in pairs]
-    candidate = [_metric_value(right, name) for _, right in pairs]
+def _metric_summary(
+    pairs: list[tuple[StreamCase, StreamTrial, StreamTrial]], name: str
+) -> dict[str, float | int | None]:
+    applicable = [(left, right) for case, left, right in pairs if name in case.required_metrics]
+    baseline = [_metric_value(left, name) for left, _ in applicable]
+    candidate = [_metric_value(right, name) for _, right in applicable]
     paired = [
         (left, right)
         for left, right in zip(baseline, candidate)
@@ -390,13 +380,16 @@ def _metric_summary(pairs: list[tuple[StreamTrial, StreamTrial]], name: str) -> 
 
 
 def _dimension_summary(
-    pairs: list[tuple[StreamTrial, StreamTrial]],
+    pairs: list[tuple[StreamCase, StreamTrial, StreamTrial]],
     field: str,
+    required_dimension: str | None = None,
 ) -> dict[str, float | int | None]:
     selected = [
         (getattr(left, field), getattr(right, field))
-        for left, right in pairs
-        if getattr(left, field) is not None and getattr(right, field) is not None
+        for case, left, right in pairs
+        if (required_dimension is None or required_dimension in case.required_dimensions)
+        and getattr(left, field) is not None
+        and getattr(right, field) is not None
     ]
     baseline_successes = sum(1 for left, _ in selected if left is True)
     candidate_successes = sum(1 for _, right in selected if right is True)
@@ -524,16 +517,16 @@ def evaluate_stream_variants(
                 raise ValueError(f"paired trials have asymmetric outcome availability: {dimension}")
         pairs.append((case, left, right))
 
-    holdout_pairs = [(left, right) for case, left, right in pairs if case.split == "holdout"]
-    development_pairs = [(left, right) for case, left, right in pairs if case.split == "development"]
+    holdout_pairs = [(case, left, right) for case, left, right in pairs if case.split == "holdout"]
+    development_pairs = [(case, left, right) for case, left, right in pairs if case.split == "development"]
     holdout_domains = sorted({case.domain for case, _, _ in pairs if case.split == "holdout"})
 
     dimensions = {
         "task_success": _dimension_summary(holdout_pairs, "task_success"),
-        "turn_taking": _dimension_summary(holdout_pairs, "turn_taking_success"),
-        "groundedness": _dimension_summary(holdout_pairs, "groundedness_success"),
-        "held_out_skill": _dimension_summary(holdout_pairs, "held_out_skill_success"),
-        "game_completion": _dimension_summary(holdout_pairs, "game_completion_success"),
+        "turn_taking": _dimension_summary(holdout_pairs, "turn_taking_success", "turn_taking"),
+        "groundedness": _dimension_summary(holdout_pairs, "groundedness_success", "groundedness"),
+        "held_out_skill": _dimension_summary(holdout_pairs, "held_out_skill_success", "held_out_skill"),
+        "game_completion": _dimension_summary(holdout_pairs, "game_completion_success", "game_completion"),
     }
     metrics = {
         name: _metric_summary(holdout_pairs, name)
