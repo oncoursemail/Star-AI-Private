@@ -56,8 +56,11 @@ class TaskLedgerConfig:
     max_title_chars: int = 512
     max_reference_chars: int = 1_024
     busy_timeout_ms: int = 1_500
+    synchronous: str = "FULL"
 
     def __post_init__(self) -> None:
+        if not isinstance(self.synchronous, str) or self.synchronous not in {"FULL", "NORMAL"}:
+            raise ValueError("synchronous must be FULL or NORMAL")
         for name, low, high in (
             ("max_tasks", 1, 100_000),
             ("max_events", 1, 1_000_000),
@@ -191,7 +194,7 @@ class TaskLedger:
             self._db.execute(f"PRAGMA busy_timeout = {self.config.busy_timeout_ms}")
             if database != ":memory:":
                 self._db.execute("PRAGMA journal_mode = WAL")
-                self._db.execute("PRAGMA synchronous = NORMAL")
+            self._db.execute(f"PRAGMA synchronous = {self.config.synchronous}")
             self._init_schema()
         except Exception:
             self._db.close()
