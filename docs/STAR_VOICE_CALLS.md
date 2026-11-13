@@ -532,8 +532,8 @@ folder.
 
 The optional `RoomTurnDirector` can now be supplied to `CallSession` as `room_director=`. A host-owned adapter may pass a content-free `RoomCue` to `handle_room_cue()`. The method returns a `RoomDecision` for the host to route:
 
-- `RESPOND` means the cue is directed to Star while she is not speaking.
-- `QUEUE` means the host should queue the cue for later handling.
+- `RESPOND` means the cue is directed to Star while she is not speaking or preparing another reply.
+- `QUEUE` means the host should queue the cue for later handling. A direct request arriving while a reply is still being prepared is converted to `QUEUE` to prevent overlapping generations.
 - `CONTINUE` / `IGNORE` / `WAIT` preserve the current floor or defer uncertain cues.
 - `INTERRUPT` cancels only the exact active response generation named by the director.
 
