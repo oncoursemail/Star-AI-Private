@@ -4,7 +4,8 @@ import os
 
 import pytest
 
-from star.voice.think_calibration import ThinkCalibrationSession\nfrom star.voice.think_process_telemetry import (
+from star.voice.think_calibration import ThinkCalibrationSession
+from star.voice.think_process_telemetry import (
     IncompleteProcessTelemetry,
     ProcessCounters,
     ProcessIdentity,
