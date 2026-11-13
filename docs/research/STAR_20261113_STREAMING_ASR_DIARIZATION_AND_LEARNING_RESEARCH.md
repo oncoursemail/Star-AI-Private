@@ -196,3 +196,59 @@ The current PR's concrete code change also preserves the legacy injected engine-
 - GameDevBench, ICML 2026: https://proceedings.mlr.press/v306/chi26a.html
 - UlaCache (21 October 2026): https://arxiv.org/abs/2610.29820
 - OpenTelemetry GenAI metrics: https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md
+
+
+## Additional full-duplex research: coordination, not just conversation
+
+### Voice-Light — reversible playback and private speculation
+
+The September 17, 2026 Voice-Light paper describes a cascaded full-duplex architecture with immediate acoustic onset, a causal adapter sharing a streaming-ASR encoder, reversible playback control, and private speculative response generation. Its central invariant is that uncertain work may begin early, but it becomes audible or durable only after explicit causal checks. Generated text/audio is tagged by generation and remains private until promotion; acknowledged/rendered playback, not generated text, is authoritative for durable conversation history.
+
+The paper's locked evaluation is also a useful warning: a learned end-of-turn checkpoint with a 2.70% false-cutoff rate had only 12.53% end-of-turn recall, versus 95.60% for a Silero timing policy. The system therefore kept a hybrid controller rather than replacing timing with the learned detector. It reports a 758 ms median from final VAD endpoint to first server audio over 36 operator-run turns, but explicitly labels these as an instrumented case study, not a controlled population evaluation.
+
+**STAR adoption:** retain the existing conservative VAD / endpointing baseline; use learned turn evidence as an additional signal, not an unvalidated replacement. Keep speculative response text and PCM isolated by generation ID. Promote only after turn commitment and policy checks. Continue using actual playback/DAC or client acknowledgements for captions, avatar lip-sync, cancellation truncation, and history.
+
+### Joi-Bench-Task — track what is being done and what has been said
+
+The November 9, 2026 Joi-Bench-Task paper evaluates whether a full-duplex agent can track:
+- what task is currently executing;
+- what has completed;
+- what has already been communicated;
+- what remains to be reported.
+
+Its interactive simulator changes or withdraws requests during tool execution and interrupts the agent while it is speaking results. The paper reports that the best result-completion rate under request changes was 55%, and four of five evaluated agents had average information-omission rates of at least 23% after interruption.
+
+**STAR adoption:** add a conversation/task coordination ledger to the unified runtime. Each work item should have a stable task ID and explicit states such as proposed, accepted, running, blocked, completed, cancelled, and reported. Spoken claims must reference completed evidence. If a viewer changes priorities while STAR is building a game or researching, the coordinator should update the queue without silently losing the earlier obligation. After interruption, STAR should resume only the uncommunicated remainder, not repeat already-audible content or omit completed work.
+
+This is especially important for a VTuber who is simultaneously playing, answering viewers, and running background creation/research tasks.
+
+### InteractionBench — four separate dimensions of natural streaming
+
+InteractionBench (November 2, 2026) evaluates conversational timing, spoken-task accuracy, whisper/volume control, and groundedness across conversations longer than twenty turns. Its harness uses 221 items across thirteen scenarios and evaluates both what the system says and how it manages the floor. The paper also highlights that client-heard timing includes network delay; server-side token timing alone is not an adequate user-perceived latency metric.
+
+**STAR adoption:** maintain separate scorecards for:
+1. floor control (respond / continue / wait / interrupt / resume);
+2. spoken correctness and completion;
+3. acoustic delivery (volume, whisper, prosody, intelligibility);
+4. long-session grounding and memory use.
+
+Record at least server first-token, first TTS chunk, first scheduled playback, and client/loopback-observed audible onset where available. Never label server TTFT as "time the viewer heard STAR."
+
+## New task-coordination acceptance cases
+
+Add these to future room-host and unified-runtime tests:
+
+- A viewer asks STAR to pause a background build and answer a new question; the build state and checkpoint remain recoverable.
+- A viewer changes a requested game feature while the creator agent is editing; the task ledger records the change and preserves any still-required work.
+- STAR is interrupted halfway through a spoken progress report; after the follow-up she reports only the remaining facts.
+- A task completes while STAR is speaking; the result is queued, not claimed as spoken.
+- STAR says "I'm checking that" only after a work item actually starts.
+- A queued message is cancelled by its owner or expires; it is removed from both queue and payload store.
+- A response is interrupted after only part of its TTS was played; history and avatar state reflect only the played portion.
+- A stale completion from an old task generation cannot overwrite the state of a newer retry.
+
+## Additional sources
+
+- Voice-Light (17 September 2026): https://arxiv.org/abs/2609.20995
+- Joi-Bench-Task (9 November 2026): https://arxiv.org/abs/2611.12118
+- InteractionBench (2 November 2026): https://arxiv.org/abs/2611.02430
