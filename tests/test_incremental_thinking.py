@@ -98,6 +98,8 @@ def test_asr_revision_cancels_old_thinker_before_new_revision() -> None:
     )
     assert revised.action is ThinkAction.CANCEL
     assert revised.cancel_previous is True
+    assert revised.cancel_utterance_id == "turn-1"
+    assert revised.cancel_revision == 0
     assert revised.reason == "asr_revision_invalidated_prefix"
     assert coordinator.metrics()["thinking"] is False
 
@@ -181,6 +183,8 @@ def test_stale_hypothesis_cancels_only_its_active_thinker() -> None:
     )
     assert result.action is ThinkAction.CANCEL
     assert result.cancel_previous is True
+    assert result.cancel_utterance_id == "turn-1"
+    assert result.cancel_revision == 0
     assert result.reason == "stale_hypothesis"
     assert coordinator.metrics()["active"] is False
 
@@ -194,6 +198,8 @@ def test_new_utterance_cancels_previous_thinker_and_starts_fresh_state() -> None
     )
     assert result.action is ThinkAction.CANCEL
     assert result.cancel_previous is True
+    assert result.cancel_utterance_id == "turn-1"
+    assert result.cancel_revision == 0
     assert coordinator.metrics()["active"] is True
     assert coordinator.metrics()["thinking"] is False
 
@@ -204,6 +210,8 @@ def test_cancel_requires_active_utterance_and_known_reason() -> None:
     result = coordinator.cancel("turn-1", reason="barge_in")
     assert result.action is ThinkAction.CANCEL
     assert result.cancel_previous is True
+    assert result.cancel_utterance_id == "turn-1"
+    assert result.cancel_revision == 0
     assert coordinator.metrics()["active"] is False
 
     missing = coordinator.cancel("turn-1", reason="barge_in")
@@ -226,6 +234,8 @@ def test_expire_cancels_stale_background_work() -> None:
     assert result is not None
     assert result.action is ThinkAction.CANCEL
     assert result.cancel_previous is True
+    assert result.cancel_utterance_id == "turn-1"
+    assert result.cancel_revision == 0
     assert coordinator.metrics()["active"] is False
 
 
