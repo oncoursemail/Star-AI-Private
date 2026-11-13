@@ -39,6 +39,8 @@ VOICE_ACTIONS = frozenset({
 })
 REQUIRED_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
                      "faster_whisper": "faster-whisper", "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
+ROOM_ONLY_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
+                      "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
 SPEAK_AHEAD_SECONDS = 1.5            # read-aloud synthesises at most this far ahead of what is playing
 PREVIEW_LINE = "Hi sweetheart, it's Star. I'm so glad you're here."
 
@@ -146,11 +148,23 @@ class VoiceBridge:
             wanted += ["silero_vad.onnx"] if settings.vad == "silero" else []
             wanted += ["smart-turn-v3.2-cpu.onnx"] if settings.endpointer == "smart-turn" else []
             models_missing = [name for name in wanted if not (models_dir() / name).is_file()]
+        room_missing = [package for module, package in ROOM_ONLY_PACKAGES.items()
+                        if importlib.util.find_spec(module) is None]
+        room_models_missing: list[str] = []
+        if not room_missing:
+            from .engines import models_dir
+            room_models_missing = [
+                name for name in ("kokoro-v1.0.onnx", "voices-v1.0.bin")
+                if not (models_dir() / name).is_file()
+            ]
         call = self._call
         from .brain import server_configured
         server = server_configured()      # Settings + keyring, or the environment override; no network
         return {
             "available": not missing and not models_missing,
+            "roomOnlyAvailable": not room_missing and not room_models_missing,
+            "roomOnlyMissingPackages": room_missing,
+            "roomOnlyMissingModels": room_models_missing,
             "missingPackages": missing,
             "missingModels": models_missing,
             "serverConfigured": server,
