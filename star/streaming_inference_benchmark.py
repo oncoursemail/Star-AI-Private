@@ -125,7 +125,7 @@ async def benchmark_local_model_streaming(
             first_content_ms: int | None = None
             output_tokens: int | None = None
             try:
-                stream = await active_client.chat.completions.create(
+                active_stream = await active_client.chat.completions.create(
                     model=model,
                     messages=[
                         {
@@ -142,7 +142,8 @@ async def benchmark_local_model_streaming(
                     stream=True,
                     stream_options={"include_usage": True},
                 )
-                async for chunk in stream:
+                stream = active_stream
+                async for chunk in active_stream:
                     choices = getattr(chunk, "choices", None)
                     if choices:
                         delta = getattr(choices[0], "delta", None)
