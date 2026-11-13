@@ -179,7 +179,7 @@ def test_queue_stores_only_metadata_fields():
 
 
 def test_pop_expiry_remains_available_for_host_payload_cleanup():
-    queue = RoomCueQueue()
+    queue = RoomCueQueue(RoomQueueConfig(max_event_age_seconds=8.0))
     item = cue("expired-during-pop")
     queue.enqueue(item, queued(item), now=10.0)
     assert queue.pop_next(now=18.0) is None
@@ -188,7 +188,7 @@ def test_pop_expiry_remains_available_for_host_payload_cleanup():
 
 
 def test_expiry_notification_buffer_is_bounded_and_reports_overflow():
-    queue = RoomCueQueue(RoomQueueConfig(max_items=4, dedupe_capacity=2))
+    queue = RoomCueQueue(RoomQueueConfig(max_items=4, dedupe_capacity=2, max_event_age_seconds=8.0))
     items = [cue(f"expired-{i}") for i in range(4)]
     for item in items:
         queue.enqueue(item, queued(item), now=10.0)
