@@ -47,9 +47,9 @@ class _Factories:
     """The real engines and devices. Tests replace these with fakes."""
 
     @staticmethod
-    def engines(settings: VoiceSettings, progress):
+    def engines(settings: VoiceSettings, progress, input_enabled: bool = True):
         from .runtime import Engines
-        return Engines.load(settings, progress)
+        return Engines.load(settings, progress, input_enabled=input_enabled)
 
     @staticmethod
     def brain(settings: VoiceSettings):
@@ -80,10 +80,11 @@ class _Factories:
 
 class _Call:
     def __init__(self, call_id: str, settings: VoiceSettings,
-                 room_sources: frozenset[CueSource] = frozenset()) -> None:
+                 room_sources: frozenset[CueSource] = frozenset(), room_only: bool = False) -> None:
         self.id = call_id
         self.settings = settings
         self.room_sources = room_sources
+        self.room_only = room_only
         self.room_host: RoomStreamHost | None = None
         self.stop = threading.Event()
         self.session = None
@@ -159,6 +160,7 @@ class VoiceBridge:
             "muted": bool(call and call.session and call.session.muted),
             "speaking": self._speech is not None,
             "roomEnabled": bool(call and call.room_host and not call.room_host.closed),
+            "roomOnly": bool(call and call.room_only),
             "roomSources": sorted(source.value for source in call.room_sources) if call else [],
             "roomPending": len(call.session.room_queue) if call and call.session and call.session.room_queue else 0,
             "roomStats": asdict(call.room_host.stats) if call and call.room_host else {},
@@ -213,7 +215,8 @@ class VoiceBridge:
 
     def _start_call(self, body: dict, request_id: str) -> dict:
         settings = VoiceSettings.from_mapping(body.get("settings") or {}, self._load_settings())
-        if body.get("micConsent") is not True:
+        room_only = body.get("roomOnly") is True
+        if not room_only and body.get("micConsent") is not True:
             raise PermissionError("Starting a call needs your OK to use the microphone (the call screen asks first)")
         room_sources_raw = body.get("roomSources", [])
         if not isinstance(room_sources_raw, list) or any(not isinstance(item, str) for item in room_sources_raw):
@@ -229,18 +232,20 @@ class VoiceBridge:
         if body.get("roomConsent") is True and not room_sources_raw:
             raise ValueError("roomConsent requires at least one explicitly selected room source")
         room_sources = frozenset(source_map[item] for item in room_sources_raw)
+        if room_only and not room_sources:
+            raise ValueError("roomOnly requires roomConsent and at least one selected room source")
         if CueSource.CHAT in room_sources and self._room_moderator is None:
             raise ValueError("The chat source requires a configured local moderation callback")
         self.stop_speaking()
         with self._lock:
             if self._call is not None:
                 raise RuntimeError("A voice call is already running")
-            call = _Call(request_id or "voice", settings, room_sources)
+            call = _Call(request_id or "voice", settings, room_sources, room_only)
             self._call = call
         call.thread = threading.Thread(target=self._run_call, args=(call,), name="star-voice-call", daemon=True)
         call.thread.start()
         return {"callId": call.id, "settings": asdict(settings),
-                "roomEnabled": bool(room_sources),
+                "roomEnabled": bool(room_sources), "roomOnly": room_only,
                 "roomSources": sorted(source.value for source in room_sources)}
 
     def submit_room_message(self, call_id: str, cue: RoomCue, text: str) -> RoomDecision:
@@ -332,11 +337,11 @@ class VoiceBridge:
                 "appliesToNextCall": self._call is not None}
 
     # -- workers ------------------------------------------------------------------------------
-    def _get_engines(self, settings: VoiceSettings, progress):
+    def _get_engines(self, settings: VoiceSettings, progress, *, input_enabled: bool = True):
         key = (settings.tts_engine, settings.asr_engine, settings.asr_model, settings.asr_prompt, settings.device,
-               settings.vad, settings.endpointer)
+               settings.vad, settings.endpointer, input_enabled)
         if self._engines is None or self._engines_key != key:
-            self._engines = self._factories.engines(settings, progress)
+            self._engines = self._factories.engines(settings, progress, input_enabled=input_enabled)
             self._engines_key = key
         _apply_voice(self._engines.tts, settings)
         return self._engines
@@ -346,13 +351,18 @@ class VoiceBridge:
         session = None
         try:
             self._emit(call.id, {"type": "state", "state": "starting"})
-            engines = self._get_engines(call.settings, lambda m: self._emit(call.id, {"type": "progress", "message": m}))
+            engines = self._get_engines(
+                call.settings,
+                lambda m: self._emit(call.id, {"type": "progress", "message": m}),
+                input_enabled=not call.room_only,
+            )
             if call.stop.is_set():
                 return
             brain = self._factories.brain(call.settings)
             speaker = self._factories.speaker(int(getattr(engines.tts, "sample_rate", 24000)),
                                               call.settings.output_device)
-            call.microphone = self._factories.microphone(call.settings.input_device)
+            if not call.room_only:
+                call.microphone = self._factories.microphone(call.settings.input_device)
 
             def forward(event: dict) -> None:
                 self._emit(call.id, event)
@@ -376,12 +386,19 @@ class VoiceBridge:
                     RoomHostConfig(allowed_sources=call.room_sources),
                     moderate_chat=self._room_moderator,
                 )
-            with call.microphone, speaker:
+            with speaker:
                 session.start()
-                for frame in call.microphone:
-                    if call.stop.is_set():
-                        break
-                    session.feed(frame)
+                if call.room_only:
+                    # Provider adapters feed final classified cues through submit_room_message.
+                    # No local microphone is opened or ASR/VAD model loaded in this mode.
+                    while not call.stop.wait(0.1):
+                        pass
+                else:
+                    with call.microphone:
+                        for frame in call.microphone:
+                            if call.stop.is_set():
+                                break
+                            session.feed(frame)
         except Exception as exc:
             self._emit(call.id, {"type": "error", "message": f"{str(exc)[:300] or type(exc).__name__}"})
         finally:
