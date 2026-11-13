@@ -49,6 +49,30 @@ A third-party report on an Apple M2 Pro, llama.cpp, and a 3.1B model reported a 
 
 **STAR implication:** benchmark continuous batching only on a pinned local server build with fixed slots, identical prompt traces, and the actual stream/game/OBS workload. Report first-audible p95/p99 and game/audio quality alongside aggregate tokens per second. Throughput improvements that worsen the active speaker's tail latency are not a win.
 
+### CEGame-Bench: full-game creation is a different capability from task-level code edits (October 19, 2026)
+
+[CEGame-Bench paper, arXiv:2610.26098](https://arxiv.org/abs/2610.26098).
+
+CEGame-Bench evaluates long-horizon game creation across Defold, Godot, Roblox Studio, Unity, and Unreal. Its task runs can average up to 295 steps and 65 million tokens. The benchmark treats the design document as a contract and accepts completion only through real-input play. The reported agents reached the ending in only 16% of runs; a requirement-driven Game Completion Boost skill improved execution-based scores by 14.1–24.3 points on the evaluated models. Engine rankings also varied materially, so a single cross-engine pooled score can hide important differences.
+
+**STAR implication:** keep GameDevBench-style task correctness separate from whole-game completion. A game creator needs a separate acceptance contract: launch the built artifact, use real player input, complete all required objectives, reach the ending, save, close, reopen in a new process, and verify restored state. The repository has a separate whole-game journey prototype on a development branch; it should be reviewed and integrated as its own creator milestone rather than assumed to be part of this voice-quality PR.
+
+### GameWorld: game-playing needs state-verifiable outcomes (April 8, 2026)
+
+[GameWorld paper, arXiv:2604.07429](https://arxiv.org/abs/2604.07429).
+
+GameWorld describes 34 browser games and 170 tasks with state-verifiable progress/outcomes. It compares direct keyboard/mouse control with a semantic action interface and highlights real-time interaction, context-memory sensitivity, and action validity as distinct evaluation challenges.
+
+**STAR implication:** STAR Gamer should separate perception, semantic action planning, and low-level input execution. Score objective/state transitions from an independent game observer; do not let the agent grade its own screenshots or claim mastery from a paused-only rehearsal. Keep live-clock reaction tests separate from slower strategic planning tests.
+
+### Evaluation-driven skill evolution (June 9, 2026)
+
+[Agent Skill Evaluation and Evolution survey, arXiv:2606.11435](https://arxiv.org/abs/2606.11435).
+
+The survey groups skill evolution into execution feedback, trajectory distillation, compression, and reinforcement learning, and argues for evaluation-driven skill evolution rather than isolated skill creation.
+
+**STAR implication:** every reusable gaming or creator skill should carry its engine/game compatibility, version, provenance, resource cost, practice/holdout separation, and independent success evidence. Failed or stale skills should be demoted or quarantined; a successful practice run must not automatically become a promoted capability.
+
 ## Implementation in this change
 
 ### Rehearsal schema v2
