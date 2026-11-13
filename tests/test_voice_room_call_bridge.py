@@ -93,8 +93,11 @@ def test_direct_question_is_queued_while_star_is_still_preparing_a_reply():
         decision = session.handle_room_cue(queued_cue)
         assert decision.action is RoomAction.QUEUE
         assert decision.reason == "assistant_reply_in_progress"
+        assert session.pop_queued_room_cue() is None
+        session.interrupt()
+        assert session.wait_idle(5)
         assert session.pop_queued_room_cue() == queued_cue
-        assert speaker.stops == 0
+        assert speaker.stops == 1
     finally:
         session.interrupt()
         session.wait_idle(5)
@@ -168,6 +171,9 @@ def test_full_call_room_queue_returns_wait_instead_of_dropping_a_cue():
         full = session.handle_room_cue(second)
         assert full.action is RoomAction.WAIT
         assert full.reason == "room_queue_full"
+        assert session.pop_queued_room_cue() is None
+        session.interrupt()
+        assert session.wait_idle(5)
         assert session.pop_queued_room_cue() == first
     finally:
         session.interrupt()

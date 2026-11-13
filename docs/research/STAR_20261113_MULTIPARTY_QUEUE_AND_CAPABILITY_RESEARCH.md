@@ -51,11 +51,11 @@ When a RoomTurnDirector is explicitly supplied:
 - A direct RESPOND decision that arrives while a reply is still being prepared is converted to QUEUE and inserted.
 - A full queue returns WAIT with reason room_queue_full; it never silently evicts an older viewer request.
 - Duplicate queued events return IGNORE.
-- pop_queued_room_cue() gives the host the next cue according to priority and aging.
+- pop_queued_room_cue() gives the host the next cue according to priority and aging, but returns None while a reply is active to prevent overlapping generations.
 - expire_queued_room_cues() returns expired cues for host payload cleanup.
 - stop() clears the queue and resets the director session.
 
-The host remains responsible for the payload store. It should use event_id as a short-lived lookup key and remove payloads on dequeue, expiry, or session end. A queued request is not a permission grant. Tool actions must be re-authorized against the original user instruction and current application state.
+The host remains responsible for the payload store. It should use event_id as a short-lived lookup key and remove payloads on dequeue, expiry, or session end. Dequeue is available only after CallSession is idle; the host should serialize the dequeue-and-start sequence with its session event loop. A queued request is not a permission grant. Tool actions must be re-authorized against the original user instruction and current application state.
 
 ## Realtime conversation and VTuber research
 

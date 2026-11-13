@@ -226,10 +226,14 @@ class CallSession:
         return decision
 
     def pop_queued_room_cue(self) -> RoomCue | None:
-        """Return the next queued cue; the host still owns payload lookup and response execution."""
+        """Return the next cue only when no reply is active; the host owns payload lookup and execution."""
         if self.room_queue is None:
             raise RuntimeError("room_queue is not configured for this call")
-        return self.room_queue.pop_next(now=self.clock())
+        with self._lock:
+            reply = self._reply
+            if reply is not None and not reply.done.is_set():
+                return None
+            return self.room_queue.pop_next(now=self.clock())
 
     def expire_queued_room_cues(self) -> tuple[RoomCue, ...]:
         """Expire queued cues and return IDs/metadata for host-owned payload cleanup."""
