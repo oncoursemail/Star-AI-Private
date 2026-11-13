@@ -35,6 +35,7 @@ def cases(count=30, *, split="holdout"):
     return [
         StreamCase(
             case_id=f"case-{i:03d}",
+            scenario_sha256=f"{i + 1:064x}",
             domain=domains[i % len(domains)],
             split=split,
             required_dimensions=required_dimensions[domains[i % len(domains)]],
@@ -124,6 +125,12 @@ def evaluate(roster, trials, **limit_changes):
         now_unix_s=NOW,
         limits=limits(**limit_changes),
     )
+
+
+def test_roster_digest_binds_scenario_content():
+    roster = cases()
+    changed = [replace(roster[0], scenario_sha256="b" * 64), *roster[1:]]
+    assert roster_digest(changed) != roster_digest(roster)
 
 
 def test_candidate_passes_with_faster_audio_and_no_quality_regression():
