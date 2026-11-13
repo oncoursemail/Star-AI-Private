@@ -39,6 +39,8 @@ Important queue distinction: AVTR-1's continuous audio/video media path preserve
 
 The paper's offline five-frame request table reports 232 ms for 200 ms of output on an RTX 4060 (0.86x real-time factor) and 207 ms on an RTX 3060 Ti (0.97x). Those measurements are for AVTR-1's full rendering stack and its test configuration, not STAR; they show why this model should not become a default concurrent-stream dependency on STAR's consumer GPU. Keep it an optional isolated experiment until memory, quality, and mixed-workload latency are measured.
 
+AVTR-1 also introduces Reference-Based Directed Granger Gain (R-DGG), an evaluation intended to test whether the other participant's speech contributes predictive information to the avatar's listening motion after accounting for the listener's own history and the speaker's motion. For STAR, this suggests a future transient listening-motion lane: use owner-authorized, short-lived voice-activity/turn-state and optional coarse direction cues to drive subtle gaze, head tilt, or nod behavior while a viewer speaks. Do not store voiceprints or infer identity from voice. Evaluate listening behavior separately from lip-sync and speech quality; a plausible idle animation is not evidence that STAR is actually responding to the other speaker.
+
 ### 1.2 VTube Studio's API is a parameter-injection interface
 
 The official VTube Studio API supports plugin-created custom parameters and InjectParameterDataRequest. The model artist maps those parameters to Live2D inputs in the VTube Studio UI. This fits STAR's existing 14-parameter rig bridge.
