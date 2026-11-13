@@ -93,7 +93,7 @@ def test_low_confidence_cue_waits_and_is_deduplicated():
 
 
 def test_stale_and_future_cues_fail_closed():
-    d = RoomTurnDirector()
+    d = RoomTurnDirector(RoomPolicyConfig(max_event_age_seconds=8.0))
     assert d.decide(cue(ended=1.0, started=0.5), now=10.0).reason == "stale_event"
     assert d.decide(cue("future", ended=20.0, started=19.0), now=10.0).reason == "future_timestamp"
 
