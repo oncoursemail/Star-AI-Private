@@ -12,7 +12,8 @@ import re
 
 from ..stream_workload_admission import ResourceVector
 
-_FINGERPRINT = re.compile(r"[0-9a-f]{64}\Z")
+_FINGERPRINT = re.compile(r"[0-9a-f]{64}\\Z")
+_EPOCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
 _MAX_CLOCK_MS = 10**12
 _MAX_SAMPLES = 4096
 _MIN_SAMPLES = 8
@@ -31,6 +32,12 @@ def _validate_fingerprint(value: object, label: str) -> str:
     return value
 
 
+def _validate_epoch(value: object, label: str) -> str:
+    if type(value) is not str or _EPOCH.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a bounded opaque clock-epoch identifier")
+    return value
+
+
 def _with_margin(value: int, margin_percent: int) -> int:
     # Integer ceiling avoids rounding a resource request below the observed peak.
     return (value * (100 + margin_percent) + 99) // 100
@@ -44,6 +51,10 @@ class ThinkResourceProfile:
     samples, increased by a fixed safety margin. ResourceVector values must use
     the same allocation units as the scheduler budget; they are not raw OS
     measurements. This is conservative, not a statistical p99 guarantee.
+
+    clock_epoch is optional only for legacy profiles. New calibration sessions
+    should always bind it so a monotonic clock reset/reboot invalidates the
+    profile even if the new clock happens to be numerically greater.
     """
 
     configuration_fingerprint: str
@@ -52,6 +63,7 @@ class ThinkResourceProfile:
     resources: ResourceVector
     safety_margin_percent: int = 25
     max_age_ms: int = 86_400_000
+    clock_epoch: str | None = None
 
     def __post_init__(self) -> None:
         _validate_fingerprint(self.configuration_fingerprint, "configuration_fingerprint")
@@ -64,6 +76,8 @@ class ThinkResourceProfile:
             raise ValueError("safety_margin_percent must be in 0..100")
         if type(self.max_age_ms) is not int or not 1_000 <= self.max_age_ms <= _MAX_PROFILE_AGE_MS:
             raise ValueError("max_age_ms must be in 1000..604800000")
+        if self.clock_epoch is not None:
+            _validate_epoch(self.clock_epoch, "clock_epoch")
 
     @classmethod
     def from_samples(
@@ -76,6 +90,7 @@ class ThinkResourceProfile:
         min_samples: int = _MIN_SAMPLES,
         safety_margin_percent: int = 25,
         max_age_ms: int = 86_400_000,
+        clock_epoch: str | None = None,
     ) -> "ThinkResourceProfile":
         """Build a profile from bounded per-worker peak-delta allocation samples.
 
@@ -86,6 +101,8 @@ class ThinkResourceProfile:
         """
         _validate_fingerprint(configuration_fingerprint, "configuration_fingerprint")
         _validate_clock(calibrated_monotonic_ms)
+        if clock_epoch is not None:
+            _validate_epoch(clock_epoch, "clock_epoch")
         if trusted_host is not True:
             raise PermissionError("trusted host measurements are required")
         if type(samples) not in (tuple, list):
@@ -125,6 +142,7 @@ class ThinkResourceProfile:
             resources=envelope,
             safety_margin_percent=safety_margin_percent,
             max_age_ms=max_age_ms,
+            clock_epoch=clock_epoch,
         )
 
     def rejection_reason(
@@ -132,6 +150,7 @@ class ThinkResourceProfile:
         *,
         now_ms: int,
         expected_configuration_fingerprint: str,
+        expected_clock_epoch: str | None = None,
     ) -> str | None:
         """Return a fail-closed reason, or None when this profile is usable."""
         now = _validate_clock(now_ms)
@@ -141,6 +160,15 @@ class ThinkResourceProfile:
         )
         if expected != self.configuration_fingerprint:
             return "configuration_mismatch"
+        if self.clock_epoch is not None:
+            if expected_clock_epoch is None:
+                return "clock_epoch_required"
+            _validate_epoch(expected_clock_epoch, "expected_clock_epoch")
+            if expected_clock_epoch != self.clock_epoch:
+                return "clock_epoch_mismatch"
+        elif expected_clock_epoch is not None:
+            _validate_epoch(expected_clock_epoch, "expected_clock_epoch")
+            return "profile_missing_clock_epoch"
         if now < self.calibrated_monotonic_ms:
             return "profile_from_future"
         if now - self.calibrated_monotonic_ms > self.max_age_ms:
@@ -152,11 +180,13 @@ class ThinkResourceProfile:
         *,
         now_ms: int,
         expected_configuration_fingerprint: str,
+        expected_clock_epoch: str | None = None,
     ) -> ResourceVector | None:
-        """Return the envelope only while its clock and configuration still match."""
+        """Return the envelope only while clock and configuration still match."""
         if self.rejection_reason(
             now_ms=now_ms,
             expected_configuration_fingerprint=expected_configuration_fingerprint,
+            expected_clock_epoch=expected_clock_epoch,
         ) is not None:
             return None
         return self.resources
