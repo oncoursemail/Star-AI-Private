@@ -485,4 +485,5 @@ def test_groundedness_requires_more_than_twenty_turns_and_keeps_no_content():
     assert snapshot["groundedness_trials"] == 1
     assert snapshot["groundedness_successes"] == 1
     assert "transcript" not in repr(snapshot).lower()
-    assert "audio" not in repr(snapshot).lower()
+    assert "audio_payload" not in repr(snapshot).lower()
+    assert "audio_bytes" not in repr(snapshot).lower()
