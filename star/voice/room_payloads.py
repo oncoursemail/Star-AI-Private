@@ -31,7 +31,7 @@ class RoomPayloadStoreConfig:
     max_items: int = 64
     max_payload_bytes: int = 8_192
     max_total_bytes: int = 262_144
-    max_age_seconds: float = 8.0
+    max_age_seconds: float = 60.0
     max_future_skew_seconds: float = 0.25
     dedupe_capacity: int = 1_024
 
