@@ -115,7 +115,13 @@ def test_rate_limit_is_bounded_per_opaque_speaker_and_source():
         max_events_per_source=10,
         max_events_per_speaker=1,
     )
-    host, session, _events, _brain = make_host(config, moderate_chat=lambda _cue, _text: True)
+    moderated = []
+
+    def moderate(item, _text):
+        moderated.append(item.event_id)
+        return True
+
+    host, session, _events, _brain = make_host(config, moderate_chat=moderate)
     try:
         first = host.submit(make_cue("first"), "First question")
         second = host.submit(make_cue("second"), "Second question")
@@ -123,6 +129,7 @@ def test_rate_limit_is_bounded_per_opaque_speaker_and_source():
         assert second.action is RoomAction.WAIT
         assert second.reason == "room_rate_limited"
         assert host.stats.rejected_rate == 1
+        assert moderated == ["first"]
         assert len(session.room_payload_store) == 0
     finally:
         host.close()
