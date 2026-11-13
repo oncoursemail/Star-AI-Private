@@ -22,7 +22,8 @@ from ..stream_workload_runtime import StreamWorkloadRuntime
 from .incremental_thinking import ThinkAction, ThinkDirective
 from .think_resource_profile import ThinkResourceProfile
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_EPOCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
 _MAX_CLOCK_MS = 10**12
 _MAX_RESOURCE_UNITS = 1_000_000_000
 
@@ -108,6 +109,7 @@ class IncrementalThinkAdmissionBridge:
         resources: ResourceVector | None = None,
         resource_profile: ThinkResourceProfile | None = None,
         configuration_fingerprint: str | None = None,
+        clock_epoch: str | None = None,
         max_pending: int = 64,
     ) -> None:
         if type(runtime) is not StreamWorkloadRuntime:
@@ -125,6 +127,13 @@ class IncrementalThinkAdmissionBridge:
             or re.fullmatch(r"[0-9a-f]{64}", configuration_fingerprint) is None
         ):
             raise ValueError("configuration_fingerprint must be a lowercase SHA-256 hex value")
+        if resource_profile is not None and resource_profile.clock_epoch is not None:
+            if type(clock_epoch) is not str or _EPOCH.fullmatch(clock_epoch) is None:
+                raise ValueError("clock_epoch is required for an epoch-bound resource profile")
+            if clock_epoch != resource_profile.clock_epoch:
+                raise ValueError("clock_epoch must match the resource profile")
+        elif clock_epoch is not None:
+            raise ValueError("clock_epoch requires an epoch-bound resource profile")
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pending must be in 1..256")
         if resources is not None:
@@ -136,6 +145,7 @@ class IncrementalThinkAdmissionBridge:
         self._resources = resources
         self._resource_profile = resource_profile
         self._configuration_fingerprint = configuration_fingerprint
+        self._clock_epoch = clock_epoch
         self._max_pending = max_pending
         self._bindings: dict[tuple[str, int], _Binding] = {}
         self._by_lease: dict[str, tuple[str, int]] = {}
@@ -161,6 +171,7 @@ class IncrementalThinkAdmissionBridge:
         resources = self._resource_profile.resources_for(
             now_ms=now_ms,
             expected_configuration_fingerprint=self._configuration_fingerprint or "",
+            expected_clock_epoch=self._clock_epoch,
         )
         if resources is None:
             self._counts["profile_unusable"] += 1
@@ -278,263 +289,190 @@ class IncrementalThinkAdmissionBridge:
                     self._counts["updated"] += 1
                     return ThinkAdmissionResult("already_pending", "idempotent_start", existing.request_id)
                 if len(self._bindings) >= self._max_pending:
-                    self._counts["expired_or_rejected"] += 1
-                    return ThinkAdmissionResult("rejected", "pending_capacity_reached")
-
-                request_resources = self._resources_for(now)
-                if request_resources is None:
+                    self._counts["blocked"] += 1
+                    return ThinkAdmissionResult("blocked", "pending_capacity_reached")
+                resources = self._resources_for(now)
+                if resources is None:
                     self._counts["blocked"] += 1
                     return ThinkAdmissionResult("rejected", "resource_profile_stale_or_mismatched")
-
                 request_id = self._request_id(key)
                 request = WorkloadRequest(
                     request_id=request_id,
                     lane=WorkloadLane.VOICE_PREP,
-                    resources=request_resources,
+                    resources=resources,
                     enqueued_monotonic_ms=now,
-                    deadline_monotonic_ms=None,
+                    deadline_monotonic_ms=directive.expires_at_ms,
                 )
                 submission = self._runtime.submit(request)
-                if submission.status != "queued":
-                    self._counts["expired_or_rejected"] += 1
-                    return ThinkAdmissionResult(
-                        "rejected", submission.reason or submission.status, request_id
-                    )
-                self._bindings[key] = _Binding(
+                if submission.status not in ("queued", "granted"):
+                    self._counts["blocked"] += 1
+                    return ThinkAdmissionResult("blocked", submission.reason or submission.status)
+                binding = _Binding(
                     utterance_id=key[0],
                     revision=key[1],
                     request_id=request_id,
                     directive=directive,
                     state=ThinkBindingState.QUEUED,
-                    resources=request_resources,
+                    resources=resources,
+                    lease=submission.lease,
                 )
+                self._bindings[key] = binding
+                if submission.lease is not None:
+                    self._by_lease[submission.lease.lease_id] = key
                 self._counts["queued"] += 1
-                return ThinkAdmissionResult("queued", "awaiting_fresh_host_admission", request_id)
+                return ThinkAdmissionResult("queued", "awaiting_central_scheduler", request_id)
 
             if directive.action is ThinkAction.UPDATE:
                 key = self._key(directive.utterance_id, directive.revision)
                 binding = self._bindings.get(key)
-                if binding is None or binding.state in (
-                    ThinkBindingState.CANCEL_PENDING,
-                    ThinkBindingState.STOP_REQUESTED,
-                    ThinkBindingState.RECOVERY_REQUIRED,
-                ):
-                    self._counts["blocked"] += 1
-                    return ThinkAdmissionResult("blocked", "no_current_admitted_thinker")
+                if binding is None:
+                    return ThinkAdmissionResult("not_found", "no_matching_thinker")
+                if binding.state in (ThinkBindingState.CANCEL_PENDING, ThinkBindingState.STOP_REQUESTED,
+                                     ThinkBindingState.RECOVERY_REQUIRED):
+                    return ThinkAdmissionResult("blocked", "thinker_generation_is_stopping", binding.request_id)
                 binding.directive = directive
                 self._counts["updated"] += 1
-                return ThinkAdmissionResult("updated", "latest_stable_prefix_replaced", binding.request_id)
+                return ThinkAdmissionResult("updated", "ephemeral_prefix_replaced", binding.request_id)
 
-            if directive.action is ThinkAction.CANCEL:
-                if not directive.cancel_previous:
-                    return ThinkAdmissionResult("cancelled", "no_active_thinker")
-                return self._cancel_exact(
-                    directive.cancel_utterance_id,
-                    directive.cancel_revision,
-                    reason=directive.reason or "coordinator_cancelled",
-                )
-
-            if directive.action is ThinkAction.FINALIZE:
+            if directive.action in (ThinkAction.CANCEL, ThinkAction.FINALIZE):
                 return self._cancel_exact(
                     directive.utterance_id,
                     directive.revision,
-                    reason="final_transcript_committed",
+                    reason=directive.reason or directive.action.value,
                 )
 
-            raise ValueError("unsupported think directive action")
+            return ThinkAdmissionResult("ignored", "unsupported_directive")
 
     def accept_lease(self, lease: WorkloadLease, *, now_ms: int) -> ThinkLaunch | None:
-        """Route one scheduler-granted lease; never starts a worker itself."""
+        """Route a central scheduler lease to this bridge, or release an orphan."""
         now = _now(now_ms)
-        if type(lease) is not WorkloadLease:
-            raise TypeError("lease must be WorkloadLease")
-        if lease.lane is not WorkloadLane.VOICE_PREP:
+        if type(lease) is not WorkloadLease or lease.lane is not WorkloadLane.VOICE_PREP:
             return None
-        if lease.granted_monotonic_ms > now:
-            raise ValueError("scheduler lease cannot be future-dated")
         with self._lock:
-            key = next(
-                (key for key, binding in self._bindings.items()
-                 if binding.request_id == lease.request_id),
-                None,
-            )
+            key = self._by_lease.get(lease.lease_id)
             if key is None:
+                # A lease may be routed after a queued cancellation raced with
+                # the scheduler. Release only because no worker was launched.
+                self._runtime.release(
+                    lease.lease_id, now, host_confirmed_stopped=True
+                )
                 return None
-            binding = self._bindings[key]
-            if binding.state is ThinkBindingState.CANCEL_PENDING:
-                # No worker was launched, so the host can safely release this
-                # just-granted reservation after routing it here.
+            binding = self._bindings.get(key)
+            if binding is None or binding.state is not ThinkBindingState.QUEUED:
+                self._runtime.release(
+                    lease.lease_id, now, host_confirmed_stopped=True
+                )
+                if binding is not None:
+                    self._remove(binding)
+                return None
+            if lease.resources != binding.resources:
+                binding.state = ThinkBindingState.RECOVERY_REQUIRED
+                self._counts["start_uncertain"] += 1
+                return None
+            if self._resources_for(now) != binding.resources:
+                # Profile/configuration can expire while the scheduler queue is
+                # waiting. No process has started, so release the unused lease.
                 self._runtime.release(
                     lease.lease_id, now, host_confirmed_stopped=True
                 )
                 self._remove(binding)
-                self._counts["cancelled"] += 1
+                self._counts["profile_unusable"] += 1
                 return None
-            if binding.state is not ThinkBindingState.QUEUED:
-                raise RuntimeError("duplicate or out-of-order scheduler lease")
-            if now >= lease.expires_monotonic_ms:
-                self._runtime.release(lease.lease_id, now, host_confirmed_stopped=True)
-                self._remove(binding)
-                self._counts["expired_or_rejected"] += 1
-                return None
-            if lease.request_id != binding.request_id:
-                raise ValueError("lease does not match the queued thinker request")
-            if lease.resources != binding.resources:
-                raise ValueError("scheduler lease resource vector changed")
-            if self._resource_profile is not None:
-                current_resources = self._resources_for(now)
-                if current_resources is None or current_resources != binding.resources:
-                    # The worker has not started yet. A stale/mismatched profile
-                    # can therefore release this lease without a process-stop receipt.
-                    self._runtime.release(
-                        lease.lease_id, now, host_confirmed_stopped=True
-                    )
-                    self._remove(binding)
-                    self._counts["expired_or_rejected"] += 1
-                    return None
             binding.lease = lease
             binding.state = ThinkBindingState.STARTING
             self._by_lease[lease.lease_id] = key
+            self._counts["started"] += 1
             return ThinkLaunch(binding.directive, lease)
 
-    def current_directive(self, lease_id: str) -> ThinkDirective:
-        """Return the latest ephemeral prefix for a host-owned worker poll."""
-        if type(lease_id) is not str or re.fullmatch(r"[0-9a-f]{32}", lease_id) is None:
-            raise ValueError("lease_id must be a host-issued opaque lease ID")
-        with self._lock:
-            key = self._by_lease.get(lease_id)
-            binding = self._bindings.get(key) if key is not None else None
-            if binding is None or binding.state not in (
-                ThinkBindingState.STARTING,
-                ThinkBindingState.RUNNING,
-            ):
-                raise KeyError("no live thinker for lease")
-            return binding.directive
-
-    def confirm_started(
+    def startup_result(
         self,
-        lease_id: str,
+        utterance_id: str,
+        revision: int,
         *,
-        now_ms: int,
         started: bool,
-        host_confirmed_stopped: bool = False,
-    ) -> bool:
-        """Record a host startup receipt; uncertain startup keeps capacity fenced."""
-        now = _now(now_ms)
-        if type(started) is not bool or type(host_confirmed_stopped) is not bool:
-            raise ValueError("startup receipt fields must be explicit booleans")
-        if started and host_confirmed_stopped:
-            raise ValueError("a started worker cannot simultaneously be confirmed stopped")
+        host_confirmed_not_started: bool = False,
+    ) -> ThinkAdmissionResult:
+        """Resolve a host launch offer; uncertain startup keeps the lease fenced."""
+        key = self._key(utterance_id, revision)
+        if type(started) is not bool or type(host_confirmed_not_started) is not bool:
+            raise ValueError("startup result flags must be explicit booleans")
         with self._lock:
-            key = self._by_lease.get(lease_id)
-            binding = self._bindings.get(key) if key is not None else None
-            if binding is None or binding.lease is None:
-                raise KeyError("unknown thinker lease")
-            if binding.state not in (
-                ThinkBindingState.STARTING,
-                ThinkBindingState.STOP_REQUESTED,
-                ThinkBindingState.RECOVERY_REQUIRED,
-            ):
-                raise RuntimeError("startup receipt is not expected in this state")
+            binding = self._bindings.get(key)
+            if binding is None or binding.state is not ThinkBindingState.STARTING or binding.lease is None:
+                return ThinkAdmissionResult("not_found", "no_starting_generation")
             if started:
-                if now >= binding.lease.expires_monotonic_ms:
-                    binding.state = ThinkBindingState.RECOVERY_REQUIRED
-                    self._counts["start_uncertain"] += 1
-                    return False
-                if binding.state is ThinkBindingState.STARTING:
-                    binding.state = ThinkBindingState.RUNNING
-                # If cancellation raced with startup, retain STOP_REQUESTED or
-                # RECOVERY_REQUIRED so the host cannot mistake the worker for
-                # an ordinary running generation.
-                self._counts["started"] += 1
-                return True
-            if host_confirmed_stopped:
+                binding.state = ThinkBindingState.RUNNING
+                return ThinkAdmissionResult("running", "host_confirmed_started", binding.request_id)
+            if host_confirmed_not_started:
                 self._runtime.release(
-                    lease_id, now, host_confirmed_stopped=True
+                    binding.lease.lease_id, binding.lease.granted_monotonic_ms,
+                    host_confirmed_stopped=True,
                 )
                 self._remove(binding)
-                self._counts["expired_or_rejected"] += 1
-                return False
+                self._counts["cancelled"] += 1
+                return ThinkAdmissionResult("cancelled", "host_confirmed_not_started", binding.request_id)
             binding.state = ThinkBindingState.RECOVERY_REQUIRED
             self._counts["start_uncertain"] += 1
-            return False
+            return ThinkAdmissionResult("recovery_required", "startup_state_uncertain", binding.request_id)
 
     def stop_request(
         self,
         utterance_id: str,
         revision: int,
-        *,
-        now_ms: int,
-        reason: str = "owner_or_asr_cancel",
     ) -> ThinkStopRequest | None:
-        """Return a host stop request for one exact worker generation."""
-        _now(now_ms)
-        if type(reason) is not str or not 1 <= len(reason) <= 64:
-            raise ValueError("reason must be a short nonempty label")
+        """Return the host's exact process-stop obligation, if one is pending."""
+        key = self._key(utterance_id, revision)
         with self._lock:
-            key = self._key(utterance_id, revision)
-            result = self._cancel_exact(
-                utterance_id, revision, reason=reason
-            )
-            if result.status != "stop_required":
+            binding = self._bindings.get(key)
+            if binding is None or binding.state is not ThinkBindingState.STOP_REQUESTED or binding.lease is None:
                 return None
-            binding = self._bindings[key]
-            assert binding.lease is not None
             return ThinkStopRequest(
-                utterance_id=utterance_id,
-                revision=revision,
-                reason=reason,
+                utterance_id=binding.utterance_id,
+                revision=binding.revision,
+                reason=binding.cancel_reason or "cancelled",
                 lease=binding.lease,
             )
 
-    def confirm_stopped(
+    def stop_result(
         self,
-        lease_id: str,
+        utterance_id: str,
+        revision: int,
         *,
-        now_ms: int,
         host_confirmed_stopped: bool,
-    ) -> bool:
-        """Release capacity only after the host proves the worker is stopped."""
+        now_ms: int,
+    ) -> ThinkAdmissionResult:
+        """Release active resources only after a truthful host stop acknowledgement."""
         now = _now(now_ms)
         if type(host_confirmed_stopped) is not bool:
             raise ValueError("host_confirmed_stopped must be an explicit boolean")
-        if host_confirmed_stopped is not True:
-            with self._lock:
-                key = self._by_lease.get(lease_id)
-                binding = self._bindings.get(key) if key is not None else None
-                if binding is not None:
-                    binding.state = ThinkBindingState.RECOVERY_REQUIRED
-                    self._counts["stop_unconfirmed"] += 1
-            return False
+        key = self._key(utterance_id, revision)
         with self._lock:
-            key = self._by_lease.get(lease_id)
-            binding = self._bindings.get(key) if key is not None else None
-            if binding is None or binding.lease is None:
-                return False
-            if binding.state not in (
-                ThinkBindingState.STOP_REQUESTED,
-                ThinkBindingState.RECOVERY_REQUIRED,
-                ThinkBindingState.RUNNING,
-                ThinkBindingState.STARTING,
-            ):
-                raise RuntimeError("worker stop is not expected in this state")
+            binding = self._bindings.get(key)
+            if binding is None or binding.state not in (
+                ThinkBindingState.STOP_REQUESTED, ThinkBindingState.RECOVERY_REQUIRED
+            ) or binding.lease is None:
+                return ThinkAdmissionResult("not_found", "no_stoppable_generation")
+            if not host_confirmed_stopped:
+                binding.state = ThinkBindingState.RECOVERY_REQUIRED
+                self._counts["stop_unconfirmed"] += 1
+                return ThinkAdmissionResult("recovery_required", "worker_stop_not_confirmed", binding.request_id)
             self._runtime.release(
-                lease_id, now, host_confirmed_stopped=True
+                binding.lease.lease_id, now, host_confirmed_stopped=True
             )
             self._remove(binding)
             self._counts["cancelled"] += 1
-            return True
+            return ThinkAdmissionResult("cancelled", "host_confirmed_stopped", binding.request_id)
 
     def metrics(self) -> dict[str, int]:
-        """Aggregate counters only; no utterance IDs, transcript text, or lease IDs."""
+        """Aggregate counters only; no transcript or utterance identifiers."""
         with self._lock:
             return dict(self._counts)
 
 
 __all__ = [
-    "IncrementalThinkAdmissionBridge",
     "ThinkAdmissionResult",
     "ThinkBindingState",
     "ThinkLaunch",
     "ThinkStopRequest",
+    "IncrementalThinkAdmissionBridge",
 ]
