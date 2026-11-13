@@ -157,3 +157,68 @@ A configuration is acceptable only if it improves the user-visible response or t
 - No measured speedup, intelligence gain, human-equivalent behavior, game mastery, or production readiness is claimed.
 - Existing static `ResourceVector` construction remains for compatibility; production host integration should opt into the profile path after a trusted collector exists.
 - Production `main`, model weights, inference defaults, permissions, broadcast settings, and release artifacts are unchanged.
+
+## Unified capability roadmap: streaming, gaming, creation, and knowledge
+
+The resource profile is only one reliability layer. STAR should use the same central scheduler to protect a foreground loop while separate, cancellable subsystems handle strategic and long-running work.
+
+### Social/VTuber brain
+
+Use a multiparty conversation state rather than a single-speaker chat loop. Track only transient turn context needed to decide whether STAR is being addressed, whether viewers are speaking to each other, whether a backchannel should be ignored, and whether she should yield or remain silent. MP-Bench is a useful external reference because it evaluates multiparty comprehension and turn-taking separately; STAR needs a private, consented rehearsal set with direct-address, viewer-to-viewer, overlapping speech, backchannels, jokes, topic changes, and intentional-silence cases.
+
+A natural avatar should combine:
+- speech playback position, not text-generation completion, for mouth motion;
+- listening state and gaze/pose transitions while viewers speak;
+- a small set of consistent persona expressions with bounded transitions;
+- interruption barriers that cancel stale motion and reconcile the portion of speech actually played;
+- deliberate silence and a cooldown against repeated reactions to the same event.
+
+Human-like timing and expressive continuity are engineering goals, not evidence of human consciousness. STAR should not invent memories, emotions, or viewer relationships that are not supported by actual interaction state.
+
+### Gamer brain
+
+Follow the separation demonstrated by SIMA 2 and Voyager:
+- **reactive controller:** low-latency movement, camera, aiming, and immediate actions;
+- **strategic planner:** objectives, maps, inventory, opponent hypotheses, and route planning;
+- **learning loop:** practice curriculum, error classification, skill library, replay, and held-out transfer tests.
+
+SIMA 2 shows language-guided, goal-directed action in diverse 3D environments, and its authors describe self-improvement through self-directed play. The authors also identify limitations in long-horizon tasks, short interaction memory, precise low-level control, and visual understanding. STAR should therefore preserve task checkpoints and test skills on unseen maps/games instead of treating one successful run as mastery.
+
+Sources:
+- https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/
+- https://arxiv.org/abs/2305.16291
+
+### Creator brain
+
+The creator loop should inspect before editing, execute inside the actual engine, capture visual evidence, run gameplay checks, repair, and repeat. OpenGameEval is a Roblox-native reference for reproducible stateful Studio tasks and executable checks. GameDevBench provides multimodal Godot tasks across gameplay, UI, 2D/3D graphics, and animation. Keep separate scorecards for script correctness, scene correctness, playability, progression, save/load, multiplayer behavior, performance, and visual quality.
+
+Sources:
+- https://github.com/Roblox/open-game-eval
+- https://github.com/waynchi/gamedevbench
+
+### Knowledge and memory brain
+
+Separate:
+- **working memory:** the active conversation, current game objective, and immediate plan;
+- **episodic memory:** what actually happened in a session, with time and source;
+- **semantic memory:** verified facts and concepts with provenance and freshness;
+- **procedural memory:** tested skills and repeatable workflows.
+
+Mem2ActBench is important because it tests whether an agent applies long-term memory to future tool choices and parameters, not merely whether it can answer a direct recall question. Its paper describes 2,029 synthesized sessions and 400 tool-use tasks; the authors' human evaluation found 91.3% of tasks strongly memory-dependent. STAR should measure memory-to-action success, stale-memory mistakes, contradiction handling, and whether retrieved information actually improves the task.
+
+Knowledge writes should preserve source, timestamp, confidence, scope, and expiry/refresh policy. For current facts, retrieve fresh sources; for durable facts, use reviewed reference material. Never silently convert a guess about a viewer into a stored fact. Keep public-stream context ephemeral unless retention is necessary and explicitly permitted.
+
+Source: https://arxiv.org/abs/2601.19935
+
+### Self-improvement gate
+
+Use an offline-first experiment loop:
+1. propose one measurable change;
+2. freeze a baseline and a held-out evaluation set;
+3. run the candidate in an isolated workspace;
+4. compare correctness, latency, resource use, and safety regressions;
+5. retain the experiment record and artifacts;
+6. promote only after tests and owner-controlled policy gates pass;
+7. keep a one-step rollback path.
+
+Do not let a benchmark score, model self-report, or synthetic result alone promote a new model, skill, memory, or production behavior.
