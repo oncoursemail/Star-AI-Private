@@ -142,6 +142,8 @@ This preserves synchronization when a viewer interrupts STAR or a game event tak
 
 The [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) documents parallel decoding, continuous batching, monitoring endpoints, schema-constrained responses, function calling, and speculative decoding. Its [speculative decoding guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md) describes draft-model and n-gram-cache approaches.
 
+The upstream [llama.cpp SPEED-Bench client](https://github.com/ggml-org/llama.cpp/tree/master/tools/server/bench/speed-bench) can compare a running server with identical prompt sets before and after a speculative-decoding change. It reports prompt throughput, decode throughput, end-to-end latency, and draft acceptance. Its qualitative categories include coding, humanities, math, multilingual, QA, RAG, reasoning, roleplay, STEM, summarization, and writing. Keep benchmark, category, output length, concurrency, and sample limit identical between baseline and candidate runs; otherwise the comparison is not controlled.
+
 For STAR, evaluate optimizations in this order:
 
 1. Preserve stable system/prefix bytes so the server can reuse prompt-cache work.
