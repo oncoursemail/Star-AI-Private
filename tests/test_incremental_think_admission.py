@@ -17,12 +17,15 @@ from star.voice.incremental_think_admission import (
 )
 
 
-def make_runtime(*, healthy: bool = True, reserve_cpu: int = 600) -> StreamWorkloadRuntime:
+def make_runtime(
+    *, healthy: bool = True, reserve_cpu: int = 600, lease_ttl_ms: int = 60_000
+) -> StreamWorkloadRuntime:
     admission = WorkloadAdmissionController(
         ResourceBudget(
             capacity=ResourceVector(1000, 4096, 1024),
             realtime_reserve=ResourceVector(reserve_cpu, 2048, 512),
-        )
+        ),
+        lease_ttl_ms=lease_ttl_ms,
     )
     governor = StreamLoadGovernor(GovernorPolicy(recover_windows=1))
     runtime = StreamWorkloadRuntime(admission, governor)
@@ -318,3 +321,19 @@ def test_metrics_are_aggregate_and_do_not_expose_utterance_or_prefix() -> None:
     assert metrics["queued"] == 1
     assert "turn-1" not in repr(metrics)
     assert "Roblox" not in repr(metrics)
+
+
+def test_startup_after_lease_expiry_is_fenced_until_worker_stops() -> None:
+    runtime = make_runtime(lease_ttl_ms=100)
+    bridge = make_bridge(runtime)
+    bridge.apply(start_directive(), now_ms=1100)
+    lease = runtime.schedule(1100)[0]
+    bridge.accept_lease(lease, now_ms=1100)
+
+    assert bridge.confirm_started(lease.lease_id, now_ms=1200, started=True) is False
+    assert runtime.snapshot(1200).active == 1
+    assert bridge.stop_request("turn-1", 0, now_ms=1201, reason="late_start") is not None
+    assert bridge.confirm_stopped(
+        lease.lease_id, now_ms=1210, host_confirmed_stopped=True
+    ) is True
+    assert runtime.snapshot(1210).active == 0
