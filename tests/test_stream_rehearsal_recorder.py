@@ -22,6 +22,10 @@ def configured_limits() -> RehearsalLimits:
         min_turn_recall=0.95,
         min_task_recovery_rate=0.95,
         min_held_out_skill_transfer_rate=0.95,
+        min_spoken_task_accuracy=0.9,
+        min_whisper_control_rate=0.9,
+        min_volume_control_rate=0.9,
+        min_groundedness_rate=0.9,
         max_stale_task_resumes=0,
         max_duplicate_speech_replays=0,
     )
@@ -89,6 +93,27 @@ def complete_recorder(run_id: str = "run-1") -> StreamRehearsalRecorder:
                 succeeded=True,
                 independently_scored=True,
             )
+            assert recorder.record_spoken_task_outcome(
+                event_id=f"spoken-{index}",
+                succeeded=index < 19,
+                independently_scored=True,
+            )
+            assert recorder.record_whisper_control_outcome(
+                event_id=f"whisper-{index}",
+                succeeded=True,
+                independently_scored=True,
+            )
+            assert recorder.record_volume_control_outcome(
+                event_id=f"volume-{index}",
+                succeeded=index < 19,
+                independently_scored=True,
+            )
+            assert recorder.record_groundedness_outcome(
+                event_id=f"grounded-{index}",
+                succeeded=index < 19,
+                independently_scored=True,
+                conversation_turns=25,
+            )
     return recorder
 
 
@@ -118,6 +143,14 @@ def test_complete_recorder_feeds_existing_rehearsal_evaluator():
         "duplicate_speech_replays",
         "held_out_skill_trials",
         "held_out_skill_successes",
+        "spoken_task_trials",
+        "spoken_task_successes",
+        "whisper_control_trials",
+        "whisper_control_successes",
+        "volume_control_trials",
+        "volume_control_successes",
+        "groundedness_trials",
+        "groundedness_successes",
     }
     assert all(
         series["exact"] is True
@@ -131,6 +164,10 @@ def test_complete_recorder_feeds_existing_rehearsal_evaluator():
     assert report["metrics"]["avatar_sync_p95_ms"] == 5.0
     assert report["metrics"]["game_frame_p99_ms"] == pytest.approx(16.667, abs=0.001)
     assert report["metrics"]["held_out_skill_transfer_rate"] == 1.0
+    assert report["metrics"]["spoken_task_accuracy"] == 0.95
+    assert report["metrics"]["whisper_control_rate"] == 1.0
+    assert report["metrics"]["volume_control_rate"] == 0.95
+    assert report["metrics"]["groundedness_rate"] == 0.95
 
 
 def test_cumulative_audio_counters_are_differenced_only_within_epoch():
@@ -314,7 +351,27 @@ def test_turn_and_skill_results_require_independent_scoring():
             succeeded=True,
             independently_scored=False,
         )
+    with pytest.raises(PermissionError):
+        recorder.record_spoken_task_outcome(
+            event_id="spoken-1", succeeded=True, independently_scored=False
+        )
+    with pytest.raises(PermissionError):
+        recorder.record_whisper_control_outcome(
+            event_id="whisper-1", succeeded=True, independently_scored=False
+        )
+    with pytest.raises(PermissionError):
+        recorder.record_volume_control_outcome(
+            event_id="volume-1", succeeded=True, independently_scored=False
+        )
+    with pytest.raises(PermissionError):
+        recorder.record_groundedness_outcome(
+            event_id="grounded-1",
+            succeeded=True,
+            independently_scored=False,
+            conversation_turns=25,
+        )
     assert recorder.snapshot()["held_out_skill_trials"] == 0
+    assert recorder.snapshot()["spoken_task_trials"] == 0
 
 
 def test_stale_task_resume_cannot_be_counted_as_success():
@@ -406,3 +463,27 @@ def test_snapshot_and_health_do_not_mutate_recorder_state():
 
     assert recorder.snapshot() == before
     assert recorder.health() == health_before
+
+
+
+def test_groundedness_requires_more_than_twenty_turns_and_keeps_no_content():
+    recorder = StreamRehearsalRecorder("groundedness-run")
+    with pytest.raises(ValueError, match="21..1000000000"):
+        recorder.record_groundedness_outcome(
+            event_id="grounded-short",
+            succeeded=True,
+            independently_scored=True,
+            conversation_turns=20,
+        )
+    assert recorder.record_groundedness_outcome(
+        event_id="grounded-long",
+        succeeded=True,
+        independently_scored=True,
+        conversation_turns=21,
+    )
+    snapshot = recorder.snapshot()
+    assert snapshot["groundedness_trials"] == 1
+    assert snapshot["groundedness_successes"] == 1
+    assert "transcript" not in repr(snapshot).lower()
+    assert "audio_payload" not in repr(snapshot).lower()
+    assert "audio_bytes" not in repr(snapshot).lower()

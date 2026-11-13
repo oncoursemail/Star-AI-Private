@@ -9,7 +9,7 @@ from star.stream_rehearsal_eval import RehearsalLimits
 
 def rehearsal(**changes):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "rehearsal-001",
         "first_content_latency_ms": [180.0] * 20,
         "first_audible_latency_ms": [420.0] * 20,
@@ -30,6 +30,14 @@ def rehearsal(**changes):
         "duplicate_speech_replays": 0,
         "held_out_skill_trials": 20,
         "held_out_skill_successes": 18,
+        "spoken_task_trials": 20,
+        "spoken_task_successes": 19,
+        "whisper_control_trials": 20,
+        "whisper_control_successes": 20,
+        "volume_control_trials": 20,
+        "volume_control_successes": 19,
+        "groundedness_trials": 20,
+        "groundedness_successes": 19,
     }
     value.update(changes)
     return value
@@ -49,6 +57,10 @@ def limits(**changes):
         "min_turn_recall": 0.9,
         "min_task_recovery_rate": 0.9,
         "min_held_out_skill_transfer_rate": 0.8,
+        "min_spoken_task_accuracy": 0.9,
+        "min_whisper_control_rate": 0.9,
+        "min_volume_control_rate": 0.9,
+        "min_groundedness_rate": 0.9,
         "max_stale_task_resumes": 0,
         "max_duplicate_speech_replays": 0,
     }
@@ -251,3 +263,27 @@ def test_diagnoses_are_bounded_and_deterministically_ordered():
 def test_diagnosis_limit_is_bounded():
     with pytest.raises(ValueError, match="max_diagnoses"):
         diagnose_stream_rehearsal(rehearsal(), limits(), max_diagnoses=0)
+
+
+
+def test_new_voice_quality_and_groundedness_gates_route_to_distinct_components():
+    report = diagnose_stream_rehearsal(
+        rehearsal(
+            spoken_task_successes=10,
+            whisper_control_successes=10,
+            volume_control_successes=10,
+            groundedness_successes=10,
+        ),
+        limits(),
+    )
+
+    by_gate = {item["gate"]: item for item in report["diagnoses"]}
+    assert set(by_gate) == {
+        "spoken_task_accuracy",
+        "whisper_control_rate",
+        "volume_control_rate",
+        "groundedness_rate",
+    }
+    assert by_gate["spoken_task_accuracy"]["candidate_component_observations"] == []
+    assert by_gate["groundedness_rate"]["evidence_status"] == "TRACE_NOT_SUPPLIED"
+    assert report["status"] == "ACTIONABLE_FAILURES"

@@ -20,7 +20,7 @@ _COMPONENTS = frozenset({
     "desktop", "network",
 })
 _MAX_BUDGET_MS = 300_000.0
-_MAX_DIAGNOSES = 13
+_MAX_DIAGNOSES = 17
 
 # These are investigation maps, not causal graphs. A failed metric can have
 # multiple causes and the listed components are only sensible first probes.
@@ -38,6 +38,10 @@ _GATE_ROUTES: dict[str, tuple[str, ...]] = {
     "stale_task_resumes": ("runtime", "memory", "tool"),
     "duplicate_speech_replays": ("voice", "audio", "runtime"),
     "held_out_skill_transfer_rate": ("game", "memory", "tool"),
+    "spoken_task_accuracy": ("voice", "model", "retrieval", "tool"),
+    "whisper_control_rate": ("voice", "tts", "audio"),
+    "volume_control_rate": ("voice", "tts", "audio"),
+    "groundedness_rate": ("memory", "retrieval", "model", "tool"),
 }
 
 _GATE_EXPERIMENTS: dict[str, str] = {
@@ -93,6 +97,22 @@ _GATE_EXPERIMENTS: dict[str, str] = {
         "Evaluate the same mechanic on unseen maps or games with fixed controls and "
         "independent outcome labels; separate practice tasks from held-out tasks."
     ),
+    "spoken_task_accuracy": (
+        "Score spoken requests against a sealed task oracle; separate task success "
+        "from turn timing, tool recovery, and the model's own self-rating."
+    ),
+    "whisper_control_rate": (
+        "Use blinded human or calibrated acoustic labels to check requested whisper "
+        "delivery; normalize for microphone gain and playback chain."
+    ),
+    "volume_control_rate": (
+        "Compare requested relative loudness changes with independently measured "
+        "playback levels; do not use one universal dB target across devices."
+    ),
+    "groundedness_rate": (
+        "Evaluate conversations of at least 21 turns against cited evidence and "
+        "temporal consistency; score unsupported claims and stale-memory errors."
+    ),
 }
 
 _GATE_PRIORITY = {
@@ -109,6 +129,10 @@ _GATE_PRIORITY = {
     "stale_task_resumes": 1,
     "duplicate_speech_replays": 1,
     "held_out_skill_transfer_rate": 2,
+    "spoken_task_accuracy": 1,
+    "whisper_control_rate": 1,
+    "volume_control_rate": 1,
+    "groundedness_rate": 1,
 }
 
 
