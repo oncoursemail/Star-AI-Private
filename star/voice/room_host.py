@@ -294,7 +294,8 @@ class RoomStreamHost:
 
     @staticmethod
     def _decision(action: RoomAction, cue: RoomCue, reason: str) -> RoomDecision:
-        return RoomDecision(action, cue.event_id, reason)
+        event_id = cue.event_id if isinstance(cue.event_id, str) and cue.event_id else "invalid-room-event"
+        return RoomDecision(action, event_id, reason)
 
 
 __all__ = ["RoomHostConfig", "RoomHostStats", "RoomStreamHost"]
