@@ -95,7 +95,6 @@ class VTubeFramePump:
         self._in_flight_epoch: str | None = None
         self._last_submitted_s = -1.0
         self._used_epochs: set[str] = set()
-        self._retired_epochs: set[str] = set()
         self._counts = {
             "submitted": 0,
             "sent": 0,
@@ -237,16 +236,11 @@ class VTubeFramePump:
         )
         deadline = time.monotonic() + timeout / 1000.0
         with self._condition:
-            if self._active is None:
-                return (
-                    playback_epoch in self._retired_epochs
-                    and self._in_flight_epoch != playback_epoch
-                )
-            if self._active[1] != playback_epoch:
+            if self._active is not None and self._active[1] != playback_epoch:
                 return False
             # Revoke submissions before waiting for a send already in progress.
-            self._active = None
-            self._retired_epochs.add(playback_epoch)
+            if self._active is not None:
+                self._active = None
             if self._pending is not None and self._pending.epoch == playback_epoch:
                 self._pending = None
                 self._counts["stale_dropped"] += 1
