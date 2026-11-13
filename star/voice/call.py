@@ -191,11 +191,11 @@ class CallSession:
         """
         if self.room_director is None:
             raise RuntimeError("room_director is not configured for this call")
+        if not isinstance(cue, RoomCue):
+            raise TypeError("cue must be a RoomCue")
         if self._stopped:
             return RoomDecision(RoomAction.WAIT, cue.event_id, "call_ended")
         now = self.clock()
-        if not isinstance(cue, RoomCue):
-            raise TypeError("cue must be a RoomCue")
         with self._room_lock:
             playback_known = self._sync_room_playback_locked(now)
             if not playback_known:

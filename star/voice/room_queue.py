@@ -67,6 +67,7 @@ class RoomQueueStats:
     rejected_full: int = 0
     rejected_stale: int = 0
     not_queueable: int = 0
+    expired_notifications_dropped: int = 0
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,7 @@ class RoomCueQueue:
         self._items: list[_QueuedCue] = []
         self._seen_order: deque[str] = deque()
         self._seen: set[str] = set()
+        self._expired_pending: deque[RoomCue] = deque()
         self._sequence = 0
         self._stats = RoomQueueStats()
 
@@ -181,7 +183,10 @@ class RoomCueQueue:
         if not _finite(now):
             raise ValueError("now must be a finite monotonic timestamp")
         with self._lock:
-            return tuple(item.cue for item in self._expire_locked(float(now)))
+            self._expire_locked(float(now))
+            expired = tuple(self._expired_pending)
+            self._expired_pending.clear()
+            return expired
 
     def discard(self, event_id: str) -> bool:
         """Remove a queued event without making its ID reusable in this session."""
@@ -198,6 +203,7 @@ class RoomCueQueue:
             self._items.clear()
             self._seen_order.clear()
             self._seen.clear()
+            self._expired_pending.clear()
             self._sequence = 0
             self._stats = RoomQueueStats()
 
@@ -207,6 +213,11 @@ class RoomCueQueue:
             expired_ids = {item.cue.event_id for item in expired}
             self._items = [item for item in self._items if item.cue.event_id not in expired_ids]
             self._bump(expired=len(expired))
+            for item in expired:
+                if len(self._expired_pending) >= self.config.dedupe_capacity:
+                    self._expired_pending.popleft()
+                    self._bump(expired_notifications_dropped=1)
+                self._expired_pending.append(item.cue)
         return expired
 
     def _remember_locked(self, event_id: str) -> None:
@@ -225,6 +236,7 @@ class RoomCueQueue:
             "rejected_full": self._stats.rejected_full,
             "rejected_stale": self._stats.rejected_stale,
             "not_queueable": self._stats.not_queueable,
+            "expired_notifications_dropped": self._stats.expired_notifications_dropped,
         }
         for name, amount in changes.items():
             values[name] += amount

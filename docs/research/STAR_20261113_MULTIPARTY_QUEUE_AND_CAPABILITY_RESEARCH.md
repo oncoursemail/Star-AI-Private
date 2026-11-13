@@ -40,7 +40,7 @@ The queue:
 - Expires cues at the earlier of the event-age deadline or queue-residence deadline.
 - Returns expired cue metadata so the host can delete matching payloads from its own short-lived store.
 - Is thread-safe for audio/chat/game adapter callbacks.
-- Exposes counters for accepted, dequeued, expired, duplicates, full-queue rejection, stale rejection and non-queueable input.
+- Exposes counters for accepted, dequeued, expired, duplicates, full-queue rejection, stale rejection, non-queueable input and dropped expiry notifications. Expiry notifications are themselves bounded; if the notification buffer overflows, the host must sweep its payload store by the same TTL.
 - Resets queue and dedupe state when the call ends.
 
 ### CallSession integration
