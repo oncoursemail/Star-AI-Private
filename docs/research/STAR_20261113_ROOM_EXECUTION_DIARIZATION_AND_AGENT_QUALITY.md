@@ -35,6 +35,13 @@ NVIDIA's [NeMo Labs streaming diarization documentation](https://docs.nvidia.com
 - Similar voices, noisy rooms, and inference that falls behind real time can cause missing or incorrect speaker tags.
 - The diarization stage provides speaker evidence; it does not itself produce the transcript.
 
+The current NeMo Labs integration notes also expose two important constraints:
+
+- The shipped Nemotron 3 model requires a pinned NeMo Speech repository revision; the documented PyPI NeMo 2.7.3 and 3.0.0 releases do not load this checkpoint correctly. It should be evaluated in an isolated environment, not added to STAR's normal desktop dependencies.
+- The service emits at most one speaker tag per transcript. Overlapping speakers inside one transcript collapse to a single tag, so a host that needs true overlap attribution must preserve frame/segment evidence separately rather than assuming the transcript tag describes every word.
+
+The documented chunked configuration uses three 80 ms frames plus one 80 ms look-ahead frame, so its first diarization burst arrives after about 320 ms of audio, plus model inference. That delay and model warm-up need to be included in first-audible latency tests.
+
 **STAR decision:** define a future host adapter around speaker evidence and confidence rather than binding the call core to one model. Keep speaker IDs ephemeral, never treat a diarization label as a verified real-world identity, and let the host disable diarization when its latency or quality is poor.
 
 ### Third-party interruptions
@@ -57,7 +64,7 @@ A detected disagreement is not automatically an interruption. Prefer a short pau
 
 ### Full-duplex evaluation
 
-[Full-Duplex-Bench v3](https://www.full-duplex.ai/benchmarks/fdb-v3) evaluates 100 human-recorded spoken requests across 79 scenarios and 12 speakers, including disfluencies, self-corrections, chained tool calls, latency, and turn-taking.
+[Full-Duplex-Bench v3](https://www.full-duplex.ai/benchmarks/fdb-v3) evaluates 100 human-recorded spoken requests across 79 scenarios and 12 speakers, including disfluencies, self-corrections, chained tool calls, latency, and turn-taking. Its May 2026 benchmark page reports that the evaluated systems still struggled with self-correction and multi-step reasoning on harder scenarios; the reported fastest response was 4.25 seconds and is benchmark-specific, not a STAR target or a directly comparable local latency result.
 
 **STAR decision:** evaluate turn-taking, spoken-task accuracy, self-correction, tool-result grounding, and latency together. Do not optimize only for fewer interruptions or faster first audio.
 
