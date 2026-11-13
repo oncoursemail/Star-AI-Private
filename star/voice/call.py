@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import math
 import queue
-from enum import Enum
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable, Iterable, Iterator, Protocol
 
 from .chunker import SentenceChunker, speakable
@@ -444,7 +444,7 @@ class CallSession:
             return self.room_queue.pop_next(now=self.clock())
 
     def expire_queued_room_cues(self) -> tuple[RoomCue, ...]:
-        """Expire queued cues and return IDs/metadata for host-owned payload cleanup."""
+        """Expire queued cues and delete their matching payloads when a store is configured."""
         if self.room_queue is None:
             raise RuntimeError("room_queue is not configured for this call")
         expired = self.room_queue.expire(now=self.clock())
@@ -941,8 +941,14 @@ class CallSession:
                     self._reset_room_playback_locked()
         with self._lock:
             latest = self._reply is reply
-        if latest and not self._stopped and self.detector.state == TurnDetector.IDLE and not self._ptt_held:
-            self._set_state("listening")
+            should_listen = (
+                latest and not self._stopped and self.detector.state == TurnDetector.IDLE
+                and not self._ptt_held and self.state != "listening"
+            )
+            if should_listen:
+                self.state = "listening"
+        if should_listen:
+            self._emit({"type": "state", "state": "listening"})
         if latest and self.room_payload_store is not None and self.room_queue is not None and len(self.room_queue) > 0:
             self._emit({"type": "room_queue_ready", "pending": len(self.room_queue)})
 
@@ -973,5 +979,5 @@ def _friendly(exc: Exception) -> str:
     return text[:300]
 
 
-__all__ = ["CallConfig", "CallSession", "FRAME_MS", "Speaker", "SpeechToText", "TextToSpeech", "VoiceActivity",
-           "Brain"]
+__all__ = ["CallConfig", "CallSession", "RoomDispatchResult", "RoomDispatchStatus", "FRAME_MS", "Speaker",
+           "SpeechToText", "TextToSpeech", "VoiceActivity", "Brain"]
