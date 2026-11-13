@@ -40,7 +40,7 @@ The current NeMo Labs integration notes also expose two important constraints:
 - The shipped Nemotron 3 model requires a pinned NeMo Speech repository revision; the documented PyPI NeMo 2.7.3 and 3.0.0 releases do not load this checkpoint correctly. It should be evaluated in an isolated environment, not added to STAR's normal desktop dependencies.
 - The service emits at most one speaker tag per transcript. Overlapping speakers inside one transcript collapse to a single tag, so a host that needs true overlap attribution must preserve frame/segment evidence separately rather than assuming the transcript tag describes every word.
 
-The documented chunked configuration uses three 80 ms frames plus one 80 ms look-ahead frame, so its first diarization burst arrives after about 320 ms of audio, plus model inference. That delay and model warm-up need to be included in first-audible latency tests.
+The documented chunked configuration uses three 80 ms frames plus one 80 ms look-ahead frame, so its first diarization burst arrives after about 320 ms of audio, plus model inference. The NeMo documentation also says the service runs roughly one second of silence through the model at startup; this adds several seconds to startup, while skipping warm-up can make the first CUDA forward pass take 2–4 seconds and arrive too late for the first turn. That delay and model warm-up need to be included in first-audible latency tests.
 
 **STAR decision:** define a future host adapter around speaker evidence and confidence rather than binding the call core to one model. Keep speaker IDs ephemeral, never treat a diarization label as a verified real-world identity, and let the host disable diarization when its latency or quality is poor.
 
