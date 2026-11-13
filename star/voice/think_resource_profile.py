@@ -96,6 +96,11 @@ class ThinkResourceProfile:
             raise ValueError("insufficient calibration samples")
         if any(type(sample) is not ResourceVector for sample in samples):
             raise TypeError("every calibration sample must be ResourceVector")
+        if any(
+            sample.cpu_millicores == 0 and sample.ram_mb == 0 and sample.vram_mb == 0
+            for sample in samples
+        ):
+            raise ValueError("calibration samples must contain nonzero measured resource usage")
 
         peak = ResourceVector(
             max(sample.cpu_millicores for sample in samples),
