@@ -173,12 +173,24 @@ class ThinkProcessWindowAccumulator:
         self._sample_count = 0
         self._closed = False
 
-    def observe(self, counters: ProcessCounters, *, at_ms: int) -> None:
-        """Add one process snapshot; identity, counter, and clock regressions fail closed."""
+    def observe(
+        self,
+        counters: ProcessCounters,
+        *,
+        at_ms: int,
+        clock_epoch: str,
+        configuration_fingerprint: str,
+    ) -> None:
+        """Add one snapshot and revalidate its process, host epoch, and model configuration."""
         if self._closed:
             raise RuntimeError("process window is closed")
         if type(counters) is not ProcessCounters:
             raise TypeError("counters must be ProcessCounters")
+        if _opaque(clock_epoch, "clock_epoch") != self._clock_epoch:
+            raise ValueError("host clock epoch changed during process window")
+        if (type(configuration_fingerprint) is not str
+                or configuration_fingerprint != self._fingerprint):
+            raise ValueError("inference configuration changed during process window")
         if counters.identity != self._identity:
             raise ValueError("process identity changed; possible PID reuse or worker restart")
         at = _integer(at_ms, "at_ms", maximum=_MAX_CLOCK_MS)
