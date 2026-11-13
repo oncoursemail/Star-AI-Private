@@ -69,9 +69,16 @@ The profile is a scheduling envelope, not a hard guarantee against sudden extern
 
 ### Local inference optimization
 
-Upstream `llama.cpp` documents multiple speculative-decoding methods, including draft models and n-gram variants. These methods can improve generation throughput when draft acceptance offsets proposal/verification overhead; they are not guaranteed speedups for every model or workload.
+Upstream `llama.cpp` now documents several speculative-decoding families: standalone draft models, EAGLE-3, DFlash, DSpark, MTP heads, n-gram cache, and n-gram map variants (including `ngram-mod`). The server can combine some draftless methods. These approaches trade proposal cost, acceptance rate, memory, and target-model verification work; none is a universal speed switch.
 
-For STAR, compare a baseline against one optimization at a time. Record draft acceptance and verification overhead alongside time-to-first-token, first-audible-token, output-token latency, task quality, and concurrent game/stream health. Do not enable a speculative method globally based on tokens/second from an isolated model run.
+For STAR, create a matched experiment matrix rather than copying a command line from another GPU:
+- baseline with speculation disabled;
+- low-overhead n-gram method for repetitive code/reasoning patterns;
+- small draft model only when its VRAM/RAM cost fits the calibrated profile;
+- EAGLE-3/MTP/DFlash/DSpark only when compatible weights/builds exist and the target backend supports them;
+- measure accepted draft tokens, proposal/verification overhead, TTFT, time-per-output-token, first-audible latency, quality, and concurrent game/stream health.
+
+Keep model/backend/configuration fingerprints separate: enabling a draft model, changing the speculative method, or changing KV-cache/context settings invalidates the old resource profile. Do not enable a method globally based on isolated tokens/second.
 
 Source: https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md
 
