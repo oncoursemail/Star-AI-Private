@@ -203,7 +203,7 @@ class RoomPayloadStore:
             return RoomPayloadStoreResult.STALE
 
         expires_at = min(cue.ended_at + self.config.max_age_seconds, now + self.config.max_age_seconds)
-        if expires_at <= now:
+        if not _finite(expires_at) or expires_at <= now:
             self._wipe(encoded)
             with self._lock:
                 self._bump("rejected_stale")
@@ -244,8 +244,10 @@ class RoomPayloadStore:
             if entry is None:
                 return None
             self._bytes_used -= len(entry.data)
-            text = bytes(entry.data).decode("utf-8")
-            self._wipe(entry.data)
+            try:
+                text = bytes(entry.data).decode("utf-8")
+            finally:
+                self._wipe(entry.data)
             self._bump("taken")
             return RoomPayload(
                 cue=entry.cue,
