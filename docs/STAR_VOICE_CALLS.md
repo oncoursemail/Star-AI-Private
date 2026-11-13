@@ -591,7 +591,9 @@ Important boundaries:
 
 - The host still owns microphone/chat/game ingestion, ASR, diarization, speaker/addressee
   classification, moderation, and event timestamps. This API does not connect Twitch, YouTube,
-  Discord, VTube Studio, or OBS by itself.
+  Discord, VTube Studio, or OBS by itself. The current desktop `VoiceBridge`/`build_session`
+  path does not yet instantiate these optional room components; a dedicated stream-host adapter
+  must opt in and forward classified events before this can be used by the desktop streamer.
 - `handle_room_message` accepts only final text. Partial ASR hypotheses belong in the host's
   ephemeral hypothesis state and must not be queued as final requests.
 - Room text is explicitly wrapped as untrusted user content. It never grants tools, permissions,
