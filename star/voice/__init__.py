@@ -8,7 +8,9 @@ See docs/STAR_VOICE_CALLS.md.
 from .call import CallConfig, CallSession
 from .chunker import SentenceChunker, speakable
 from .metrics import TurnMetrics, latency_table
+from .room_queue import RoomCueQueue, RoomQueueConfig, RoomQueueResult, RoomQueueStats
 from .turn import EchoGate, TurnConfig, TurnDetector, TurnEvent
 
 __all__ = ["CallConfig", "CallSession", "EchoGate", "SentenceChunker", "TurnConfig", "TurnDetector", "TurnEvent",
-           "TurnMetrics", "latency_table", "speakable"]
+           "TurnMetrics", "latency_table", "speakable", "RoomCueQueue", "RoomQueueConfig",
+           "RoomQueueResult", "RoomQueueStats"]
