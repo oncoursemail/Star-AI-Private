@@ -73,7 +73,7 @@ def make(
         clock=clock,
         room_director=RoomTurnDirector(),
         room_queue=queue,
-        room_payload_store=store or RoomPayloadStore(),
+        room_payload_store=store if store is not None else RoomPayloadStore(),
     )
     session.start()
     return session, events, brain, asr, speaker
