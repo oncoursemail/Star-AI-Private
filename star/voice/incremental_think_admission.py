@@ -23,6 +23,7 @@ from .incremental_thinking import ThinkAction, ThinkDirective
 from .think_resource_profile import ThinkResourceProfile
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
+_EPOCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 _MAX_CLOCK_MS = 10**12
 _MAX_RESOURCE_UNITS = 1_000_000_000
 
@@ -108,6 +109,7 @@ class IncrementalThinkAdmissionBridge:
         resources: ResourceVector | None = None,
         resource_profile: ThinkResourceProfile | None = None,
         configuration_fingerprint: str | None = None,
+        clock_epoch: str | None = None,
         max_pending: int = 64,
     ) -> None:
         if type(runtime) is not StreamWorkloadRuntime:
@@ -125,6 +127,13 @@ class IncrementalThinkAdmissionBridge:
             or re.fullmatch(r"[0-9a-f]{64}", configuration_fingerprint) is None
         ):
             raise ValueError("configuration_fingerprint must be a lowercase SHA-256 hex value")
+        if resource_profile is not None and resource_profile.clock_epoch is not None:
+            if type(clock_epoch) is not str or _EPOCH.fullmatch(clock_epoch) is None:
+                raise ValueError("clock_epoch is required for an epoch-bound resource profile")
+            if clock_epoch != resource_profile.clock_epoch:
+                raise ValueError("clock_epoch must match the resource profile")
+        elif clock_epoch is not None:
+            raise ValueError("clock_epoch requires an epoch-bound resource profile")
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pending must be in 1..256")
         if resources is not None:
@@ -136,6 +145,7 @@ class IncrementalThinkAdmissionBridge:
         self._resources = resources
         self._resource_profile = resource_profile
         self._configuration_fingerprint = configuration_fingerprint
+        self._clock_epoch = clock_epoch
         self._max_pending = max_pending
         self._bindings: dict[tuple[str, int], _Binding] = {}
         self._by_lease: dict[str, tuple[str, int]] = {}
@@ -161,6 +171,7 @@ class IncrementalThinkAdmissionBridge:
         resources = self._resource_profile.resources_for(
             now_ms=now_ms,
             expected_configuration_fingerprint=self._configuration_fingerprint or "",
+            expected_clock_epoch=self._clock_epoch,
         )
         if resources is None:
             self._counts["profile_unusable"] += 1
