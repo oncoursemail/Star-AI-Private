@@ -290,3 +290,11 @@ Before describing any draft capability as available:
 ## Scope and non-claims
 
 This document is a research and integration audit. It does not install MemForest, add new game controls, connect a microphone, enable Twitch/YouTube, control OBS/VTube Studio, modify model weights, change permissions, or alter the v1.0 installer. Paper results are not STAR measurements. Draft PRs are not shipped features. Physical Windows, RTX 4060, Roblox Studio, OBS, VTube Studio, and live-stream acceptance remains outstanding.
+
+
+## 10. New multiparty and persona research (2026-11-13)
+
+A follow-up research pass adds Duplex-MPE (selective response and stopping after human resolution), CharDuplex (character consistency across full-duplex multi-turn interaction), AdaptDuplex (adaptive interaction windows and non-blocking cognition), DMV-Bench (incidental visual memory), the Agent Memory systems characterization, NVIDIA NeMo-Speech.cpp, Nemotron 3 Diarization, and the llm-speed measured dataset.
+
+The implementation transfer is documented in `STAR_20261113_MULTIPARTY_STOP_SEMANTICS_PERSONA_AND_VISUAL_MEMORY_RESEARCH.md`. The only code change in this PR is the typed human-resolution stop contract. Speech models, diarization, providers, persona training, visual-memory persistence, and inference defaults remain research/acceptance work.
+
