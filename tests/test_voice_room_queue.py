@@ -204,3 +204,9 @@ def test_queued_ids_stay_deduped_even_when_recent_history_is_smaller_than_queue(
     assert queue.enqueue(first, queued(first), now=10.0) is RoomQueueResult.ADDED
     assert queue.enqueue(second, queued(second), now=10.0) is RoomQueueResult.ADDED
     assert queue.enqueue(first, queued(first), now=10.1) is RoomQueueResult.DUPLICATE
+
+def test_default_queue_keeps_a_question_during_a_long_reply():
+    queue = RoomCueQueue()
+    item = cue("long-reply", ended_at=10.0)
+    assert queue.enqueue(item, queued(item), now=10.0) is RoomQueueResult.ADDED
+    assert queue.pop_next(now=30.0) == item
