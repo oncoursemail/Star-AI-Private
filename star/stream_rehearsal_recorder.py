@@ -52,6 +52,14 @@ _COUNTS = (
     "duplicate_speech_replays",
     "held_out_skill_trials",
     "held_out_skill_successes",
+    "spoken_task_trials",
+    "spoken_task_successes",
+    "whisper_control_trials",
+    "whisper_control_successes",
+    "volume_control_trials",
+    "volume_control_successes",
+    "groundedness_trials",
+    "groundedness_successes",
 )
 
 
@@ -457,11 +465,93 @@ class StreamRehearsalRecorder:
                 self._add_count("held_out_skill_successes", 1)
             return True
 
+    def _record_independent_outcome(
+        self,
+        *,
+        category: str,
+        event_id: str,
+        succeeded: bool,
+        independently_scored: bool,
+        trials_name: str,
+        successes_name: str,
+    ) -> bool:
+        if type(succeeded) is not bool:
+            raise ValueError("succeeded must be an explicit boolean")
+        if type(independently_scored) is not bool or not independently_scored:
+            raise PermissionError("interaction outcomes require independent scoring")
+        event_id = _identifier(event_id, "event_id")
+        with self._lock:
+            if not self._remember_event(category, event_id):
+                return False
+            self._add_count(trials_name, 1)
+            if succeeded:
+                self._add_count(successes_name, 1)
+            return True
+
+    def record_spoken_task_outcome(
+        self, *, event_id: str, succeeded: bool, independently_scored: bool
+    ) -> bool:
+        """Record independently scored spoken-task accuracy without task content."""
+        return self._record_independent_outcome(
+            category="spoken_task",
+            event_id=event_id,
+            succeeded=succeeded,
+            independently_scored=independently_scored,
+            trials_name="spoken_task_trials",
+            successes_name="spoken_task_successes",
+        )
+
+    def record_whisper_control_outcome(
+        self, *, event_id: str, succeeded: bool, independently_scored: bool
+    ) -> bool:
+        """Record whether requested whisper delivery was followed, without audio."""
+        return self._record_independent_outcome(
+            category="whisper_control",
+            event_id=event_id,
+            succeeded=succeeded,
+            independently_scored=independently_scored,
+            trials_name="whisper_control_trials",
+            successes_name="whisper_control_successes",
+        )
+
+    def record_volume_control_outcome(
+        self, *, event_id: str, succeeded: bool, independently_scored: bool
+    ) -> bool:
+        """Record whether requested volume delivery was followed, without audio."""
+        return self._record_independent_outcome(
+            category="volume_control",
+            event_id=event_id,
+            succeeded=succeeded,
+            independently_scored=independently_scored,
+            trials_name="volume_control_trials",
+            successes_name="volume_control_successes",
+        )
+
+    def record_groundedness_outcome(
+        self,
+        *,
+        event_id: str,
+        succeeded: bool,
+        independently_scored: bool,
+        conversation_turns: int,
+    ) -> bool:
+        """Record groundedness only for independently scored long conversations."""
+        if type(conversation_turns) is not int or not 21 <= conversation_turns <= _MAX_COUNTER:
+            raise ValueError("groundedness trials require 21..1000000000 conversation turns")
+        return self._record_independent_outcome(
+            category="groundedness",
+            event_id=event_id,
+            succeeded=succeeded,
+            independently_scored=independently_scored,
+            trials_name="groundedness_trials",
+            successes_name="groundedness_successes",
+        )
+
     def snapshot(self) -> dict[str, Any]:
-        """Return exactly the aggregate schema consumed by evaluate_rehearsal."""
+        """Return exactly the schema-v2 aggregate consumed by evaluate_rehearsal."""
         with self._lock:
             result: dict[str, Any] = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "run_id": self._run_id,
             }
             for name in _SERIES:
