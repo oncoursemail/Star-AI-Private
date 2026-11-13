@@ -429,7 +429,9 @@ class CallSession:
                 self._room_response_id = reply.response_id
                 self._room_last_played_seconds = 0.0
                 self._room_last_playback_at = None
-                self.room_director.set_assistant_playback(False)
+                self.room_director.set_assistant_playback(
+                    False, reply.response_id, reply.trigger_event_id
+                )
         self._set_state("thinking")
         threading.Thread(target=self._run_room_payload, args=(reply, payload),
                          name=f"star-room-reply-{reply.metrics.turn}", daemon=True).start()
@@ -523,8 +525,8 @@ class CallSession:
         speaking = recently_played or level > 0.0
         self.room_director.set_assistant_playback(
             speaking,
-            reply.response_id if speaking else None,
-            reply.trigger_event_id if speaking else None,
+            reply.response_id,
+            reply.trigger_event_id,
         )
         return True
 
