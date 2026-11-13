@@ -300,8 +300,11 @@ class StreamVariantLimits:
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        if self.min_pairs > _MAX_TRIALS // 2 or self.min_holdout_pairs > _MAX_TRIALS // 2:
-            raise ValueError("pair limits exceed the supported trial capacity")
+        for name in ("min_pairs", "min_holdout_pairs", "min_dimension_pairs", "min_metric_pairs"):
+            if getattr(self, name) > _MAX_CASES:
+                raise ValueError(f"{name} exceeds the supported case capacity")
+        if self.min_holdout_domains > len(_DOMAINS):
+            raise ValueError("min_holdout_domains exceeds the supported domain count")
         if self.max_validation_age_s > _MAX_AGE_S:
             raise ValueError("max_validation_age_s exceeds 30 days")
         for name in (
@@ -342,6 +345,8 @@ class StreamVariantLimits:
         ):
             if value is not None:
                 _finite(value, name, 10.0)
+                if value <= 0:
+                    raise ValueError(f"{name} must require a positive improvement")
 
 
 def _metric_value(trial: StreamTrial, name: str) -> float | None:
