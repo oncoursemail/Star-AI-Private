@@ -12,6 +12,15 @@ from enum import Enum
 import math
 
 
+def _finite_number(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
 class CueSource(str, Enum):
     AUDIO = "audio"
     CHAT = "chat"
@@ -78,11 +87,11 @@ class RoomPolicyConfig:
     def __post_init__(self) -> None:
         for name in ("min_confidence", "interrupt_confidence", "min_game_urgency"):
             value = getattr(self, name)
-            if type(value) not in (int, float) or not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            if not _finite_number(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be a finite number from 0 to 1")
         for name in ("max_event_age_seconds", "max_future_skew_seconds"):
             value = getattr(self, name)
-            if type(value) not in (int, float) or not math.isfinite(value) or value < 0.0:
+            if not _finite_number(value) or value < 0.0:
                 raise ValueError(f"{name} must be a finite non-negative number")
         if type(self.interrupt_overlap_ms) is not int or not 0 <= self.interrupt_overlap_ms <= 60_000:
             raise ValueError("interrupt_overlap_ms must be an integer from 0 to 60000")
@@ -222,10 +231,10 @@ class RoomTurnDirector:
         if type(cue.addressed_to_star) is not bool or type(cue.final) is not bool:
             raise ValueError("addressed_to_star and final must be booleans")
         for name, value in (("confidence", cue.confidence), ("urgency", cue.urgency)):
-            if type(value) not in (int, float) or not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            if not _finite_number(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be a finite number from 0 to 1")
         for name, value in (("started_at", cue.started_at), ("ended_at", cue.ended_at), ("now", now)):
-            if type(value) not in (int, float) or not math.isfinite(value):
+            if not _finite_number(value):
                 raise ValueError(f"{name} must be a finite monotonic timestamp")
         if cue.ended_at < cue.started_at:
             raise ValueError("ended_at cannot be earlier than started_at")
