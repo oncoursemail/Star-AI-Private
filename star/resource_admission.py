@@ -58,7 +58,7 @@ def _integer(value: object, name: str, *, minimum: int = 0) -> int:
 
 @dataclass(frozen=True)
 class ResourceSnapshot:
-    """One host-collected sample; timestamps use the same monotonic clock as evaluate()."""
+    """One host-collected interval sample; counters are deltas over window_seconds.\n\n    audio_underruns and OBS frame counts must cover this same interval; never pass\n    lifetime counters. The policy uses the OBS drop ratio, not duration-normalized\n    event rates. Timestamps and evaluate() use the same monotonic clock.\n    """
 
     observed_at: float
     cpu_percent: float
@@ -126,7 +126,7 @@ class AdmissionDecision:
 
 @dataclass(frozen=True)
 class AdmissionPolicy:
-    """Conservative thresholds; tune from measured hardware, not model marketing."""
+    """Conservative thresholds; tune from measured hardware, not model marketing.\n\n    This is a stateless one-request prefilter, not a concurrency-safe resource\n    reservation system. A lease-based host scheduler must remain authoritative.\n    """
 
     max_snapshot_age_seconds: float = 3.0
     future_clock_skew_seconds: float = 0.25
