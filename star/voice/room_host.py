@@ -113,12 +113,46 @@ class RoomStreamHost:
             source: deque() for source in config.allowed_sources
         }
         self._speaker_times: OrderedDict[tuple[CueSource, str], deque[float]] = OrderedDict()
-        self._counts = {name: 0 for name in RoomHostStats.__dataclass_fields__}
+        self._counts = {
+            "submitted": 0,
+            "accepted": 0,
+            "rejected_closed": 0,
+            "rejected_source": 0,
+            "rejected_non_final": 0,
+            "rejected_empty": 0,
+            "rejected_oversize": 0,
+            "rejected_rate": 0,
+            "rejected_moderation": 0,
+            "moderation_errors": 0,
+            "dispatch_started": 0,
+            "dispatch_busy": 0,
+            "dispatch_empty": 0,
+            "dispatch_stopped": 0,
+            "dispatch_missing_payload": 0,
+            "dispatch_cue_mismatch": 0,
+        }
 
     @property
     def stats(self) -> RoomHostStats:
         with self._lock:
-            return RoomHostStats(**self._counts)
+            return RoomHostStats(
+                submitted=self._counts["submitted"],
+                accepted=self._counts["accepted"],
+                rejected_closed=self._counts["rejected_closed"],
+                rejected_source=self._counts["rejected_source"],
+                rejected_non_final=self._counts["rejected_non_final"],
+                rejected_empty=self._counts["rejected_empty"],
+                rejected_oversize=self._counts["rejected_oversize"],
+                rejected_rate=self._counts["rejected_rate"],
+                rejected_moderation=self._counts["rejected_moderation"],
+                moderation_errors=self._counts["moderation_errors"],
+                dispatch_started=self._counts["dispatch_started"],
+                dispatch_busy=self._counts["dispatch_busy"],
+                dispatch_empty=self._counts["dispatch_empty"],
+                dispatch_stopped=self._counts["dispatch_stopped"],
+                dispatch_missing_payload=self._counts["dispatch_missing_payload"],
+                dispatch_cue_mismatch=self._counts["dispatch_cue_mismatch"],
+            )
 
     @property
     def closed(self) -> bool:
