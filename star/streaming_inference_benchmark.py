@@ -72,8 +72,8 @@ def summarize_streaming_probes(
         "first_content_p95_ms": _nearest_rank(first_content, 0.95),
         "total_p50_ms": round(median(total), 2) if total else None,
         "total_p95_ms": _nearest_rank(total, 0.95),
-        "time_per_output_token_p50_ms": round(median(tpot), 3) if tpot else None,
-        "time_per_output_token_p95_ms": _nearest_rank(tpot, 0.95),
+        "approx_time_per_output_token_p50_ms": round(median(tpot), 3) if tpot else None,
+        "approx_time_per_output_token_p95_ms": _nearest_rank(tpot, 0.95),
         "output_tokens": total_tokens,
         "aggregate_output_tokens_per_second": (
             round(total_tokens * 1000 / wall_ms, 3)
