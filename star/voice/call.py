@@ -179,11 +179,13 @@ class CallSession:
         if self.room_director is None:
             raise RuntimeError("room_director is not configured for this call")
         now = self.clock()
+        if not isinstance(cue, RoomCue):
+            raise TypeError("cue must be a RoomCue")
         with self._room_lock:
             playback_known = self._sync_room_playback_locked(now)
+            if not playback_known:
+                return RoomDecision(RoomAction.WAIT, cue.event_id, "playback_state_unavailable")
             decision = self.room_director.decide(cue, now=now)
-        if not playback_known:
-            return RoomDecision(RoomAction.WAIT, decision.event_id, "playback_state_unavailable")
         if decision.action is RoomAction.INTERRUPT:
             response_id = decision.cancel_response_id
             if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
@@ -426,6 +428,12 @@ class CallSession:
             reply.metrics.end_reason = event.reason
             self._reply = reply
             speculative, self._speculative = self._speculative, None
+        if self.room_director is not None:
+            with self._room_lock:
+                self._room_response_id = reply.response_id
+                self._room_last_played_seconds = 0.0
+                self._room_last_playback_at = None
+                self.room_director.set_assistant_playback(False)
         self._set_state("thinking")
         threading.Thread(target=self._run_reply, args=(reply, event.audio, speculative, previous),
                          name=f"star-voice-reply-{reply.metrics.turn}", daemon=True).start()
