@@ -526,3 +526,17 @@ VoxCPM2 (OpenBMB, 2B, Apache-2.0, voice design from a description, streaming) wa
 the card to 7.7 GB and ran about 2.8 times slower than real time, with MOS estimates 3.4 to 4.1 and large pitch drift
 between lines, so it is audition-only on an 8 GB card. Full table: `docs/research/voice.md` section 9 in the project
 folder.
+
+
+## 12. Optional multiparty room policy bridge (2026-11-13)
+
+The optional `RoomTurnDirector` can now be supplied to `CallSession` as `room_director=`. A host-owned adapter may pass a content-free `RoomCue` to `handle_room_cue()`. The method returns a `RoomDecision` for the host to route:
+
+- `RESPOND` means the cue is directed to Star while she is not speaking or preparing another reply.
+- `QUEUE` means the host should queue the cue for later handling. A direct request arriving while a reply is still being prepared is converted to `QUEUE` to prevent overlapping generations.
+- `CONTINUE` / `IGNORE` / `WAIT` preserve the current floor or defer uncertain cues.
+- `INTERRUPT` cancels only the exact active response generation named by the director.
+
+Each `_Reply` receives an opaque random response ID. `interrupt_response(response_id)` uses an expected-generation check under the call lock, so a stale room cue cannot stop a newer reply. The director's playback state is synchronized from the speaker's played-time cursor and recent output level, not from model text generation. If speaker playback telemetry is unavailable or invalid, the bridge returns `WAIT` rather than guessing.
+
+**Integration boundary:** this is a policy-to-call bridge, not a complete multiparty streaming stack. It does not perform diarization, ASR, chat ingestion, speaker/addressee classification, or queue execution. Those remain host adapters. The host must call `handle_room_cue()` with monotonic timestamps and independently classified metadata. The bridge does not retain transcripts or raw audio. Tests are in `tests/test_voice_room_call_bridge.py`.

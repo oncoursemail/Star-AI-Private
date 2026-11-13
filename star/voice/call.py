@@ -20,9 +20,11 @@ actually played stay in the conversation history, so Star knows what the user di
 """
 from __future__ import annotations
 
+import math
 import queue
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator, Protocol
 
@@ -30,6 +32,7 @@ from .chunker import SentenceChunker, speakable
 from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
 from .persona import system_message
+from .room import RoomAction, RoomCue, RoomDecision, RoomTurnDirector
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
 
@@ -90,6 +93,7 @@ class _Sentence:
 
 class _Reply:
     def __init__(self, turn: int) -> None:
+        self.response_id = uuid.uuid4().hex
         self.metrics = TurnMetrics(turn=turn)
         self.cancel = threading.Event()
         self.done = threading.Event()
@@ -109,9 +113,17 @@ class CallSession:
     def __init__(self, *, vad: VoiceActivity, asr: SpeechToText, brain: Brain, tts: TextToSpeech,
                  speaker: Speaker, endpointer: Endpointer | None = None, config: CallConfig | None = None,
                  on_event: Callable[[dict], None] | None = None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 room_director: RoomTurnDirector | None = None) -> None:
+        if room_director is not None and not isinstance(room_director, RoomTurnDirector):
+            raise TypeError("room_director must be a RoomTurnDirector or None")
         self.config = config or CallConfig()
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
+        self.room_director = room_director
+        self._room_lock = threading.RLock()
+        self._room_response_id: str | None = None
+        self._room_last_played_seconds = 0.0
+        self._room_last_playback_at: float | None = None
         self.detector = TurnDetector(self.config.turn, endpointer)
         self.echo_gate = EchoGate(self.config.echo_margin_db) if self.config.use_echo_gate else None
         self.on_event = on_event or (lambda event: None)
@@ -157,6 +169,92 @@ class CallSession:
     def interrupt(self) -> None:
         """Manual interruption (for a "stop talking" button)."""
         self._cancel_reply("button")
+
+    def handle_room_cue(self, cue: RoomCue) -> RoomDecision:
+        """Apply a classified room cue and cancel only the playback generation it observed.
+
+        ASR, diarization, chat ingestion, and intent classification remain external adapters. This
+        method is the bounded bridge from their content-free cue to the existing call/playback path.
+        """
+        if self.room_director is None:
+            raise RuntimeError("room_director is not configured for this call")
+        now = self.clock()
+        if not isinstance(cue, RoomCue):
+            raise TypeError("cue must be a RoomCue")
+        with self._room_lock:
+            playback_known = self._sync_room_playback_locked(now)
+            if not playback_known:
+                return RoomDecision(RoomAction.WAIT, cue.event_id, "playback_state_unavailable")
+            decision = self.room_director.decide(cue, now=now)
+        if decision.action is RoomAction.RESPOND and self.busy():
+            return RoomDecision(RoomAction.QUEUE, decision.event_id, "assistant_reply_in_progress", decision.priority)
+        if decision.action is RoomAction.INTERRUPT:
+            response_id = decision.cancel_response_id
+            if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
+                return RoomDecision(RoomAction.WAIT, decision.event_id, "playback_generation_changed")
+            with self._room_lock:
+                self._reset_room_playback_locked()
+        return decision
+
+    def interrupt_response(self, response_id: str) -> bool:
+        """Cancel one exact response generation; stale IDs can never stop a newer reply."""
+        if not isinstance(response_id, str) or not response_id or len(response_id) > 128:
+            raise ValueError("response_id must be a non-empty string of at most 128 characters")
+        cancelled = self._cancel_reply("room_barge_in", expected_response_id=response_id)
+        if cancelled and self.room_director is not None:
+            with self._room_lock:
+                self._reset_room_playback_locked()
+        return cancelled
+
+    def _sync_room_playback(self, now: float) -> None:
+        if self.room_director is None:
+            return
+        with self._room_lock:
+            self._sync_room_playback_locked(now)
+
+    def _sync_room_playback_locked(self, now: float) -> bool:
+        """Use the speaker's played-time cursor/level, never generated text, as playback evidence."""
+        if self.room_director is None:
+            return False
+        with self._lock:
+            reply = self._reply
+        if reply is None or reply.done.is_set() or reply.cancel.is_set():
+            self._reset_room_playback_locked()
+            return True
+        if reply.response_id != self._room_response_id:
+            self._room_response_id = reply.response_id
+            self._room_last_played_seconds = 0.0
+            self._room_last_playback_at = None
+        try:
+            played = float(self.speaker.played_seconds())
+            level = float(self.speaker.level())
+        except Exception:
+            self._reset_room_playback_locked()
+            return False
+        if not math.isfinite(played) or played < 0.0 or not math.isfinite(level):
+            self._reset_room_playback_locked()
+            return False
+        if played + 1e-6 < self._room_last_played_seconds:
+            self._room_last_played_seconds = played
+            self._room_last_playback_at = None
+        elif played > self._room_last_played_seconds + 1e-6:
+            self._room_last_played_seconds = played
+            self._room_last_playback_at = now
+        recently_played = (
+            self._room_last_playback_at is not None
+            and 0.0 <= now - self._room_last_playback_at <= 0.25
+        )
+        speaking = recently_played or level > 0.0
+        self.room_director.set_assistant_playback(speaking, reply.response_id if speaking else None)
+        return True
+
+    def _reset_room_playback_locked(self) -> None:
+        if self.room_director is None:
+            return
+        self._room_response_id = None
+        self._room_last_played_seconds = 0.0
+        self._room_last_playback_at = None
+        self.room_director.set_assistant_playback(False)
 
     def set_muted(self, muted: bool) -> None:
         self.muted = bool(muted)
@@ -261,6 +359,7 @@ class CallSession:
         if self._stopped or self.state == "idle":
             return
         now = self.clock()
+        self._sync_room_playback(now)
         mic_level = rms(frame)
         self._emit_levels(mic_level, now)
         if self.config.push_to_talk:
@@ -331,6 +430,12 @@ class CallSession:
             reply.metrics.end_reason = event.reason
             self._reply = reply
             speculative, self._speculative = self._speculative, None
+        if self.room_director is not None:
+            with self._room_lock:
+                self._room_response_id = reply.response_id
+                self._room_last_played_seconds = 0.0
+                self._room_last_playback_at = None
+                self.room_director.set_assistant_playback(False)
         self._set_state("thinking")
         threading.Thread(target=self._run_reply, args=(reply, event.audio, speculative, previous),
                          name=f"star-voice-reply-{reply.metrics.turn}", daemon=True).start()
@@ -402,6 +507,12 @@ class CallSession:
                 return                           # the user kept talking: _finish_reply carries these words over
             self._emit({"type": "final_transcript", "turn": metrics.turn, "text": reply.user_text})
             self.speaker.reset()
+            if self.room_director is not None:
+                with self._room_lock:
+                    self._room_response_id = reply.response_id
+                    self._room_last_played_seconds = 0.0
+                    self._room_last_playback_at = None
+                    self.room_director.set_assistant_playback(False)
             messages = self._context() + [{"role": "user", "content": reply.user_text}]
             self._generate_and_speak(reply, messages)
         except Exception as exc:
@@ -498,11 +609,13 @@ class CallSession:
                 pass
 
     # -- interruption -------------------------------------------------------------------------
-    def _cancel_reply(self, reason: str) -> None:
+    def _cancel_reply(self, reason: str, *, expected_response_id: str | None = None) -> bool:
         with self._lock:
             reply = self._reply
             if reply is None or reply.done.is_set() or reply.cancel.is_set():
-                return
+                return False
+            if expected_response_id is not None and reply.response_id != expected_response_id:
+                return False
             reply.metrics.interrupted = True
             reply.metrics.interrupt_reason = reason
             reply.cancel.set()
@@ -510,6 +623,7 @@ class CallSession:
             reply.heard_seconds = self.speaker.played_seconds() if reply.metrics.first_audio_at is not None else 0.0
             self.speaker.stop()
         self._close_stream(reply)
+        return True
 
     @staticmethod
     def _heard_text(reply: _Reply) -> tuple[str, bool]:
@@ -562,6 +676,12 @@ class CallSession:
         if reply.user_text:
             self._emit({"type": "turn_metrics", **metrics.to_dict()})
         reply.done.set()
+        if self.room_director is not None:
+            with self._room_lock:
+                with self._lock:
+                    latest_for_room = self._reply is reply
+                if latest_for_room:
+                    self._reset_room_playback_locked()
         with self._lock:
             latest = self._reply is reply
         if latest and not self._stopped and self.detector.state == TurnDetector.IDLE and not self._ptt_held:
