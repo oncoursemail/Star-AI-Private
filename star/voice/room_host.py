@@ -214,6 +214,15 @@ class RoomStreamHost:
                 self._bump("rejected_oversize")
                 return self._decision(RoomAction.WAIT, cue, "room_message_too_large")
 
+            now = self._clock()
+            if not _finite(now):
+                self._bump("rejected_rate")
+                return self._decision(RoomAction.WAIT, cue, "host_clock_unavailable")
+            if not self._admit_rate_locked(cue, float(now)):
+                self._bump("rejected_rate")
+                return self._decision(RoomAction.WAIT, cue, "room_rate_limited")
+
+            # Apply cheap bounded admission before invoking the moderation callback.
             if cue.source is CueSource.CHAT and self.config.require_chat_moderation:
                 try:
                     allowed = bool(self._moderate_chat and self._moderate_chat(cue, text))
@@ -224,14 +233,6 @@ class RoomStreamHost:
                 if not allowed:
                     self._bump("rejected_moderation")
                     return self._decision(RoomAction.IGNORE, cue, "chat_moderation_rejected")
-
-            now = self._clock()
-            if not _finite(now):
-                self._bump("rejected_rate")
-                return self._decision(RoomAction.WAIT, cue, "host_clock_unavailable")
-            if not self._admit_rate_locked(cue, float(now)):
-                self._bump("rejected_rate")
-                return self._decision(RoomAction.WAIT, cue, "room_rate_limited")
 
             decision = self.session.handle_room_message(cue, text)
             if decision.action not in (RoomAction.WAIT, RoomAction.IGNORE):
