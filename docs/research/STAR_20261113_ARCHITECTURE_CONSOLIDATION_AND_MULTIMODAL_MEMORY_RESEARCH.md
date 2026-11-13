@@ -239,7 +239,7 @@ Evaluate general knowledge with both held-out factual questions and practical ap
 
 | Order | Work | Acceptance gate |
 |---|---|---|
-| 1 | Reconcile #1140/#1142/#1178 into one scheduler authority | One queue, one lease ledger, one supervisor |
+| 1 | Keep #1140/#1142 as the sole scheduler; #1178 is research-only | One queue, one lease ledger, one supervisor; no second ALLOW/DEFER authority |
 | 2 | Finish task/delivery/trace stack | Crash recovery and playback receipts on exact head |
 | 3 | Connect trusted Windows telemetry | Atomic epochs, fresh counters, calibrated budgets |
 | 4 | Connect streaming ASR and Social Director | Multi-party holdout, WER, interruption metrics |
@@ -267,3 +267,12 @@ This document is a research and architecture audit. It does not claim that:
 - OBS, VTube Studio, Twitch, YouTube, microphone, or gameplay integration has passed hardware acceptance.
 
 The immediate engineering win is to avoid two competing resource schedulers and to turn the growing PR stack into one verifiable, measured runtime.
+
+
+## 11. Recursive game-learning and capability-harness research (2026-11-13)
+
+A new companion study, [STAR Recursive Game Learning, Skill Harnesses, and General-Knowledge Research](STAR_20261113_RECURSIVE_GAME_LEARNING_AND_SKILL_HARNESS_RESEARCH.md), translates recent R²SI, RRSI, The Harness (CoRL 2026), Voyager, MineDojo, multi-agent Minecraft, TREC RAG 2026, and EmbodiedHead findings into STAR's existing codebase.
+
+The main architectural conclusion is to reuse the existing signed GameplaySkillBank, multi-game practice, sealed/counterbalanced holdouts, memory-transfer evaluation, paired stream evaluation, and task/delivery ledgers. STAR should use a fixed safety shield, a fast reactive skill layer, a slower strategic planner, and an outer recursion agent that proposes small changes and must pass independent held-out evaluation before versioned promotion.
+
+The new study also specifies how Gamer Brain, Creator Brain, Knowledge Brain, the Live2D listening/speaking states, and team-mode coordination should share evidence without sharing unsafe authority. It explicitly distinguishes robotics research results from game-playing evidence and does not claim new gameplay mastery, installed models, or hardware speedups.
