@@ -7,7 +7,7 @@ from star.voice.call import CallConfig, CallSession
 from star.voice.room import CueIntent, CueSource, RoomAction, RoomCue, RoomTurnDirector
 from star.voice.room_host import RoomHostConfig, RoomStreamHost
 from star.voice.room_payloads import RoomPayloadStore
-from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVAD
+from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVAD, wait_for
 
 
 def make_cue(event_id: str, *, source: CueSource = CueSource.CHAT,
