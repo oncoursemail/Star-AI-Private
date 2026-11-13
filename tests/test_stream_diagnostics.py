@@ -284,6 +284,6 @@ def test_new_voice_quality_and_groundedness_gates_route_to_distinct_components()
         "volume_control_rate",
         "groundedness_rate",
     }
-    assert set(by_gate["spoken_task_accuracy"]["candidate_component_observations"]) == set()
+    assert by_gate["spoken_task_accuracy"]["candidate_component_observations"] == []
     assert by_gate["groundedness_rate"]["evidence_status"] == "TRACE_NOT_SUPPLIED"
     assert report["status"] == "ACTIONABLE_FAILURES"
