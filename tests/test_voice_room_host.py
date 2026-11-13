@@ -29,9 +29,9 @@ def make_cue(event_id: str, *, source: CueSource = CueSource.CHAT,
 
 
 def make_host(config: RoomHostConfig, *, moderate_chat=None, replies=None, clock=time.monotonic,
-              tts_seconds_per_word: float = 0.01):
+              tts_seconds_per_word: float = 0.01, brain_first_delay: float = 0.0):
     events = Events()
-    brain = FakeBrain(replies or ["Hello, I can hear you."])
+    brain = FakeBrain(replies or ["Hello, I can hear you."], first_delay=brain_first_delay)
     session = CallSession(
         vad=FakeVAD(),
         asr=FakeASR({}),
@@ -256,6 +256,42 @@ def test_human_resolution_stops_matching_room_reply_without_speaking_again():
         assert len(brain.requests) == 1
         assert session.turns[0].interrupt_reason == "room_human_resolved_request"
         assert session.speaker.stops >= 1
+    finally:
+        host.close()
+        session.stop()
+
+
+
+def test_human_resolution_cancels_room_reply_while_thinking_before_audio():
+    config = RoomHostConfig(allowed_sources=frozenset({CueSource.AUDIO}))
+    host, session, _events, brain = make_host(
+        config,
+        replies=["I was about to explain the answer."],
+        brain_first_delay=0.5,
+    )
+    try:
+        first = host.submit(
+            make_cue("question-pending", source=CueSource.AUDIO, speaker_id="viewer-a"),
+            "What happened?",
+        )
+        assert first.action is RoomAction.RESPOND
+
+        resolution = host.submit(
+            make_cue(
+                "resolution-before-audio",
+                source=CueSource.AUDIO,
+                speaker_id="viewer-b",
+                intent=CueIntent.HUMAN_RESOLUTION,
+                addressed=False,
+                resolves_event_id="question-pending",
+            ),
+            "Someone already answered.",
+        )
+        assert resolution.action is RoomAction.STOP
+        assert session.wait_idle(5)
+        assert len(brain.requests) == 1
+        assert session.turns[0].interrupt_reason == "room_human_resolved_request"
+        assert not any(kind == "play" for kind, _at in session.speaker.log)
     finally:
         host.close()
         session.stop()
