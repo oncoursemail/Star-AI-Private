@@ -598,3 +598,12 @@ Use separate scores. Do not collapse voice naturalness, task correctness, game s
 - `star/desktop_core.py`
 
 **Status:** research and architecture proposal only. The blueprint does not itself connect VTube Studio/OBS, start a supervisor, control a game, change model defaults, collect live telemetry or claim improved intelligence.
+
+
+## Follow-up research: edge inference and mixed-load optimization
+
+A companion decision document adds research published through 2026-11-13 on BitNest, TurboQuant, SpecStream, FlashOffloading, and Spexis. It distinguishes single-GPU/Vulkan-relevant experiments from multi-GPU CUDA and Ascend-only research, and defines a matched mixed-load benchmark before any model/backend promotion.
+
+See [STAR edge inference, KV-memory research, and mixed-load acceptance plan](STAR_20261113_EDGE_INFERENCE_MEMORY_AND_MIXED_LOAD_PLAN.md).
+
+This follow-up is research only. It does not change the local model, inference backend, KV-cache format, scheduler thresholds, or production defaults.
