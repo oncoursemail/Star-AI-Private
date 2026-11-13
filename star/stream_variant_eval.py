@@ -105,6 +105,7 @@ class StreamCase:
     """One preregistered case; scenario text and answer keys stay host-side."""
 
     case_id: str
+    scenario_sha256: str
     domain: str
     split: str
     required_dimensions: tuple[str, ...] = ()
@@ -112,6 +113,7 @@ class StreamCase:
 
     def __post_init__(self) -> None:
         _identifier(self.case_id, "case_id")
+        _digest(self.scenario_sha256, "scenario_sha256")
         if type(self.domain) is not str or self.domain not in _DOMAINS:
             raise ValueError("domain must be one of voice, gaming, creator, knowledge, mixed")
         if type(self.split) is not str or self.split not in _SPLITS:
@@ -250,6 +252,7 @@ def roster_digest(cases: Sequence[StreamCase]) -> str:
     rows = sorted(
         (
             case.case_id,
+            case.scenario_sha256,
             case.domain,
             case.split,
             tuple(sorted(case.required_dimensions)),
