@@ -52,7 +52,7 @@ The evaluator enforces:
 5. Matching host/game/harness environment digests inside each pair.
 6. Freshness limits and future-clock rejection.
 7. Symmetric metric availability inside each pair.
-8. Explicit required dimensions for voice, gaming, creator, and knowledge cases.
+8. Explicit required dimensions for voice, gaming, creator, and knowledge cases; only preregistered dimensions and metrics contribute to their respective summaries.
 9. Holdout-only acceptance gates; development cases cannot satisfy holdout minimums.
 10. Minimum pair/domain/metric coverage and explicit speed/throughput improvement goals.
 11. Non-inferiority gates for task quality, turn-taking, groundedness, held-out skills, game completion, frame time, audio/OBS loss, CPU/RAM/VRAM, and memory-token cost.
