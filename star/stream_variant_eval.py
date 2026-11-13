@@ -49,6 +49,7 @@ _METRICS = frozenset({
     "tokens_per_second",
     "memory_tokens",
 })
+
 def _identifier(value: object, label: str) -> str:
     if type(value) is not str or not _ID.fullmatch(value):
         raise ValueError(f"{label} must be a bounded opaque identifier")
