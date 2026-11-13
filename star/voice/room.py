@@ -126,7 +126,7 @@ class RoomTurnDirector:
 
     now and cue timestamps must use the same monotonic clock. Chat/game adapters must
     translate wall-clock timestamps to host-monotonic arrival times before creating cues.
-    The returned INTERRUPT decision names the exact active response generation to cancel.
+    INTERRUPT and STOP decisions name the exact active response generation to cancel.
     """
 
     def __init__(self, config: RoomPolicyConfig | None = None) -> None:
