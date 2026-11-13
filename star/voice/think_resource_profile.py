@@ -13,7 +13,7 @@ import re
 from ..stream_workload_admission import ResourceVector
 
 _FINGERPRINT = re.compile(r"[0-9a-f]{64}\Z")
-_MAX_CLOCK_MS = 10**15
+_MAX_CLOCK_MS = 10**12
 _MAX_SAMPLES = 4096
 _MIN_SAMPLES = 8
 _MAX_PROFILE_AGE_MS = 7 * 24 * 60 * 60 * 1000
