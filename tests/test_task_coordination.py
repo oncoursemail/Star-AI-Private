@@ -284,3 +284,14 @@ def test_parallel_task_creates_are_serialized(tmp_path):
             results = list(pool.map(add, range(32)))
         assert len(results) == 32
         assert ledger.stats.tasks == 32
+
+
+def test_cancelled_task_does_not_leave_a_queued_report_pending(tmp_path):
+    with TaskLedger(str(tmp_path / "tasks.db")) as ledger:
+        create(ledger)
+        start(ledger)
+        ledger.queue_report("report-cancel", "build", 1, "content://progress",
+                            "checkpoint://progress", now=13, event_id="queue-progress")
+        ledger.transition("build", 1, TaskStatus.CANCELLED, now=14,
+                          event_id="cancel", lease_id="lease-a")
+        assert ledger.pending_reports() == ()
