@@ -65,6 +65,7 @@ class RoomHostStats:
     accepted: int = 0
     rejected_closed: int = 0
     rejected_source: int = 0
+    rejected_invalid: int = 0
     rejected_non_final: int = 0
     rejected_empty: int = 0
     rejected_oversize: int = 0
@@ -118,6 +119,7 @@ class RoomStreamHost:
             "accepted": 0,
             "rejected_closed": 0,
             "rejected_source": 0,
+            "rejected_invalid": 0,
             "rejected_non_final": 0,
             "rejected_empty": 0,
             "rejected_oversize": 0,
@@ -140,6 +142,7 @@ class RoomStreamHost:
                 accepted=self._counts["accepted"],
                 rejected_closed=self._counts["rejected_closed"],
                 rejected_source=self._counts["rejected_source"],
+                rejected_invalid=self._counts["rejected_invalid"],
                 rejected_non_final=self._counts["rejected_non_final"],
                 rejected_empty=self._counts["rejected_empty"],
                 rejected_oversize=self._counts["rejected_oversize"],
@@ -170,6 +173,29 @@ class RoomStreamHost:
             if self._closed:
                 self._bump("rejected_closed")
                 return self._decision(RoomAction.WAIT, cue, "room_host_closed")
+            if (
+                not isinstance(cue.event_id, str)
+                or not cue.event_id
+                or len(cue.event_id) > 128
+                or not isinstance(cue.speaker_id, str)
+                or not cue.speaker_id
+                or len(cue.speaker_id) > 128
+                or not isinstance(cue.source, CueSource)
+                or not hasattr(cue.intent, "value")
+                or type(cue.addressed_to_star) is not bool
+                or type(cue.final) is not bool
+                or type(cue.overlap_ms) is not int
+                or not 0 <= cue.overlap_ms <= 60_000
+                or not _finite(cue.started_at)
+                or not _finite(cue.ended_at)
+                or cue.started_at > cue.ended_at
+                or not _finite(cue.confidence)
+                or not 0.0 <= cue.confidence <= 1.0
+                or not _finite(cue.urgency)
+                or not 0.0 <= cue.urgency <= 1.0
+            ):
+                self._bump("rejected_invalid")
+                return self._decision(RoomAction.WAIT, cue, "invalid_room_cue")
             if cue.source not in self.config.allowed_sources:
                 self._bump("rejected_source")
                 return self._decision(RoomAction.WAIT, cue, "source_not_enabled")
