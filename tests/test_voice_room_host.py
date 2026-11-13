@@ -194,3 +194,26 @@ def test_invalid_opaque_speaker_id_is_rejected_before_rate_limit_state():
     finally:
         host.close()
         session.stop()
+
+
+def test_duplicate_provider_event_is_dropped_before_moderation():
+    moderated = []
+    config = RoomHostConfig(allowed_sources=frozenset({CueSource.CHAT}))
+
+    def moderate(item, _text):
+        moderated.append(item.event_id)
+        return True
+
+    host, session, _events, _brain = make_host(config, moderate_chat=moderate)
+    try:
+        item = make_cue("provider-redelivery")
+        first = host.submit(item, "One viewer message")
+        second = host.submit(item, "One viewer message")
+        assert first.action is RoomAction.RESPOND
+        assert second.action is RoomAction.IGNORE
+        assert second.reason == "duplicate_room_event"
+        assert moderated == ["provider-redelivery"]
+        assert host.stats.rejected_duplicate == 1
+    finally:
+        host.close()
+        session.stop()
