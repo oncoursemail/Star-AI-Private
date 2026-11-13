@@ -37,6 +37,7 @@ class RoomHostConfig:
     max_events_per_speaker: int = 8
     max_speakers: int = 256
     max_text_bytes: int = 8_192
+    dedupe_capacity: int = 1_024
     require_chat_moderation: bool = True
 
     def __post_init__(self) -> None:
@@ -51,6 +52,7 @@ class RoomHostConfig:
             ("max_events_per_speaker", 1, 1_000),
             ("max_speakers", 1, 4_096),
             ("max_text_bytes", 1, 1_048_576),
+            ("dedupe_capacity", 1, 16_384),
         ):
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
@@ -65,6 +67,7 @@ class RoomHostStats:
     accepted: int = 0
     rejected_closed: int = 0
     rejected_source: int = 0
+    rejected_duplicate: int = 0
     rejected_invalid: int = 0
     rejected_non_final: int = 0
     rejected_empty: int = 0
@@ -114,11 +117,14 @@ class RoomStreamHost:
             source: deque() for source in config.allowed_sources
         }
         self._speaker_times: OrderedDict[tuple[CueSource, str], deque[float]] = OrderedDict()
+        self._seen_order: deque[str] = deque()
+        self._seen: set[str] = set()
         self._counts = {
             "submitted": 0,
             "accepted": 0,
             "rejected_closed": 0,
             "rejected_source": 0,
+            "rejected_duplicate": 0,
             "rejected_invalid": 0,
             "rejected_non_final": 0,
             "rejected_empty": 0,
@@ -142,6 +148,7 @@ class RoomStreamHost:
                 accepted=self._counts["accepted"],
                 rejected_closed=self._counts["rejected_closed"],
                 rejected_source=self._counts["rejected_source"],
+                rejected_duplicate=self._counts["rejected_duplicate"],
                 rejected_invalid=self._counts["rejected_invalid"],
                 rejected_non_final=self._counts["rejected_non_final"],
                 rejected_empty=self._counts["rejected_empty"],
@@ -202,6 +209,9 @@ class RoomStreamHost:
             if not cue.final:
                 self._bump("rejected_non_final")
                 return self._decision(RoomAction.WAIT, cue, "final_event_required")
+            if cue.event_id in self._seen:
+                self._bump("rejected_duplicate")
+                return self._decision(RoomAction.IGNORE, cue, "duplicate_room_event")
             if not text.strip():
                 self._bump("rejected_empty")
                 return self._decision(RoomAction.WAIT, cue, "empty_room_message")
@@ -221,6 +231,7 @@ class RoomStreamHost:
             if not self._admit_rate_locked(cue, float(now)):
                 self._bump("rejected_rate")
                 return self._decision(RoomAction.WAIT, cue, "room_rate_limited")
+            self._remember_event_locked(cue.event_id)
 
             # Apply cheap bounded admission before invoking the moderation callback.
             if cue.source is CueSource.CHAT and self.config.require_chat_moderation:
@@ -263,6 +274,15 @@ class RoomStreamHost:
             self._closed = True
             self._source_times.clear()
             self._speaker_times.clear()
+            self._seen_order.clear()
+            self._seen.clear()
+
+    def _remember_event_locked(self, event_id: str) -> None:
+        self._seen.add(event_id)
+        self._seen_order.append(event_id)
+        while len(self._seen_order) > self.config.dedupe_capacity:
+            expired = self._seen_order.popleft()
+            self._seen.discard(expired)
 
     def _admit_rate_locked(self, cue: RoomCue, now: float) -> bool:
         cutoff = now - self.config.rate_window_seconds
