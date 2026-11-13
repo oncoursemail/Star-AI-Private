@@ -28,7 +28,7 @@ def test_streaming_summary_keeps_first_content_and_exact_usage_separate():
     assert result["total_p50_ms"] == 600
     assert result["output_tokens"] == 18
     assert result["aggregate_output_tokens_per_second"] == 22.5
-    assert result["time_per_output_token_p50_ms"] is not None
+    assert result["approx_time_per_output_token_p50_ms"] is not None
     assert "not a guaranteed server-side token timestamp" in result["note"]
 
 
@@ -40,7 +40,7 @@ def test_missing_usage_never_fabricates_token_or_tpot_metrics():
     )
     assert result["output_tokens"] is None
     assert result["aggregate_output_tokens_per_second"] is None
-    assert result["time_per_output_token_p50_ms"] is None
+    assert result["approx_time_per_output_token_p50_ms"] is None
 
 
 def test_streaming_benchmark_uses_bounded_concurrency_and_closes_streams():
