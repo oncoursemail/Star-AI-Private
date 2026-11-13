@@ -622,7 +622,7 @@ Important boundaries:
 The desktop `VoiceBridge` can now instantiate the optional room components for one call.
 This is disabled by default and is not a new frontend action.
 
-To enable it, the trusted local call starter must include both the existing microphone
+For a mixed local-microphone + room call, the trusted local call starter supplies microphone
 consent and explicit room consent, plus a non-empty list of allowed sources:
 
 ```python
@@ -632,6 +632,22 @@ bridge.handle("voiceStartCall", {
     "roomSources": ["chat", "audio"],
 })
 ```
+
+For a provider-driven VTuber stream, use room-only mode instead:
+
+```python
+bridge.handle("voiceStartCall", {
+    "roomOnly": True,
+    "roomConsent": True,
+    "roomSources": ["chat", "audio", "game"],
+})
+```
+
+Room-only mode does not request or open the local microphone and skips loading local VAD,
+end-of-turn, and ASR models. It keeps STAR's Brain, TTS, speaker, room director, queue, and
+payload store available. A trusted provider/desktop adapter must submit final classified
+events through `submit_room_message`. Because this is a Python host API, the current React
+call screen does not yet expose the room-only control.
 
 Allowed source names are `audio`, `chat`, and `game`. A chat-enabled call must be created
 with a local moderation callback injected into `VoiceBridge(room_moderator=...)`; if no
