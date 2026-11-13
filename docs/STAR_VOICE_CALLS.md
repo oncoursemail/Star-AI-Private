@@ -575,7 +575,10 @@ When the director returns `RESPOND`, the session reserves a new response generat
 the room text through the existing streamed Brain → sentence chunker → TTS → speaker path.
 When the call is already busy, the cue metadata and its short-lived text payload are retained
 separately. The queue remains bounded and content-free; the payload store remains bounded,
-TTL-limited, in-memory, and destructive on retrieval.
+TTL-limited, in-memory, and destructive on retrieval. Default room event/payload age is 60
+seconds and the default queue residence limit is 45 seconds, so an ordinary long spoken
+response does not expire a viewer's question after only a few seconds. Hosts can configure
+shorter limits for fast-changing gameplay events.
 
 After a reply finishes, the session emits `room_queue_ready` with a pending count. The host can
 then call `dispatch_next_room_message()`. It returns a `RoomDispatchResult` with one of
