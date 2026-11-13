@@ -655,8 +655,9 @@ data and never grants tools, permissions, purchases, publishing rights, or other
 `RoomStreamHost` adds a source allowlist, final-event requirement, UTF-8 payload bound,
 provider-event deduplication, per-source and per-speaker rolling rate limits, bounded
 speaker-key state, and mandatory chat moderation. It retains only aggregate counters; it does not log message text, persist
-viewer profiles, or connect to an external service. The underlying `RoomPayloadStore`
-continues to own the bounded, TTL-limited one-shot text payload.
+viewer profiles, or connect to an external service. Aggregate host counters are available
+through `voiceStatus.roomStats`; no message text or viewer identity is included. The underlying
+`RoomPayloadStore` continues to own the bounded, TTL-limited one-shot text payload.
 
 When `CallSession` emits `room_queue_ready`, the bridge asks the host to dispatch one item.
 Dispatch now refuses to speak while a reply, hands-free user turn, or push-to-talk turn is
