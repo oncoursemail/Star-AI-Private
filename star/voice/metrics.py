@@ -34,16 +34,27 @@ class TurnMetrics:
         return None if a is None or b is None else max(0.0, b - a)
 
     def stages(self) -> dict:
-        """The latency breakdown in seconds. `total` is what the user feels: stop talking -> hear Star."""
+        """Latency breakdown in seconds plus TTS real-time factor.
+
+        `first_audio_at` means audio was handed to the speaker queue, not proven audible
+        at the user's device. Separating sentence formation from first audio makes model
+        delay distinguishable from TTS/queue delay.
+        """
         generation = self._gap(self.first_token_at, self.last_token_at)
+        tts_rtf = self.tts_seconds / self.audio_seconds if self.audio_seconds > 0 else None
         return {
             "endpoint": self._gap(self.speech_end, self.turn_end),
             "asr": self._gap(self.turn_end, self.transcript_at),
             "speech_end_to_transcript": self._gap(self.speech_end, self.transcript_at),
             "transcript_to_first_token": self._gap(self.transcript_at, self.first_token_at),
+            "first_token_to_first_sentence": self._gap(self.first_token_at, self.first_sentence_at),
+            "first_sentence_to_first_audio": self._gap(self.first_sentence_at, self.first_audio_at),
+            "transcript_to_first_audio": self._gap(self.transcript_at, self.first_audio_at),
+            "turn_end_to_first_audio": self._gap(self.turn_end, self.first_audio_at),
             "first_token_to_first_audio": self._gap(self.first_token_at, self.first_audio_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
             "tokens_per_second": ((self.tokens - 1) / generation) if generation and self.tokens > 2 else None,
+            "tts_real_time_factor": tts_rtf,
         }
 
     def to_dict(self) -> dict:
