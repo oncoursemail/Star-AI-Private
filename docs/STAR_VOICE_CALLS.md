@@ -154,7 +154,7 @@ request.
 
 | Action | Payload | Immediate `data` |
 |---|---|---|
-| `voiceStatus` | none | `{available, missingPackages[], missingModels[], serverConfigured, inCall, callId, state, muted, speaking}` |
+| `voiceStatus` | none | `{available, missingPackages[], missingModels[], serverConfigured, inCall, callId, state, muted, speaking, audioDiagnostics}` |
 | `voiceGetSettings` | none | `{settings: VoiceSettings, choices: {asr_model[], endpointer[], output[]}}` |
 | `voiceSaveSettings` | `{settings: {...partial}}` | `{settings}` after validation; stored in `voice.json` in the app data folder |
 | `voiceListVoices` | `{style?}` | `{styles[], voices[], selected}`: the voice catalog, optionally one style (section 9) |
@@ -779,3 +779,25 @@ The prompt does **not** decide whether STAR should take the floor. The room dire
 Research and evaluation plan: `docs/research/STAR_20261113_NATURAL_STREAMER_PERSONA_AND_SOCIAL_PRESENCE.md`.
 
 This is a voice-prompt behavior change only. It does not install ASR/diarization, connect Twitch/YouTube, control OBS or VTube Studio, or demonstrate a live-stream hardware test. Evaluate it on the same multi-speaker and long-session holdouts as the room runtime before calling it production-ready.
+
+
+## 14. Aggregate audio-device health diagnostics (2026-11-14)
+
+The real PortAudio microphone and speaker adapters count device callback conditions without
+retaining audio or identifying the selected device:
+
+- Microphone: driver input overflows/underflows, bounded Python queue drops, and queued frame count.
+- Speaker: driver output underflows/overflows, queued seconds, played seconds, and sample rate.
+
+`voiceStatus.audioDiagnostics` returns separate `microphone` and `speaker` objects while a
+call is active. Adapters that do not expose diagnostics return empty objects. These are
+aggregate health counters, not a claim that a remote audience heard the audio. A local
+speaker callback is not an OBS/stream output acknowledgement.
+
+The callback counters are diagnostic only. They do not change buffer sizes, drop policy,
+audio priority, device selection, or model scheduling. Tests call the callbacks with
+synthetic PortAudio status flags and do not require a physical microphone or speaker.
+
+No audio samples, transcripts, device names, or viewer identifiers are included. Real
+hardware and OBS loopback tests remain necessary to establish actual underrun rates and
+client-heard latency.
