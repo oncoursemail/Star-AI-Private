@@ -572,5 +572,82 @@
     "url": "https://github.com/vllm-project/vllm/blob/main/docs/design/metrics.md",
     "kind_and_usage": "Upstream engine telemetry reference: TTFT, ITL/TPOT, queue, prefill/decode, KV usage and cache residency",
     "audit": "current upstream documentation checked 2026-11-14"
+  },
+  {
+    "id": "R83",
+    "title": "MAPS: Memory-Aware Predictive Scheduling Framework for LLM Serving",
+    "url": "https://arxiv.org/abs/2609.15359",
+    "kind_and_usage": "Research paper: calibrated output-demand bounds and hierarchical memory-aware scheduling; adapt as a hint to existing admission, not as a second scheduler",
+    "audit": "abstract and reported evaluation checked 2026-11-14; disaggregated multi-instance results not assumed to transfer to STAR"
+  },
+  {
+    "id": "R84",
+    "title": "InteractionBench: Timing, task accuracy, voice control and groundedness",
+    "url": "https://arxiv.org/abs/2611.02430",
+    "kind_and_usage": "Research paper: client-heard latency, spoken-task/floor-control accuracy, whisper/volume and 20+ turn groundedness",
+    "audit": "paper abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R85",
+    "title": "Streaming user transcription in full-duplex speech-to-speech models",
+    "url": "https://arxiv.org/abs/2609.15759",
+    "kind_and_usage": "Research paper: parallel lightweight ASR head for transcription while preserving full-duplex speech behavior",
+    "audit": "abstract and reported WER checked 2026-11-14; implementation availability not assumed"
+  },
+  {
+    "id": "R86",
+    "title": "MP-Bench: Evaluating Voice Agents as a Multiparty Conversation Participant",
+    "url": "https://arxiv.org/abs/2609.13076",
+    "kind_and_usage": "Research benchmark: multiparty turn-taking, response appropriateness and comprehension",
+    "audit": "abstract and findings checked 2026-11-14"
+  },
+  {
+    "id": "R87",
+    "title": "Duplex-MPE: Benchmarking Multi-Party Interaction in Full-Duplex Dialogue",
+    "url": "https://arxiv.org/abs/2609.31948",
+    "kind_and_usage": "Research benchmark: explicit/implicit addressing, answer accuracy, silence preservation and stopping after human resolution",
+    "audit": "abstract and benchmark design checked 2026-11-14"
+  },
+  {
+    "id": "R88",
+    "title": "Sesame TurnBench",
+    "url": "https://github.com/SesameAILabs/turnbench",
+    "kind_and_usage": "Benchmark implementation: annotated dyadic EOT/interruption timing, recall, false-positive rate and latency",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R89",
+    "title": "VideoFDB — NVIDIA audiovisual full-duplex benchmark",
+    "url": "https://research.nvidia.com/labs/amri/publication/mazumdar2026videofdb/",
+    "kind_and_usage": "Research benchmark: audiovisual perception/generation and nonverbal conversational dynamics; data license must be checked before use",
+    "audit": "official NVIDIA research page checked 2026-11-14; gated dataset not bundled"
+  },
+  {
+    "id": "R90",
+    "title": "AFTER: Managing Procedural Memory in LLM Agents",
+    "url": "https://arxiv.org/abs/2606.23127",
+    "kind_and_usage": "Research benchmark: local improvement, cross-task, cross-role and cross-model skill transfer",
+    "audit": "abstract and reported evaluation checked 2026-11-14"
+  },
+  {
+    "id": "R91",
+    "title": "WildClawBench: Real-World Long-Horizon Agent Evaluation",
+    "url": "https://arxiv.org/abs/2605.10912",
+    "kind_and_usage": "Research benchmark: native-runtime multimodal tasks, multi-tool trajectories, side-effect audits and long-horizon completion",
+    "audit": "abstract and benchmark design checked 2026-11-14"
+  },
+  {
+    "id": "R92",
+    "title": "InternLM WildClawBench implementation and trajectory datasets",
+    "url": "https://github.com/InternLM/WildClawBench",
+    "kind_and_usage": "Official benchmark implementation: Docker-isolated tasks, multiple agent harnesses, deterministic and state-based grading",
+    "audit": "official repository README checked 2026-11-14; benchmark data/license to be reviewed before reuse"
+  },
+  {
+    "id": "R93",
+    "title": "GameDevBench official 333-task repository and current leaderboard",
+    "url": "https://github.com/waynchi/gamedevbench",
+    "kind_and_usage": "Official benchmark repository: Godot game-development tasks, runtime video feedback, strict confinement and current leaderboard snapshots",
+    "audit": "official README checked 2026-11-14; confirms 333 tasks and corrects previous erroneous 132-task note"
   }
 ]
