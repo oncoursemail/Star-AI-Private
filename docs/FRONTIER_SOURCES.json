@@ -649,5 +649,89 @@
     "url": "https://github.com/waynchi/gamedevbench",
     "kind_and_usage": "Official benchmark repository: Godot game-development tasks, runtime video feedback, strict confinement and current leaderboard snapshots",
     "audit": "official README checked 2026-11-14; confirms 333 tasks and corrects previous erroneous 132-task note"
+  },
+  {
+    "id": "R94",
+    "title": "Evolving Infra: Agent-Adaptive LLM Serving at Scale, November 2026",
+    "url": "https://arxiv.org/abs/2611.12304",
+    "kind_and_usage": "Research paper: runtime prefill/decode adaptation and agent-context-aware KV retention; adapt only signals to STAR's existing local resource planner",
+    "audit": "paper and cluster configuration checked 2026-11-14; 256-GB300 results not transferred to local GPU claims"
+  },
+  {
+    "id": "R95",
+    "title": "Evolving Infra official implementation",
+    "url": "https://github.com/mit-han-lab/EvolvingInfra",
+    "kind_and_usage": "Official code and deployment guide for agent-adaptive serving; reference only, not imported as a second scheduler",
+    "audit": "README and runtime assumptions checked 2026-11-14"
+  },
+  {
+    "id": "R96",
+    "title": "FlashOffloading: Low-Latency KV Cache Offloading for Long-Context LLM Serving, November 2026",
+    "url": "https://arxiv.org/abs/2611.07542",
+    "kind_and_usage": "Research paper: host-DRAM KV offload, rolling GPU cache and compute-transfer overlap; target platform is Ascend910C",
+    "audit": "paper experimental platform and reported SLO checked 2026-11-14; no RTX speedup assumed"
+  },
+  {
+    "id": "R97",
+    "title": "Realtime-Venus: A full-duplex interaction system with asynchronous delegation",
+    "url": "https://arxiv.org/abs/2609.13814",
+    "kind_and_usage": "Research paper: dual foreground/background loops, shared causal timeline, full-duplex audio/video and asynchronous delegation",
+    "audit": "paper and September 2026 results checked 2026-11-14; two 9B models are not assumed to fit STAR's 8 GB GPU"
+  },
+  {
+    "id": "R98",
+    "title": "Realtime-Venus official implementation",
+    "url": "https://github.com/inclusionAI/Realtime-Venus",
+    "kind_and_usage": "Official Apache-2.0 source release for the model integration and reusable asynchronous Harness; separate asset/font notices apply",
+    "audit": "README and license notice checked 2026-11-14; no model checkpoint installed"
+  },
+  {
+    "id": "R99",
+    "title": "Nemotron 3 Diarization: Streaming Sortformer for up to eight speakers",
+    "url": "https://arxiv.org/abs/2611.12246",
+    "kind_and_usage": "Research paper: streaming speaker cache, up to eight speakers, 80 ms representations and 10 ms outputs",
+    "audit": "paper submitted 2026-11-09; model/RTF suitability for STAR hardware remains untested"
+  },
+  {
+    "id": "R100",
+    "title": "NVIDIA Nemotron 3 Diarization official model card",
+    "url": "https://huggingface.co/nvidia/Nemotron-3-Diarization",
+    "kind_and_usage": "Official model card: OpenMDW-1.1 checkpoint, Transformers/NeMo usage and model files",
+    "audit": "model card and 199 MB checkpoint file checked 2026-11-14; model not downloaded"
+  },
+  {
+    "id": "R101",
+    "title": "SONIC-O1, EMNLP 2026 Main Conference",
+    "url": "https://aclanthology.org/2026.emnlp-main.767/",
+    "kind_and_usage": "Peer-reviewed audio-video benchmark: long-form summarization, evidence-grounded QA, temporal localization and fairness analysis",
+    "audit": "official anthology record and project results checked 2026-11-14"
+  },
+  {
+    "id": "R102",
+    "title": "SONIC-O1 official evaluation pipeline",
+    "url": "https://github.com/VectorInstitute/sonic-o1",
+    "kind_and_usage": "Official code for audiovisual benchmark curation, annotation and evaluation; code and dataset licenses are distinct",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R103",
+    "title": "SONIC-O1 dataset card and Vector Institute License",
+    "url": "https://huggingface.co/datasets/vector-institute/sonic-o1",
+    "kind_and_usage": "Dataset license boundary: academic non-commercial research and Vector Institute sponsors/partners only",
+    "audit": "license text checked 2026-11-14; do not bundle or use for commercial training"
+  },
+  {
+    "id": "R104",
+    "title": "Position: Agentic Evolution is the Path to Evolving LLMs",
+    "url": "https://arxiv.org/abs/2602.00359",
+    "kind_and_usage": "Research position paper: goal-directed deployment-time agent evolution and persistent harness optimization",
+    "audit": "paper and public implementation checked 2026-11-14; benchmark claims treated as project-reported"
+  },
+  {
+    "id": "R105",
+    "title": "A-Evolve official self-improving agent framework",
+    "url": "https://github.com/A-EVO-Lab/a-evolve",
+    "kind_and_usage": "Official implementation: benchmark adapters, evolution algorithms, experiment records and skill/harness mutation",
+    "audit": "README and evolution workflow checked 2026-11-14; STAR adoption limited to isolated candidate experiments and sealed holdouts"
   }
 ]
