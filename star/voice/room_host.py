@@ -189,6 +189,19 @@ class RoomStreamHost:
                 or len(cue.speaker_id) > 128
                 or not isinstance(cue.source, CueSource)
                 or not isinstance(cue.intent, CueIntent)
+                or (
+                    cue.intent is CueIntent.HUMAN_RESOLUTION
+                    and (
+                        not isinstance(cue.resolves_event_id, str)
+                        or not cue.resolves_event_id
+                        or len(cue.resolves_event_id) > 128
+                        or cue.resolves_event_id == cue.event_id
+                    )
+                )
+                or (
+                    cue.intent is not CueIntent.HUMAN_RESOLUTION
+                    and cue.resolves_event_id is not None
+                )
                 or type(cue.addressed_to_star) is not bool
                 or type(cue.final) is not bool
                 or type(cue.overlap_ms) is not int

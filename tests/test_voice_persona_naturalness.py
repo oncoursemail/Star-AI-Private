@@ -1,0 +1,31 @@
+"""Natural voice-persona contract for live, multi-person streaming."""
+from star.voice.persona import STYLE_PROMPTS, system_message
+
+
+def test_every_voice_style_uses_the_same_streaming_floor_rules():
+    for style in STYLE_PROMPTS:
+        content = system_message(style=style, streaming=True)["content"]
+        assert "The host decides when you have the floor" in content
+        assert "Do not use repeated greetings" in content
+        assert "transparent that you are an AI character" in content
+
+
+def test_voice_personas_do_not_require_a_stock_opening():
+    for prompt in STYLE_PROMPTS.values():
+        assert "Start with" not in prompt
+        assert "vary" in prompt.lower() or "variation" in prompt.lower()
+
+
+def test_per_call_context_is_appended_after_the_stable_persona_prefix():
+    base = system_message(style="warm-caring", streaming=True)["content"]
+    contextual = system_message("Current game: a cooperative obby.", style="warm-caring", streaming=True)["content"]
+    assert contextual.startswith(base)
+    assert contextual.endswith("Current game: a cooperative obby.")
+
+
+def test_legacy_prompt_contract_is_unchanged_outside_live_calls():
+    from star.voice.persona import VOICE_SYSTEM_PROMPT
+
+    assert system_message()["content"] == VOICE_SYSTEM_PROMPT
+    assert "The host decides when you have the floor" not in system_message()["content"]
+    assert "The host decides when you have the floor" in system_message(streaming=True)["content"]

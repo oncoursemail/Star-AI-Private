@@ -334,5 +334,404 @@
     "url": "https://create.roblox.com/docs/ai-data-sharing",
     "kind_and_usage": "Official docs: dataset consent and ownership",
     "audit": "web-source-identified; content not all individually extracted"
+  },
+  {
+    "id": "R49",
+    "title": "VibeVoice-ASR-Streaming technical report, Microsoft Research, September 2026",
+    "url": "https://www.microsoft.com/en-us/research/publication/vibevoice-asr-streaming-technical-report/",
+    "kind_and_usage": "Research report: chunked speaker-attributed streaming ASR",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R50",
+    "title": "VibeVoice-ASR-Streaming official model card",
+    "url": "https://huggingface.co/microsoft/VibeVoice-ASR-Streaming-7B",
+    "kind_and_usage": "Official model card: 10 languages, BF16 size, license and usage",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R51",
+    "title": "VibeASR.cpp official CPU runtime",
+    "url": "https://github.com/microsoft/VibeASR.cpp",
+    "kind_and_usage": "Official code/runtime: BitNet CPU inference, model size, RTF and WER tables",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R52",
+    "title": "OmniGameArena project and evaluation protocol",
+    "url": "https://mxlin043.github.io/OmniGameArena/",
+    "kind_and_usage": "Research project: cold start, improvement curves and held-out variant transfer",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R53",
+    "title": "OmniGameArena agent and runner code",
+    "url": "https://github.com/mxlin043/OmniGameArena",
+    "kind_and_usage": "Official code: UE5 game-agent harness and real-time/paused clocks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R54",
+    "title": "OmniGameArena UE5 environment dataset card",
+    "url": "https://huggingface.co/datasets/mxlin043/OmniGameArena",
+    "kind_and_usage": "Official dataset card: 12 games, 60 maps, remote control and Apache-2.0 license",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R55",
+    "title": "SPIKE: Adaptive Dual Controller Framework for Cost-Efficient Long-Horizon Game Agents",
+    "url": "https://arxiv.org/abs/2605.18636",
+    "kind_and_usage": "Preprint: event-triggered strategic/reactive game control and hierarchical memory",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R56",
+    "title": "The Latent Bridge: A Continuous Slow-Fast Channel for Real-Time Game Agents",
+    "url": "https://arxiv.org/abs/2606.24470",
+    "kind_and_usage": "Preprint: learned slow-to-fast latent communication for game agents",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R57",
+    "title": "The Latent Bridge reproducible implementation",
+    "url": "https://github.com/19PINE-AI/latent-bridge-games",
+    "kind_and_usage": "Research code: 33M bridge, paired fast/text/latent comparisons and MIT license",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R58",
+    "title": "EmbodiedCLBench: Continual Learning for Self-Evolving Embodied Agents",
+    "url": "https://arxiv.org/abs/2610.13021",
+    "kind_and_usage": "Preprint: compositional generalization from basic to unseen embodied tasks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R59",
+    "title": "EmbodiedCLBench official implementation",
+    "url": "https://github.com/PKU-VaLuE-Lab/EmbodiedCLBench",
+    "kind_and_usage": "Official benchmark code and task protocol",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R60",
+    "title": "LiViBench: Omnimodal Benchmark for Interactive Livestream Video Understanding",
+    "url": "https://ojs.aaai.org/index.php/AAAI/article/view/39859",
+    "kind_and_usage": "Peer-reviewed benchmark: audio, speech, live comments and 24 livestream tasks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R61",
+    "title": "LiViBench dataset card and license",
+    "url": "https://huggingface.co/datasets/Xiaodong/LiViBench",
+    "kind_and_usage": "Dataset card: CC BY-NC 4.0; non-commercial reuse boundary",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R62",
+    "title": "X2Streaming-ASR: wait when uncertain, emit when ready, arXiv v4, October 2026",
+    "url": "https://arxiv.org/abs/2609.08672",
+    "kind_and_usage": "Preprint: learned append-only commit policy, incremental causal streaming, reported commit latency",
+    "audit": "web-source-identified; paper and current project results checked 2026-11-14"
+  },
+  {
+    "id": "R63",
+    "title": "X2Streaming-ASR official implementation",
+    "url": "https://github.com/X-Square-Robot/X2Streaming-ASR",
+    "kind_and_usage": "Official code: streaming inference, LISTEN/DECODE policy, backends and evaluation results",
+    "audit": "web-source-identified; README and implementation surface checked 2026-11-14"
+  },
+  {
+    "id": "R64",
+    "title": "X2Streaming-ASR-4B official model card",
+    "url": "https://huggingface.co/x-square-robot/X2Streaming-ASR-4B-1009",
+    "kind_and_usage": "Official model card: ~4B BF16 architecture, languages, model license and inference requirements",
+    "audit": "web-source-identified; model card checked 2026-11-14"
+  },
+  {
+    "id": "R65",
+    "title": "Bursts That Outlast Themselves: Persistent Degradation in Prefix-Cached Agent Serving, November 2026",
+    "url": "https://arxiv.org/abs/2611.13412",
+    "kind_and_usage": "Preprint: metastable prefix-cache collapse, KV working-set budgeting, turn-boundary suspension and recovery",
+    "audit": "web-source-identified; abstract and experimental details checked 2026-11-14"
+  },
+  {
+    "id": "R66",
+    "title": "vLLM v0.32.0 metrics documentation",
+    "url": "https://docs.vllm.ai/en/v0.32.0/design/metrics/",
+    "kind_and_usage": "Official docs: KV cache occupancy, prefix-cache hits/queries, request counts and latency metrics",
+    "audit": "web-source-identified; metrics reference checked 2026-11-14"
+  },
+  {
+    "id": "R67",
+    "title": "AI on Roblox: accelerated Studio workflows",
+    "url": "https://create.roblox.com/docs/ai/accelerated-workflows",
+    "kind_and_usage": "Official docs: Studio MCP, project context, script editing, playtesting and creation tools",
+    "audit": "web-source-identified; current Creator Hub documentation checked 2026-11-14"
+  },
+  {
+    "id": "R68",
+    "title": "Roblox Studio is Going Agentic, April 2026",
+    "url": "https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic",
+    "kind_and_usage": "Official engineering announcement: plan/build/test workflows, task manifests and playtesting agent",
+    "audit": "web-source-identified; announcement checked 2026-11-14"
+  },
+  {
+    "id": "R69",
+    "title": "GameDevBench canonical ICML 2026 paper page",
+    "url": "https://sethkarten.ai/papers/gamedevbench.html",
+    "kind_and_usage": "Canonical benchmark paper page: 132 task count and visual-feedback results",
+    "audit": "web-source-identified; benchmark count and reported results checked 2026-11-14"
+  },
+  {
+    "id": "R70",
+    "title": "Roblox Studio built-in MCP server and playtest automation announcement",
+    "url": "https://devforum.roblox.com/t/assistant-updates-studio-built-in-mcp-server-and-playtest-automation/4474643",
+    "kind_and_usage": "Official developer announcement: Studio MCP and playtest automation details",
+    "audit": "web-source-identified; announcement checked 2026-11-14"
+  },
+  {
+    "id": "R71",
+    "title": "AGENTCL: Rigorous Evaluation of Continual Learning in Language Agents",
+    "url": "https://arxiv.org/abs/2606.02461",
+    "kind_and_usage": "Research paper: controlled compositional task streams, transfer gains, memory interference, and negative transfer",
+    "audit": "abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R72",
+    "title": "LiveKit audio TurnDetector documentation",
+    "url": "https://docs.livekit.io/agents/logic/turns/turn-detector/",
+    "kind_and_usage": "Official docs: acoustic/semantic end-of-turn prediction; local CPU v1-mini and endpointing requirements",
+    "audit": "current docs checked 2026-11-14"
+  },
+  {
+    "id": "R73",
+    "title": "LiveKit turn handling options",
+    "url": "https://docs.livekit.io/reference/agents/turn-handling-options/",
+    "kind_and_usage": "Official API reference: endpointing, interruption handling, false-interruption recovery, preemptive generation",
+    "audit": "current API reference checked 2026-11-14"
+  },
+  {
+    "id": "R74",
+    "title": "OpenTelemetry GenAI semantic conventions — metrics",
+    "url": "https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md",
+    "kind_and_usage": "Metrics reference: model, workflow, agent, token, and tool latency/usage measurements",
+    "audit": "current semantic conventions checked 2026-11-14"
+  },
+  {
+    "id": "R75",
+    "title": "OBS Project obs-websocket",
+    "url": "https://github.com/obsproject/obs-websocket",
+    "kind_and_usage": "Official WebSocket remote-control protocol and authentication guidance for OBS adapters",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R76",
+    "title": "VTube Studio API",
+    "url": "https://github.com/DenchiSoft/VTubeStudio",
+    "kind_and_usage": "Official API development reference: local WebSocket, plugin authorization, events and model/hotkey control",
+    "audit": "official API repository checked 2026-11-14"
+  },
+  {
+    "id": "R77",
+    "title": "Graphiti temporal context graph",
+    "url": "https://www.getzep.com/platform/graphiti/",
+    "kind_and_usage": "Open-source temporal graph memory design reference; evaluate validity times and hybrid retrieval locally before adoption",
+    "audit": "project documentation checked 2026-11-14; vendor benchmarks treated as claims, not independent validation"
+  },
+  {
+    "id": "R78",
+    "title": "MineDojo benchmark and environment suite",
+    "url": "https://github.com/MineDojo/MineDojo",
+    "kind_and_usage": "Minecraft embodied-agent benchmark with programmatic, creative, and playthrough tasks",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R79",
+    "title": "Voyager: Open-Ended Embodied Agent with LLMs",
+    "url": "https://github.com/caixianzhou/voyager",
+    "kind_and_usage": "Research implementation: automatic curriculum, executable skill library, environment feedback, and self-verification",
+    "audit": "official project repository checked 2026-11-14"
+  },
+  {
+    "id": "R80",
+    "title": "py-kvcache: External KV caching for vLLM with NVMe SSDs",
+    "url": "https://arxiv.org/abs/2609.11744",
+    "kind_and_usage": "Research paper: GPU/CPU/NVMe cache tradeoffs, asynchronous direct I/O, preloading and break-even conditions",
+    "audit": "abstract and reported evaluation checked 2026-11-14"
+  },
+  {
+    "id": "R81",
+    "title": "Controlled evaluation of configuration and cache architecture in LLM serving",
+    "url": "https://arxiv.org/abs/2611.05991",
+    "kind_and_usage": "Research paper: matched vLLM/SGLang configuration, chunked-prefill confounds, queue growth and tail latency",
+    "audit": "abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R82",
+    "title": "vLLM current metrics documentation",
+    "url": "https://github.com/vllm-project/vllm/blob/main/docs/design/metrics.md",
+    "kind_and_usage": "Upstream engine telemetry reference: TTFT, ITL/TPOT, queue, prefill/decode, KV usage and cache residency",
+    "audit": "current upstream documentation checked 2026-11-14"
+  },
+  {
+    "id": "R83",
+    "title": "MAPS: Memory-Aware Predictive Scheduling Framework for LLM Serving",
+    "url": "https://arxiv.org/abs/2609.15359",
+    "kind_and_usage": "Research paper: calibrated output-demand bounds and hierarchical memory-aware scheduling; adapt as a hint to existing admission, not as a second scheduler",
+    "audit": "abstract and reported evaluation checked 2026-11-14; disaggregated multi-instance results not assumed to transfer to STAR"
+  },
+  {
+    "id": "R84",
+    "title": "InteractionBench: Timing, task accuracy, voice control and groundedness",
+    "url": "https://arxiv.org/abs/2611.02430",
+    "kind_and_usage": "Research paper: client-heard latency, spoken-task/floor-control accuracy, whisper/volume and 20+ turn groundedness",
+    "audit": "paper abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R85",
+    "title": "Streaming user transcription in full-duplex speech-to-speech models",
+    "url": "https://arxiv.org/abs/2609.15759",
+    "kind_and_usage": "Research paper: parallel lightweight ASR head for transcription while preserving full-duplex speech behavior",
+    "audit": "abstract and reported WER checked 2026-11-14; implementation availability not assumed"
+  },
+  {
+    "id": "R86",
+    "title": "MP-Bench: Evaluating Voice Agents as a Multiparty Conversation Participant",
+    "url": "https://arxiv.org/abs/2609.13076",
+    "kind_and_usage": "Research benchmark: multiparty turn-taking, response appropriateness and comprehension",
+    "audit": "abstract and findings checked 2026-11-14"
+  },
+  {
+    "id": "R87",
+    "title": "Duplex-MPE: Benchmarking Multi-Party Interaction in Full-Duplex Dialogue",
+    "url": "https://arxiv.org/abs/2609.31948",
+    "kind_and_usage": "Research benchmark: explicit/implicit addressing, answer accuracy, silence preservation and stopping after human resolution",
+    "audit": "abstract and benchmark design checked 2026-11-14"
+  },
+  {
+    "id": "R88",
+    "title": "Sesame TurnBench",
+    "url": "https://github.com/SesameAILabs/turnbench",
+    "kind_and_usage": "Benchmark implementation: annotated dyadic EOT/interruption timing, recall, false-positive rate and latency",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R89",
+    "title": "VideoFDB — NVIDIA audiovisual full-duplex benchmark",
+    "url": "https://research.nvidia.com/labs/amri/publication/mazumdar2026videofdb/",
+    "kind_and_usage": "Research benchmark: audiovisual perception/generation and nonverbal conversational dynamics; data license must be checked before use",
+    "audit": "official NVIDIA research page checked 2026-11-14; gated dataset not bundled"
+  },
+  {
+    "id": "R90",
+    "title": "AFTER: Managing Procedural Memory in LLM Agents",
+    "url": "https://arxiv.org/abs/2606.23127",
+    "kind_and_usage": "Research benchmark: local improvement, cross-task, cross-role and cross-model skill transfer",
+    "audit": "abstract and reported evaluation checked 2026-11-14"
+  },
+  {
+    "id": "R91",
+    "title": "WildClawBench: Real-World Long-Horizon Agent Evaluation",
+    "url": "https://arxiv.org/abs/2605.10912",
+    "kind_and_usage": "Research benchmark: native-runtime multimodal tasks, multi-tool trajectories, side-effect audits and long-horizon completion",
+    "audit": "abstract and benchmark design checked 2026-11-14"
+  },
+  {
+    "id": "R92",
+    "title": "InternLM WildClawBench implementation and trajectory datasets",
+    "url": "https://github.com/InternLM/WildClawBench",
+    "kind_and_usage": "Official benchmark implementation: Docker-isolated tasks, multiple agent harnesses, deterministic and state-based grading",
+    "audit": "official repository README checked 2026-11-14; benchmark data/license to be reviewed before reuse"
+  },
+  {
+    "id": "R93",
+    "title": "GameDevBench official 333-task repository and current leaderboard",
+    "url": "https://github.com/waynchi/gamedevbench",
+    "kind_and_usage": "Official benchmark repository: Godot game-development tasks, runtime video feedback, strict confinement and current leaderboard snapshots",
+    "audit": "official README checked 2026-11-14; confirms 333 tasks and corrects previous erroneous 132-task note"
+  },
+  {
+    "id": "R94",
+    "title": "Evolving Infra: Agent-Adaptive LLM Serving at Scale, November 2026",
+    "url": "https://arxiv.org/abs/2611.12304",
+    "kind_and_usage": "Research paper: runtime prefill/decode adaptation and agent-context-aware KV retention; adapt only signals to STAR's existing local resource planner",
+    "audit": "paper and cluster configuration checked 2026-11-14; 256-GB300 results not transferred to local GPU claims"
+  },
+  {
+    "id": "R95",
+    "title": "Evolving Infra official implementation",
+    "url": "https://github.com/mit-han-lab/EvolvingInfra",
+    "kind_and_usage": "Official code and deployment guide for agent-adaptive serving; reference only, not imported as a second scheduler",
+    "audit": "README and runtime assumptions checked 2026-11-14"
+  },
+  {
+    "id": "R96",
+    "title": "FlashOffloading: Low-Latency KV Cache Offloading for Long-Context LLM Serving, November 2026",
+    "url": "https://arxiv.org/abs/2611.07542",
+    "kind_and_usage": "Research paper: host-DRAM KV offload, rolling GPU cache and compute-transfer overlap; target platform is Ascend910C",
+    "audit": "paper experimental platform and reported SLO checked 2026-11-14; no RTX speedup assumed"
+  },
+  {
+    "id": "R97",
+    "title": "Realtime-Venus: A full-duplex interaction system with asynchronous delegation",
+    "url": "https://arxiv.org/abs/2609.13814",
+    "kind_and_usage": "Research paper: dual foreground/background loops, shared causal timeline, full-duplex audio/video and asynchronous delegation",
+    "audit": "paper and September 2026 results checked 2026-11-14; two 9B models are not assumed to fit STAR's 8 GB GPU"
+  },
+  {
+    "id": "R98",
+    "title": "Realtime-Venus official implementation",
+    "url": "https://github.com/inclusionAI/Realtime-Venus",
+    "kind_and_usage": "Official Apache-2.0 source release for the model integration and reusable asynchronous Harness; separate asset/font notices apply",
+    "audit": "README and license notice checked 2026-11-14; no model checkpoint installed"
+  },
+  {
+    "id": "R99",
+    "title": "Nemotron 3 Diarization: Streaming Sortformer for up to eight speakers",
+    "url": "https://arxiv.org/abs/2611.12246",
+    "kind_and_usage": "Research paper: streaming speaker cache, up to eight speakers, 80 ms representations and 10 ms outputs",
+    "audit": "paper submitted 2026-11-09; model/RTF suitability for STAR hardware remains untested"
+  },
+  {
+    "id": "R100",
+    "title": "NVIDIA Nemotron 3 Diarization official model card",
+    "url": "https://huggingface.co/nvidia/Nemotron-3-Diarization",
+    "kind_and_usage": "Official model card: OpenMDW-1.1 checkpoint, Transformers/NeMo usage and model files",
+    "audit": "model card and 199 MB checkpoint file checked 2026-11-14; model not downloaded"
+  },
+  {
+    "id": "R101",
+    "title": "SONIC-O1, EMNLP 2026 Main Conference",
+    "url": "https://aclanthology.org/2026.emnlp-main.767/",
+    "kind_and_usage": "Peer-reviewed audio-video benchmark: long-form summarization, evidence-grounded QA, temporal localization and fairness analysis",
+    "audit": "official anthology record and project results checked 2026-11-14"
+  },
+  {
+    "id": "R102",
+    "title": "SONIC-O1 official evaluation pipeline",
+    "url": "https://github.com/VectorInstitute/sonic-o1",
+    "kind_and_usage": "Official code for audiovisual benchmark curation, annotation and evaluation; code and dataset licenses are distinct",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R103",
+    "title": "SONIC-O1 dataset card and Vector Institute License",
+    "url": "https://huggingface.co/datasets/vector-institute/sonic-o1",
+    "kind_and_usage": "Dataset license boundary: academic non-commercial research and Vector Institute sponsors/partners only",
+    "audit": "license text checked 2026-11-14; do not bundle or use for commercial training"
+  },
+  {
+    "id": "R104",
+    "title": "Position: Agentic Evolution is the Path to Evolving LLMs",
+    "url": "https://arxiv.org/abs/2602.00359",
+    "kind_and_usage": "Research position paper: goal-directed deployment-time agent evolution and persistent harness optimization",
+    "audit": "paper and public implementation checked 2026-11-14; benchmark claims treated as project-reported"
+  },
+  {
+    "id": "R105",
+    "title": "A-Evolve official self-improving agent framework",
+    "url": "https://github.com/A-EVO-Lab/a-evolve",
+    "kind_and_usage": "Official implementation: benchmark adapters, evolution algorithms, experiment records and skill/harness mutation",
+    "audit": "README and evolution workflow checked 2026-11-14; STAR adoption limited to isolated candidate experiments and sealed holdouts"
   }
 ]

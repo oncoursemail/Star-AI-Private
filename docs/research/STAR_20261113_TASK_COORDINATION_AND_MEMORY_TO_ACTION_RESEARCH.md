@@ -282,6 +282,23 @@ For the single 8 GB GPU gaming/streaming configuration:
 6. Use resource-aware admission control, not unbounded parallel agents.
 7. Record per-process CPU/RAM/VRAM, game frame time, OBS dropped frames, audio underruns, TTFT, TTS queue-to-playback, and task completion.
 
+## Additional memory research: MESA query-adaptive evidence selection
+
+Paper: https://arxiv.org/abs/2608.10108
+
+MESA studies task-adaptive selection across multiple structured memory views. Its central finding is that neither retrieving one fixed memory structure nor always loading every structure is generally optimal. The paper reports that a query-adaptive subset of five complementary memory structures improves AMA-Bench performance by 8.5% over its strongest baseline while using 41% fewer evidence tokens than the all-structure alternative in its evaluated setup.
+
+**STAR implication:** memory retrieval should be task-conditioned rather than a single global vector search. Candidate views include:
+- episodic timeline for “what happened and when?”;
+- causal/event graph for “why did this fail?”;
+- semantic knowledge for definitions and facts;
+- procedural skill memory for “how do I perform this task?”;
+- project/task ledger for current state, dependencies, and unfinished work.
+
+A lightweight router should select one or a small compatible subset based on task type, then rerank evidence and preserve source IDs. If confidence is low or the query spans multiple domains, it can broaden retrieval under a strict token budget.
+
+**Safety and quality gate:** retrieved memory is evidence, not authority. Resolve temporal conflicts, verify stale project facts before acting, preserve source provenance, and test the selected memory views on held-out memory-to-action tasks. Compare answer/task success, evidence precision, contradiction rate, retrieval latency, and tokens injected. Do not claim a memory improvement from fewer tokens alone.
+
 ## Security and privacy boundaries
 
 - Task titles and references are data, never system instructions.

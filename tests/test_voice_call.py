@@ -1,4 +1,5 @@
 """A whole voice call with fake engines: turns, speech starting on the first sentence, barge-in, cancellation."""
+import threading
 import time
 
 from star.voice.call import CallConfig, CallSession
@@ -192,3 +193,54 @@ def test_live_transcript_and_level_events_reach_the_listener():
     levels = events.of("level")
     assert levels and all(0.0 <= e["mic"] <= 1.0 and 0.0 <= e["speaker"] <= 1.0 for e in levels)
     assert any(e["mic"] > 0 for e in levels)
+
+
+def test_slow_partial_transcript_is_discarded_after_its_turn_ends():
+    """A late preview from an old utterance must not overwrite the next turn's caption."""
+    class BlockingASR:
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+            self.calls = 0
+
+        def transcribe(self, pcm: bytes, sample_rate: int = 16000) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                self.started.set()
+                self.release.wait(5)
+                return "stale preview from the previous turn"
+            return "final transcript"
+
+    config = CallConfig(
+        turn=TurnConfig(),
+        speculative_asr=False,
+        partial_transcripts=True,
+        partial_interval=0.05,
+    )
+    events, speaker = Events(), FakeSpeaker()
+    asr = BlockingASR()
+    session = CallSession(
+        vad=FakeVAD(), asr=asr, brain=FakeBrain(["Okay."]), tts=FakeTTS(),
+        speaker=speaker, config=config, on_event=events,
+    )
+    session.start()
+    try:
+        feed(session, speech(1, 40), pace=0.004)
+        assert wait_for(asr.started.is_set)
+
+        feed(session, END)
+        assert wait_for(lambda: session.state == "thinking")
+
+        # A new utterance invalidates any preview still decoding the previous one.
+        feed(session, speech(2, 20), pace=0.004)
+        asr.release.set()
+
+        assert wait_for(lambda: not session._partial_busy.is_set())
+        assert wait_for(lambda: not session.busy())
+        assert all(
+            "stale preview" not in event["text"]
+            for event in events.of("partial_transcript")
+        )
+    finally:
+        asr.release.set()
+        session.stop()

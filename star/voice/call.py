@@ -113,6 +113,7 @@ class RoomDispatchResult:
 class _Reply:
     def __init__(self, turn: int) -> None:
         self.response_id = uuid.uuid4().hex
+        self.trigger_event_id: str | None = None
         self.metrics = TurnMetrics(turn=turn)
         self.cancel = threading.Event()
         self.done = threading.Event()
@@ -175,6 +176,9 @@ class CallSession:
         self._carry = ""                     # user text from a reply that was cancelled before any audio
         self._speculative: dict | None = None
         self._partial_busy = threading.Event()
+        # Preview ASR is asynchronous. A generation token prevents a slow preview from
+        # publishing text after its utterance ended or a newer utterance began.
+        self._partial_generation = 0
         self._last_partial = 0.0
         self._last_level = 0.0
         self._last_audible = float("-inf")
@@ -189,12 +193,16 @@ class CallSession:
 
     # -- lifecycle --------------------------------------------------------------------------
     def start(self) -> None:
-        self._stopped = False
+        with self._lock:
+            self._partial_generation += 1
+            self._stopped = False
         self._set_state("listening")
 
     def stop(self) -> None:
         """End the call: cancel any reply and go quiet."""
-        self._stopped = True
+        with self._lock:
+            self._stopped = True
+            self._partial_generation += 1
         self._cancel_reply("call_ended")
         reply = self._reply
         if reply is not None:
@@ -246,9 +254,14 @@ class CallSession:
                 return RoomDecision(RoomAction.IGNORE, decision.event_id, "stale_queued_cue")
             if queued is not RoomQueueResult.ADDED:
                 return RoomDecision(RoomAction.WAIT, decision.event_id, "room_queue_rejected", decision.priority)
-        if decision.action is RoomAction.INTERRUPT:
+        if decision.action in (RoomAction.INTERRUPT, RoomAction.STOP):
             response_id = decision.cancel_response_id
-            if response_id is None or not self._cancel_reply("room_barge_in", expected_response_id=response_id):
+            cancel_reason = (
+                "room_human_resolved_request"
+                if decision.action is RoomAction.STOP
+                else "room_barge_in"
+            )
+            if response_id is None or not self._cancel_reply(cancel_reason, expected_response_id=response_id):
                 return RoomDecision(RoomAction.WAIT, decision.event_id, "playback_generation_changed")
             with self._room_lock:
                 self._reset_room_playback_locked()
@@ -411,6 +424,7 @@ class CallSession:
             return None
         self._turn_count += 1
         reply = _Reply(self._turn_count)
+        reply.trigger_event_id = payload.cue.event_id
         reply.user_text = self._room_payload_prompt(payload)
         reply.carry_on_interrupt = False
         self._reply = reply
@@ -422,7 +436,9 @@ class CallSession:
                 self._room_response_id = reply.response_id
                 self._room_last_played_seconds = 0.0
                 self._room_last_playback_at = None
-                self.room_director.set_assistant_playback(False)
+                self.room_director.set_assistant_playback(
+                    False, reply.response_id, reply.trigger_event_id
+                )
         self._set_state("thinking")
         threading.Thread(target=self._run_room_payload, args=(reply, payload),
                          name=f"star-room-reply-{reply.metrics.turn}", daemon=True).start()
@@ -514,7 +530,11 @@ class CallSession:
             and 0.0 <= now - self._room_last_playback_at <= 0.25
         )
         speaking = recently_played or level > 0.0
-        self.room_director.set_assistant_playback(speaking, reply.response_id if speaking else None)
+        self.room_director.set_assistant_playback(
+            speaking,
+            reply.response_id,
+            reply.trigger_event_id,
+        )
         return True
 
     def _reset_room_playback_locked(self) -> None:
@@ -671,6 +691,8 @@ class CallSession:
     # -- turn events --------------------------------------------------------------------------
     def _on_turn_event(self, event: TurnEvent) -> None:
         if event.kind == "speech_start":
+            with self._lock:
+                self._partial_generation += 1
             was_busy = self.busy()
             if was_busy:
                 self._cancel_reply("barge_in" if event.barge_in else "user_kept_talking")
@@ -683,10 +705,14 @@ class CallSession:
         elif event.kind == "resume":
             self._speculative = None
         elif event.kind == "discard":
+            with self._lock:
+                self._partial_generation += 1
             self._speculative = None
             if not self.busy():
                 self._set_state("listening")
         elif event.kind == "turn_end":
+            with self._lock:
+                self._partial_generation += 1
             self._begin_reply(event)
 
     def _begin_reply(self, event: TurnEvent) -> None:
@@ -733,6 +759,8 @@ class CallSession:
         threading.Thread(target=work, name="star-voice-asr-early", daemon=True).start()
 
     def _start_partial(self, audio: bytes) -> None:
+        with self._lock:
+            generation = self._partial_generation
         self._partial_busy.set()
 
         def work() -> None:
@@ -742,7 +770,10 @@ class CallSession:
                         text = (self.asr.transcribe(audio, 16000) or "").strip()
                     finally:
                         self._asr_lock.release()
-                    if text and (self.detector.state != TurnDetector.IDLE or self._ptt_held):
+                    with self._lock:
+                        current_generation = generation == self._partial_generation and not self._stopped
+                    if (text and current_generation
+                            and (self.detector.state != TurnDetector.IDLE or self._ptt_held)):
                         self._emit({"type": "partial_transcript", "text": text})
             except Exception:
                 pass
@@ -801,7 +832,7 @@ class CallSession:
             if len(self.history) > limit:
                 keep = (limit // 2) // 2 * 2
                 del self.history[: len(self.history) - keep]
-            return [system_message(self.config.system_extra, self.config.style)] + list(self.history)
+            return [system_message(self.config.system_extra, self.config.style, streaming=True)] + list(self.history)
 
     def _generate_and_speak(self, reply: _Reply, messages: list[dict]) -> None:
         metrics = reply.metrics

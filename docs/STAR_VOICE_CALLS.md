@@ -30,9 +30,14 @@ microphone (16 kHz, 32 ms frames)
    -> speaker
 ```
 
-- **Speech starts on the first sentence.** The server produces text at about speaking pace, so waiting for the whole
-  reply would add many seconds. The voice prompt asks Star to open with two to five words ("Oh, well done.") so the
-  first audio does not wait for a long sentence.
+- **Speech starts on the first complete sentence.** The server produces text at about speaking pace, so waiting
+  for the whole reply would add latency. The current persona encourages concise, natural spoken replies but does not
+  require a fixed two-to-five-word opener; the first sentence is spoken as soon as it is complete.
+- **Partial ASR is a preview, not true streaming recognition.** The current `SpeechToText` interface is one-shot
+  (`transcribe(pcm)`). While the user is speaking, STAR may run another one-shot transcription over the audio
+  accumulated so far. This can repeat work as the utterance grows. Preview text is provisional and must not trigger
+  tools, become durable memory, or be treated as the final transcript. A future incremental ASR provider should
+  expose explicit partial, committed, final, and correction events while preserving utterance IDs and cancellation.
 - **Interruption (barge-in).** If you speak for about 0.3 s while Star is talking, playback stops within one audio
   block, the request to the server is closed, and queued sentences are dropped. Only the words that were actually
   played are kept in the conversation history, so Star knows what you did and did not hear.
@@ -149,7 +154,7 @@ request.
 
 | Action | Payload | Immediate `data` |
 |---|---|---|
-| `voiceStatus` | none | `{available, missingPackages[], missingModels[], serverConfigured, inCall, callId, state, muted, speaking}` |
+| `voiceStatus` | none | `{available, missingPackages[], missingModels[], serverConfigured, inCall, callId, state, muted, speaking, audioDiagnostics}` |
 | `voiceGetSettings` | none | `{settings: VoiceSettings, choices: {asr_model[], endpointer[], output[]}}` |
 | `voiceSaveSettings` | `{settings: {...partial}}` | `{settings}` after validation; stored in `voice.json` in the app data folder |
 | `voiceListVoices` | `{style?}` | `{styles[], voices[], selected}`: the voice catalog, optionally one style (section 9) |
@@ -542,6 +547,18 @@ Each `_Reply` receives an opaque random response ID. `interrupt_response(respons
 
 **Queue integration (2026-11-13):** when a director is configured, CallSession now creates a bounded RoomCueQueue by default (or accepts a host-supplied queue). QUEUE decisions are inserted automatically. A direct RESPOND decision received while a reply is still being prepared is converted to QUEUE and inserted. The queue is capped, priority-ordered with aging, deduplicated, and expires cues using the host monotonic clock. A full queue returns WAIT with reason `room_queue_full`; it never silently evicts another viewer's request. The host retrieves the next cue with `pop_queued_room_cue()` and can collect expired cues with `expire_queued_room_cues()` for payload cleanup.
 
+**Human-resolution stop (2026-11-13):** a trusted adapter may submit a final
+`CueIntent.HUMAN_RESOLUTION` cue with a bounded `resolves_event_id` that points to the
+original room event. The active room reply carries that originating event ID alongside
+its response-generation ID. When the resolution matches the exact event, the director
+returns `RoomAction.STOP`; `CallSession` cancels only that exact response generation and
+does not speak the resolution announcement as a second answer. This also works while the
+reply is still thinking, before its first audio chunk. Unrelated, unlinked, partial,
+low-confidence, stale, or game-originated resolution cues do not stop the response.
+The host adapter is responsible for correctly classifying and linking the resolution;
+the room runtime does not infer it from raw audio or chat text.
+
+
 **Integration boundary:** this is still not a complete multiparty streaming stack. It does not perform diarization, ASR, chat ingestion, speaker/addressee classification, game perception, or automatic response execution. Those remain host adapters. The host must call `handle_room_cue()` with monotonic timestamps and independently classified metadata. The queue stores only RoomCue metadata; the host owns the associated short-lived content payload keyed by event_id and must delete it on dequeue, expiry, or session end. At dequeue, re-check context and permissions: queued viewer content is untrusted input and is never a permission grant. Tests are in `tests/test_voice_room_call_bridge.py` and `tests/test_voice_room_queue.py`.
 
 
@@ -751,3 +768,36 @@ Recommended acceptance sequence:
 4. Live chat rehearsal with moderator, allowlist, slow mode, and owner-controlled stop.
 5. Mixed-load rehearsal measuring first audible audio, queue wait, frame-time p99, audio
    underruns, OBS skipped frames, CPU/RAM/VRAM, and held-out response quality.
+
+
+## 13. Natural streaming persona (2026-11-13)
+
+The three existing speaking styles keep their established voice identity, but no longer require a stock reaction at the start of every turn. A shared, fixed prompt suffix encourages varied openings, concise context-sensitive replies, natural quiet, and meaningful rather than constant game commentary. It also prohibits fabricated human biographies, personal memories, physical presence, and claims of perception that the host did not provide.
+
+The prompt does **not** decide whether STAR should take the floor. The room director and trusted host remain responsible for addressee classification, moderation, respond/queue/continue/ignore/wait/interrupt/stop decisions, and exact response cancellation. The host's playback evidence remains authoritative for avatar/caption synchronization.
+
+Research and evaluation plan: `docs/research/STAR_20261113_NATURAL_STREAMER_PERSONA_AND_SOCIAL_PRESENCE.md`.
+
+This is a voice-prompt behavior change only. It does not install ASR/diarization, connect Twitch/YouTube, control OBS or VTube Studio, or demonstrate a live-stream hardware test. Evaluate it on the same multi-speaker and long-session holdouts as the room runtime before calling it production-ready.
+
+
+## 14. Aggregate audio-device health diagnostics (2026-11-14)
+
+The real PortAudio microphone and speaker adapters count device callback conditions without
+retaining audio or identifying the selected device:
+
+- Microphone: driver input overflows/underflows, bounded Python queue drops, and queued frame count.
+- Speaker: driver output underflows/overflows, queued seconds, played seconds, and sample rate.
+
+`voiceStatus.audioDiagnostics` returns separate `microphone` and `speaker` objects while a
+call is active. Adapters that do not expose diagnostics return empty objects. These are
+aggregate health counters, not a claim that a remote audience heard the audio. A local
+speaker callback is not an OBS/stream output acknowledgement.
+
+The callback counters are diagnostic only. They do not change buffer sizes, drop policy,
+audio priority, device selection, or model scheduling. Tests call the callbacks with
+synthetic PortAudio status flags and do not require a physical microphone or speaker.
+
+No audio samples, transcripts, device names, or viewer identifiers are included. Real
+hardware and OBS loopback tests remain necessary to establish actual underrun rates and
+client-heard latency.
