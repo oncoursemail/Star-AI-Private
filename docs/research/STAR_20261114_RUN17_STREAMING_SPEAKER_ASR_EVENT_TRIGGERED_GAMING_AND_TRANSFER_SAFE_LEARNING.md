@@ -39,7 +39,7 @@ Its repository reports:
 - Heterogeneous quantization: I8_S VAE and I2_S language-model weights with Q6_K embeddings.
 - Vendor-reported real-time factor below 1 on three or more CPU threads in selected x86/ARM tests.
 - A Windows 11 Intel Core i7-13700 benchmark, with reported RTF 0.43 at three threads.
-- Approximately 1–4 absolute WER points of degradation against the full VibeVoice-ASR-7B reference on the listed datasets.
+- The README overview describes roughly 1–4 absolute WER points of degradation, but the published table is dataset-dependent and includes larger gaps (for example, +7.62 points on AISHELL4 and +4.37 on AliMeeting versus the listed 7B reference). Use the per-dataset table, not the overview range, when setting acceptance thresholds.
 - Seven listed languages in the model card, with accuracy varying by language and corpus.
 
 Sources:
