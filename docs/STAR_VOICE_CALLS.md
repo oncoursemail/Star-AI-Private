@@ -763,3 +763,14 @@ Recommended acceptance sequence:
 4. Live chat rehearsal with moderator, allowlist, slow mode, and owner-controlled stop.
 5. Mixed-load rehearsal measuring first audible audio, queue wait, frame-time p99, audio
    underruns, OBS skipped frames, CPU/RAM/VRAM, and held-out response quality.
+
+
+## 13. Natural streaming persona (2026-11-13)
+
+The three existing speaking styles keep their established voice identity, but no longer require a stock reaction at the start of every turn. A shared, fixed prompt suffix encourages varied openings, concise context-sensitive replies, natural quiet, and meaningful rather than constant game commentary. It also prohibits fabricated human biographies, personal memories, physical presence, and claims of perception that the host did not provide.
+
+The prompt does **not** decide whether STAR should take the floor. The room director and trusted host remain responsible for addressee classification, moderation, respond/queue/continue/ignore/wait/interrupt/stop decisions, and exact response cancellation. The host's playback evidence remains authoritative for avatar/caption synchronization.
+
+Research and evaluation plan: `docs/research/STAR_20261113_NATURAL_STREAMER_PERSONA_AND_SOCIAL_PRESENCE.md`.
+
+This is a voice-prompt behavior change only. It does not install ASR/diarization, connect Twitch/YouTube, control OBS or VTube Studio, or demonstrate a live-stream hardware test. Evaluate it on the same multi-speaker and long-session holdouts as the room runtime before calling it production-ready.
