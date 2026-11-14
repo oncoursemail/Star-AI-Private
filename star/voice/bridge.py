@@ -42,6 +42,20 @@ REQUIRED_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevic
 ROOM_ONLY_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
                       "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
 SPEAK_AHEAD_SECONDS = 1.5            # read-aloud synthesises at most this far ahead of what is playing
+
+
+def _device_diagnostics(device) -> dict:
+    """Return aggregate audio-device counters when the adapter exposes them."""
+    getter = getattr(device, "diagnostics", None)
+    if not callable(getter):
+        return {}
+    try:
+        result = getter()
+    except Exception:
+        return {}
+    return result if isinstance(result, dict) else {}
+
+
 PREVIEW_LINE = "Hi sweetheart, it's Star. I'm so glad you're here."
 
 
@@ -91,6 +105,7 @@ class _Call:
         self.stop = threading.Event()
         self.session = None
         self.microphone = None
+        self.speaker = None
         self.thread: threading.Thread | None = None
 
 
@@ -178,6 +193,10 @@ class VoiceBridge:
             "roomSources": sorted(source.value for source in call.room_sources) if call else [],
             "roomPending": len(call.session.room_queue) if call and call.session and call.session.room_queue else 0,
             "roomStats": asdict(call.room_host.stats) if call and call.room_host else {},
+            "audioDiagnostics": {
+                "microphone": _device_diagnostics(call.microphone) if call else {},
+                "speaker": _device_diagnostics(call.speaker) if call else {},
+            },
         }
 
     # -- actions ------------------------------------------------------------------------------
@@ -380,6 +399,7 @@ class VoiceBridge:
             brain = self._factories.brain(call.settings)
             speaker = self._factories.speaker(int(getattr(engines.tts, "sample_rate", 24000)),
                                               call.settings.output_device)
+            call.speaker = speaker
             if not call.room_only:
                 call.microphone = self._factories.microphone(call.settings.input_device)
 
