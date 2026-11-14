@@ -814,7 +814,7 @@ class CallSession:
             if len(self.history) > limit:
                 keep = (limit // 2) // 2 * 2
                 del self.history[: len(self.history) - keep]
-            return [system_message(self.config.system_extra, self.config.style)] + list(self.history)
+            return [system_message(self.config.system_extra, self.config.style, streaming=True)] + list(self.history)
 
     def _generate_and_speak(self, reply: _Reply, messages: list[dict]) -> None:
         metrics = reply.metrics
