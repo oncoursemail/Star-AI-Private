@@ -425,5 +425,68 @@
     "url": "https://huggingface.co/datasets/Xiaodong/LiViBench",
     "kind_and_usage": "Dataset card: CC BY-NC 4.0; non-commercial reuse boundary",
     "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R62",
+    "title": "X2Streaming-ASR: wait when uncertain, emit when ready, arXiv v4, October 2026",
+    "url": "https://arxiv.org/abs/2609.08672",
+    "kind_and_usage": "Preprint: learned append-only commit policy, incremental causal streaming, reported commit latency",
+    "audit": "web-source-identified; paper and current project results checked 2026-11-14"
+  },
+  {
+    "id": "R63",
+    "title": "X2Streaming-ASR official implementation",
+    "url": "https://github.com/X-Square-Robot/X2Streaming-ASR",
+    "kind_and_usage": "Official code: streaming inference, LISTEN/DECODE policy, backends and evaluation results",
+    "audit": "web-source-identified; README and implementation surface checked 2026-11-14"
+  },
+  {
+    "id": "R64",
+    "title": "X2Streaming-ASR-4B official model card",
+    "url": "https://huggingface.co/x-square-robot/X2Streaming-ASR-4B-1009",
+    "kind_and_usage": "Official model card: ~4B BF16 architecture, languages, model license and inference requirements",
+    "audit": "web-source-identified; model card checked 2026-11-14"
+  },
+  {
+    "id": "R65",
+    "title": "Bursts That Outlast Themselves: Persistent Degradation in Prefix-Cached Agent Serving, November 2026",
+    "url": "https://arxiv.org/abs/2611.13412",
+    "kind_and_usage": "Preprint: metastable prefix-cache collapse, KV working-set budgeting, turn-boundary suspension and recovery",
+    "audit": "web-source-identified; abstract and experimental details checked 2026-11-14"
+  },
+  {
+    "id": "R66",
+    "title": "vLLM v0.32.0 metrics documentation",
+    "url": "https://docs.vllm.ai/en/v0.32.0/design/metrics/",
+    "kind_and_usage": "Official docs: KV cache occupancy, prefix-cache hits/queries, request counts and latency metrics",
+    "audit": "web-source-identified; metrics reference checked 2026-11-14"
+  },
+  {
+    "id": "R67",
+    "title": "AI on Roblox: accelerated Studio workflows",
+    "url": "https://create.roblox.com/docs/ai/accelerated-workflows",
+    "kind_and_usage": "Official docs: Studio MCP, project context, script editing, playtesting and creation tools",
+    "audit": "web-source-identified; current Creator Hub documentation checked 2026-11-14"
+  },
+  {
+    "id": "R68",
+    "title": "Roblox Studio is Going Agentic, April 2026",
+    "url": "https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic",
+    "kind_and_usage": "Official engineering announcement: plan/build/test workflows, task manifests and playtesting agent",
+    "audit": "web-source-identified; announcement checked 2026-11-14"
+  },
+  {
+    "id": "R69",
+    "title": "GameDevBench canonical ICML 2026 paper page",
+    "url": "https://sethkarten.ai/papers/gamedevbench.html",
+    "kind_and_usage": "Canonical benchmark paper page: 132 task count and visual-feedback results",
+    "audit": "web-source-identified; benchmark count and reported results checked 2026-11-14"
+  },
+  {
+    "id": "R70",
+    "title": "Roblox Studio built-in MCP server and playtest automation announcement",
+    "url": "https://devforum.roblox.com/t/assistant-updates-studio-built-in-mcp-server-and-playtest-automation/4474643",
+    "kind_and_usage": "Official developer announcement: Studio MCP and playtest automation details",
+    "audit": "web-source-identified; announcement checked 2026-11-14"
   }
 ]
