@@ -59,7 +59,7 @@ Realtime-Venus is a useful architecture reference for asynchronous delegation al
 
 ### The Triadic Loop
 
-Paper: https://arxiv.org/abs/2604.23632
+Paper: https://arxiv.org/abs/2604.18850
 
 The broader AI co-hosting literature also models a live stream as a relationship among the streamer, AI co-host, and audience rather than a simple one-user/one-assistant exchange. This is a conceptual design lens, not a validated benchmark.
 
