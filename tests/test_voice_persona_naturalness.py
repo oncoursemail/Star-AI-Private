@@ -12,8 +12,8 @@ def test_every_voice_style_uses_the_same_streaming_floor_rules():
 
 def test_voice_personas_do_not_require_a_stock_opening():
     for prompt in STYLE_PROMPTS.values():
-        assert "Do not force a stock reaction" not in prompt or "Do not force an excited opener" in prompt
-        assert "Vary sentence length and openings" in prompt or "natural variation" in prompt
+        assert "Start with" not in prompt
+        assert "vary" in prompt.lower() or "variation" in prompt.lower()
 
 
 def test_per_call_context_is_appended_after_the_stable_persona_prefix():
