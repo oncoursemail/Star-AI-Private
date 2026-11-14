@@ -99,7 +99,7 @@ def build_session(settings: VoiceSettings, engines: Engines, speaker: Speaker, b
     brain = brain or make_brain(settings)
     config = settings.call_config()
     if prime and hasattr(brain, "prime"):
-        brain.prime([system_message(config.system_extra, config.style)])   # server reads the voice prompt before turn one
+        brain.prime([system_message(config.system_extra, config.style, streaming=True)])   # server reads the voice prompt before turn one
     if hasattr(engines.vad, "reset"):
         engines.vad.reset()
     room_components = {}
