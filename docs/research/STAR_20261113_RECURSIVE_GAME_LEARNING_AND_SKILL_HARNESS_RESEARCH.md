@@ -321,6 +321,36 @@ Missing, stale, mismatched, or insufficient evidence is **INCONCLUSIVE**, never 
 - Keep raw audio, viewer profiles, credentials, local databases, signing keys, and private holdout cases outside Git.
 - STAR remains transparently an AI character; natural timing and expression must not be used to deceive viewers into believing she is human.
 
+## 9.1 New research: skill learning needs external feedback
+
+### SkillLearnBench (22 April 2026)
+
+Paper and code:
+- https://arxiv.org/abs/2604.20087
+- https://github.com/cxcscmu/SkillLearnBench
+
+SkillLearnBench evaluates 20 verified skill-dependent tasks across 15 subdomains at three levels: skill quality, execution trajectory, and task outcome. Its findings are especially relevant to STAR:
+- continual skill methods improve over a no-skill baseline, but no method wins consistently across tasks and models;
+- stronger foundation models do not automatically produce better learned skills;
+- reusable, clearly structured workflows are easier to improve than open-ended tasks;
+- iterative external feedback supports genuine improvement, while self-feedback alone can create recursive drift.
+
+**STAR decision:** evaluate a skill at three separate levels: (1) is the skill artifact clear, scoped, and safe; (2) does the executor follow the intended procedure; (3) does the task outcome improve on held-out cases. Do not promote a skill because its authoring model says it is better. Require external execution evidence and independent holdouts.
+
+### Retrospective Harness Optimization (RHO, EMNLP 2026 Findings)
+
+Paper: https://aclanthology.org/2026.findings-emnlp.2439/  
+Code: https://github.com/wbopan/retro-harness  
+Project: https://paper-rho.wenbo.io/
+
+RHO selects a diverse coreset of difficult past trajectories, re-solves them, uses self-validation/self-consistency to propose harness changes, and selects among candidates with pairwise self-preference. The paper reports a SWE-Bench Pro pass-rate change from 59% to 78% after one optimization round in its evaluated setup.
+
+**STAR decision:** borrow RHO for candidate generation over prompts, skills, tool descriptions, and workflow control flow. Do not let the optimizer see sealed holdout tasks or edit the evaluator. Self-preference is a search heuristic, not independent proof. A candidate must still pass STAR's deterministic tests, paired repeated trials, sealed task families, safety checks, and rollback gate.
+
+Recommended STAR skill promotion sequence:
+
+`experience → failure taxonomy → candidate skill/harness variants → development feedback → independent execution → sealed holdout → versioned promotion`
+
 ## References
 
 - R²SI project: https://r2si.worldscape.io/
