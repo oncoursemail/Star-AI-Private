@@ -30,9 +30,14 @@ microphone (16 kHz, 32 ms frames)
    -> speaker
 ```
 
-- **Speech starts on the first sentence.** The server produces text at about speaking pace, so waiting for the whole
-  reply would add many seconds. The voice prompt asks Star to open with two to five words ("Oh, well done.") so the
-  first audio does not wait for a long sentence.
+- **Speech starts on the first complete sentence.** The server produces text at about speaking pace, so waiting
+  for the whole reply would add latency. The current persona encourages concise, natural spoken replies but does not
+  require a fixed two-to-five-word opener; the first sentence is spoken as soon as it is complete.
+- **Partial ASR is a preview, not true streaming recognition.** The current `SpeechToText` interface is one-shot
+  (`transcribe(pcm)`). While the user is speaking, STAR may run another one-shot transcription over the audio
+  accumulated so far. This can repeat work as the utterance grows. Preview text is provisional and must not trigger
+  tools, become durable memory, or be treated as the final transcript. A future incremental ASR provider should
+  expose explicit partial, committed, final, and correction events while preserving utterance IDs and cancellation.
 - **Interruption (barge-in).** If you speak for about 0.3 s while Star is talking, playback stops within one audio
   block, the request to the server is closed, and queued sentences are dropped. Only the words that were actually
   played are kept in the conversation history, so Star knows what you did and did not hear.
