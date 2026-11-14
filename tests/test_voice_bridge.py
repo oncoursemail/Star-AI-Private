@@ -104,6 +104,7 @@ def test_a_call_started_from_the_ui_streams_events_and_saves_the_turn(tmp_path):
 
     status = bridge.handle("voiceStatus", {})
     assert status["inCall"] and status["callId"] == "req-7" and status["state"] in {"listening", "speaking"}
+    assert status["audioDiagnostics"] == {"microphone": {}, "speaker": {}}
     assert bridge.handle("voiceSetMuted", {"muted": True}) == {"muted": True}
     assert bridge.handle("voiceInterrupt", {}) == {"interrupted": True}
     assert bridge.handle("voiceStopCall", {}) == {"stopped": True}
