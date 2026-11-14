@@ -13,29 +13,37 @@ def test_empty_turn_has_unknown_stage_latencies_and_empty_table():
     assert "mean" not in table
 
 
-def test_stages_use_clock_differences_and_generated_token_count():
+def test_stages_separate_model_sentence_and_first_audio_delays():
     m = TurnMetrics(
         turn=1, speech_end=1.0, turn_end=1.25, transcript_at=1.40,
         first_token_at=1.65, first_sentence_at=1.7, first_audio_at=1.9,
-        last_token_at=2.65, tokens=11,
+        last_token_at=2.65, tokens=11, audio_seconds=0.5, tts_seconds=0.25,
     )
     stages = m.stages()
     assert stages["endpoint"] == pytest.approx(0.25)
     assert stages["asr"] == pytest.approx(0.15)
     assert stages["speech_end_to_transcript"] == pytest.approx(0.40)
     assert stages["transcript_to_first_token"] == pytest.approx(0.25)
+    assert stages["first_token_to_first_sentence"] == pytest.approx(0.05)
+    assert stages["first_sentence_to_first_audio"] == pytest.approx(0.20)
+    assert stages["transcript_to_first_audio"] == pytest.approx(0.50)
+    assert stages["turn_end_to_first_audio"] == pytest.approx(0.65)
     assert stages["first_token_to_first_audio"] == pytest.approx(0.25)
     assert stages["total"] == pytest.approx(0.90)
     assert stages["tokens_per_second"] == pytest.approx(10.0)
+    assert stages["tts_real_time_factor"] == pytest.approx(0.5)
 
 
 def test_negative_clock_differences_are_clamped_and_zero_generation_has_no_rate():
     m = TurnMetrics(
         speech_end=2.0, turn_end=1.0, transcript_at=0.5,
-        first_token_at=0.0, first_audio_at=-1.0, last_token_at=0.0, tokens=15,
+        first_token_at=0.0, first_sentence_at=-0.5, first_audio_at=-1.0,
+        last_token_at=0.0, tokens=15,
     )
-    assert all(value == 0.0 for key, value in m.stages().items() if key != "tokens_per_second")
+    assert all(value == 0.0 for key, value in m.stages().items()
+               if key not in {"tokens_per_second", "tts_real_time_factor"})
     assert m.stages()["tokens_per_second"] is None
+    assert m.stages()["tts_real_time_factor"] is None
     m.first_token_at, m.last_token_at, m.tokens = 1.0, 3.0, 2
     assert m.stages()["tokens_per_second"] is None
     m.tokens = 3
