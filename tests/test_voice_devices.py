@@ -61,7 +61,7 @@ def test_callbacks_tolerate_missing_portaudio_status():
     mic._input_overflows = 0
     mic._input_underflows = 0
     mic.dropped = 0
-    mic._callback(b"\\x00\\x00", 1, None, None)
+    mic._callback(b"\x00\x00", 1, None, None)
     assert mic.diagnostics()["input_overflows"] == 0
     assert mic.diagnostics()["queue_drops"] == 0
 
@@ -75,5 +75,5 @@ def test_callbacks_tolerate_missing_portaudio_status():
     speaker._levels = deque(maxlen=64)
     output = bytearray(4)
     speaker._callback(output, 2, None, None)
-    assert output == b"\\x00" * 4
+    assert output == b"\x00" * 4
     assert speaker.diagnostics()["output_underflows"] == 0
