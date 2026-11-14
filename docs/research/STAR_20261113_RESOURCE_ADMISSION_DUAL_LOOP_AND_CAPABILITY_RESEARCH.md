@@ -233,6 +233,28 @@ Record:
 
 Do not report a speedup from token/sec alone. A configuration that produces more tokens but increases first audible response, frame drops, or audio glitches is a regression for a live VTuber.
 
+## Additional inference finding: upstream llama.cpp MoE expert cache
+
+Primary source: https://github.com/ggml-org/llama.cpp/blob/master/docs/moe-cache.md
+
+The current upstream llama.cpp documentation describes a MoE cache for models whose expert weights remain in host memory. Frequently used experts can be retained in device memory for small-batch decode/speculative workloads. The documented controls include:
+- `--moe-cache-mib`: a bounded device-memory cache budget;
+- `--moe-cache-cpu-share`: a share of cache misses computed on CPU rather than uploaded to the GPU.
+
+The documentation notes that cache hits run on device, while cache misses can be split between CPU compute and GPU uploads. It describes this as beneficial when host-memory reads/CPU execution can beat the cost of transferring missing experts, depending on RAM and PCIe behavior.
+
+**STAR applicability:** this is a promising candidate only for compatible Mixture-of-Experts models with experts actually offloaded to host memory. It does not accelerate dense models and is not a universal switch. It may help decode if repeated expert transfers are the bottleneck; it may hurt if the CPU is weak, memory bandwidth is constrained, or the GPU is already busy rendering the game.
+
+**Required experiment before adoption:**
+1. Confirm the selected checkpoint is MoE and inspect the exact layer/offload configuration.
+2. Pin the upstream llama.cpp commit and record build/backend flags.
+3. Compare cache disabled vs several bounded cache budgets and CPU-share settings.
+4. Run identical prompt sets at the same context, concurrency, batch, and output length.
+5. Measure prefill, decode tokens/s, first audible audio, process VRAM, host RAM, CPU utilization, PCIe/copy activity where available, game frame-time p95/p99, audio underruns, and held-out answer/tool quality.
+6. Reject the candidate if it improves isolated decode but worsens mixed-load stream responsiveness or task quality.
+
+Do not add a fork-specific MoE cache patch or set a production default based on a README benchmark. The upstream documented feature and any third-party fork implementation must be treated as separate artifacts.
+
 ## Safety and identity requirements
 
 “Human-like” should mean natural timing, expressive delivery, continuity, humor, contextual memory, and useful initiative—not pretending to be a human. STAR should be transparent that she is an AI character, respect platform rules, and avoid deceptive claims about real-world experiences or emotions.
