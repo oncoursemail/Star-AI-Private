@@ -1,7 +1,8 @@
 """Real microphone and loudspeaker through the optional `sounddevice` package (PortAudio).
 
-Not exercised by the automated tests: they use the virtual devices in filecall.py. The speaker here
-follows the same Speaker interface as the virtual one, so the call logic above it is identical.
+Physical device streams are not opened in automated tests; callback accounting is tested with synthetic
+PortAudio status flags. The speaker follows the same interface as the virtual device in filecall.py, so the
+call logic above it is identical.
 """
 from __future__ import annotations
 
