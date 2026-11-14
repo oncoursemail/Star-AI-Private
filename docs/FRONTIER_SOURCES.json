@@ -488,5 +488,89 @@
     "url": "https://devforum.roblox.com/t/assistant-updates-studio-built-in-mcp-server-and-playtest-automation/4474643",
     "kind_and_usage": "Official developer announcement: Studio MCP and playtest automation details",
     "audit": "web-source-identified; announcement checked 2026-11-14"
+  },
+  {
+    "id": "R71",
+    "title": "AGENTCL: Rigorous Evaluation of Continual Learning in Language Agents",
+    "url": "https://arxiv.org/abs/2606.02461",
+    "kind_and_usage": "Research paper: controlled compositional task streams, transfer gains, memory interference, and negative transfer",
+    "audit": "abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R72",
+    "title": "LiveKit audio TurnDetector documentation",
+    "url": "https://docs.livekit.io/agents/logic/turns/turn-detector/",
+    "kind_and_usage": "Official docs: acoustic/semantic end-of-turn prediction; local CPU v1-mini and endpointing requirements",
+    "audit": "current docs checked 2026-11-14"
+  },
+  {
+    "id": "R73",
+    "title": "LiveKit turn handling options",
+    "url": "https://docs.livekit.io/reference/agents/turn-handling-options/",
+    "kind_and_usage": "Official API reference: endpointing, interruption handling, false-interruption recovery, preemptive generation",
+    "audit": "current API reference checked 2026-11-14"
+  },
+  {
+    "id": "R74",
+    "title": "OpenTelemetry GenAI semantic conventions — metrics",
+    "url": "https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md",
+    "kind_and_usage": "Metrics reference: model, workflow, agent, token, and tool latency/usage measurements",
+    "audit": "current semantic conventions checked 2026-11-14"
+  },
+  {
+    "id": "R75",
+    "title": "OBS Project obs-websocket",
+    "url": "https://github.com/obsproject/obs-websocket",
+    "kind_and_usage": "Official WebSocket remote-control protocol and authentication guidance for OBS adapters",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R76",
+    "title": "VTube Studio API",
+    "url": "https://github.com/DenchiSoft/VTubeStudio",
+    "kind_and_usage": "Official API development reference: local WebSocket, plugin authorization, events and model/hotkey control",
+    "audit": "official API repository checked 2026-11-14"
+  },
+  {
+    "id": "R77",
+    "title": "Graphiti temporal context graph",
+    "url": "https://www.getzep.com/platform/graphiti/",
+    "kind_and_usage": "Open-source temporal graph memory design reference; evaluate validity times and hybrid retrieval locally before adoption",
+    "audit": "project documentation checked 2026-11-14; vendor benchmarks treated as claims, not independent validation"
+  },
+  {
+    "id": "R78",
+    "title": "MineDojo benchmark and environment suite",
+    "url": "https://github.com/MineDojo/MineDojo",
+    "kind_and_usage": "Minecraft embodied-agent benchmark with programmatic, creative, and playthrough tasks",
+    "audit": "official repository README checked 2026-11-14"
+  },
+  {
+    "id": "R79",
+    "title": "Voyager: Open-Ended Embodied Agent with LLMs",
+    "url": "https://github.com/caixianzhou/voyager",
+    "kind_and_usage": "Research implementation: automatic curriculum, executable skill library, environment feedback, and self-verification",
+    "audit": "official project repository checked 2026-11-14"
+  },
+  {
+    "id": "R80",
+    "title": "py-kvcache: External KV caching for vLLM with NVMe SSDs",
+    "url": "https://arxiv.org/abs/2609.11744",
+    "kind_and_usage": "Research paper: GPU/CPU/NVMe cache tradeoffs, asynchronous direct I/O, preloading and break-even conditions",
+    "audit": "abstract and reported evaluation checked 2026-11-14"
+  },
+  {
+    "id": "R81",
+    "title": "Controlled evaluation of configuration and cache architecture in LLM serving",
+    "url": "https://arxiv.org/abs/2611.05991",
+    "kind_and_usage": "Research paper: matched vLLM/SGLang configuration, chunked-prefill confounds, queue growth and tail latency",
+    "audit": "abstract and methodology checked 2026-11-14"
+  },
+  {
+    "id": "R82",
+    "title": "vLLM current metrics documentation",
+    "url": "https://github.com/vllm-project/vllm/blob/main/docs/design/metrics.md",
+    "kind_and_usage": "Upstream engine telemetry reference: TTFT, ITL/TPOT, queue, prefill/decode, KV usage and cache residency",
+    "audit": "current upstream documentation checked 2026-11-14"
   }
 ]
