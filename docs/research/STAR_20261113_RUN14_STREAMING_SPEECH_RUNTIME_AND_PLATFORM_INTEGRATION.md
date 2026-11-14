@@ -132,7 +132,7 @@ NeMo also documents a full-duplex VoiceChat path. STAR already has a Brain, pers
 
 Use NeMo's ASR/diarization components first. Evaluate MagpieTTS only as a separate voice-quality and latency candidate. Preserve STAR's existing voice identity unless the owner explicitly chooses a new voice after listening tests.
 
-NVIDIA-authored code is Apache-2.0, but third-party components, model weights and model cards have separate terms. Check every selected model's license and use restrictions before bundling or distributing it.
+NVIDIA-authored code is Apache-2.0, but third-party components, model weights and model cards have separate terms. Check every selected model's license and use restrictions before bundling or distributing it. The current STAR README also states that the repository has no LICENSE file; do not describe STAR itself as open-source or redistribute its source under an assumed license until the owner resolves that project-level licensing decision.
 
 ## 3. Turn-taking research: use local components where local-first matters
 
