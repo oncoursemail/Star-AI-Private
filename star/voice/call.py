@@ -176,6 +176,9 @@ class CallSession:
         self._carry = ""                     # user text from a reply that was cancelled before any audio
         self._speculative: dict | None = None
         self._partial_busy = threading.Event()
+        # Preview ASR is asynchronous. A generation token prevents a slow preview from
+        # publishing text after its utterance ended or a newer utterance began.
+        self._partial_generation = 0
         self._last_partial = 0.0
         self._last_level = 0.0
         self._last_audible = float("-inf")
@@ -190,12 +193,16 @@ class CallSession:
 
     # -- lifecycle --------------------------------------------------------------------------
     def start(self) -> None:
-        self._stopped = False
+        with self._lock:
+            self._partial_generation += 1
+            self._stopped = False
         self._set_state("listening")
 
     def stop(self) -> None:
         """End the call: cancel any reply and go quiet."""
-        self._stopped = True
+        with self._lock:
+            self._stopped = True
+            self._partial_generation += 1
         self._cancel_reply("call_ended")
         reply = self._reply
         if reply is not None:
@@ -684,6 +691,8 @@ class CallSession:
     # -- turn events --------------------------------------------------------------------------
     def _on_turn_event(self, event: TurnEvent) -> None:
         if event.kind == "speech_start":
+            with self._lock:
+                self._partial_generation += 1
             was_busy = self.busy()
             if was_busy:
                 self._cancel_reply("barge_in" if event.barge_in else "user_kept_talking")
@@ -696,10 +705,14 @@ class CallSession:
         elif event.kind == "resume":
             self._speculative = None
         elif event.kind == "discard":
+            with self._lock:
+                self._partial_generation += 1
             self._speculative = None
             if not self.busy():
                 self._set_state("listening")
         elif event.kind == "turn_end":
+            with self._lock:
+                self._partial_generation += 1
             self._begin_reply(event)
 
     def _begin_reply(self, event: TurnEvent) -> None:
@@ -746,6 +759,8 @@ class CallSession:
         threading.Thread(target=work, name="star-voice-asr-early", daemon=True).start()
 
     def _start_partial(self, audio: bytes) -> None:
+        with self._lock:
+            generation = self._partial_generation
         self._partial_busy.set()
 
         def work() -> None:
@@ -755,7 +770,10 @@ class CallSession:
                         text = (self.asr.transcribe(audio, 16000) or "").strip()
                     finally:
                         self._asr_lock.release()
-                    if text and (self.detector.state != TurnDetector.IDLE or self._ptt_held):
+                    with self._lock:
+                        current_generation = generation == self._partial_generation and not self._stopped
+                    if (text and current_generation
+                            and (self.detector.state != TurnDetector.IDLE or self._ptt_held)):
                         self._emit({"type": "partial_transcript", "text": text})
             except Exception:
                 pass
