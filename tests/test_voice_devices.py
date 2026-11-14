@@ -15,8 +15,8 @@ def test_microphone_reports_driver_overflow_and_bounded_queue_drops_only():
     mic._input_underflows = 0
     mic.dropped = 0
 
-    mic._callback(b"\\x00\\x00", 1, None, SimpleNamespace(input_overflow=True, input_underflow=False))
-    mic._callback(b"\\x00\\x00", 1, None, SimpleNamespace(input_overflow=False, input_underflow=True))
+    mic._callback(b"\x00\x00", 1, None, SimpleNamespace(input_overflow=True, input_underflow=False))
+    mic._callback(b"\x00\x00", 1, None, SimpleNamespace(input_overflow=False, input_underflow=True))
 
     assert mic.diagnostics() == {
         "input_overflows": 1,
@@ -42,7 +42,7 @@ def test_speaker_reports_portaudio_underflow_without_recording_audio():
         SimpleNamespace(output_underflow=True, output_overflow=True),
     )
 
-    assert output == b"\\x00" * 4
+    assert output == b"\x00" * 4
     diagnostics = speaker.diagnostics()
     assert diagnostics == {
         "output_underflows": 1,
