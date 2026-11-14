@@ -334,5 +334,96 @@
     "url": "https://create.roblox.com/docs/ai-data-sharing",
     "kind_and_usage": "Official docs: dataset consent and ownership",
     "audit": "web-source-identified; content not all individually extracted"
+  },
+  {
+    "id": "R49",
+    "title": "VibeVoice-ASR-Streaming technical report, Microsoft Research, September 2026",
+    "url": "https://www.microsoft.com/en-us/research/publication/vibevoice-asr-streaming-technical-report/",
+    "kind_and_usage": "Research report: chunked speaker-attributed streaming ASR",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R50",
+    "title": "VibeVoice-ASR-Streaming official model card",
+    "url": "https://huggingface.co/microsoft/VibeVoice-ASR-Streaming-7B",
+    "kind_and_usage": "Official model card: 10 languages, BF16 size, license and usage",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R51",
+    "title": "VibeASR.cpp official CPU runtime",
+    "url": "https://github.com/microsoft/VibeASR.cpp",
+    "kind_and_usage": "Official code/runtime: BitNet CPU inference, model size, RTF and WER tables",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R52",
+    "title": "OmniGameArena project and evaluation protocol",
+    "url": "https://mxlin043.github.io/OmniGameArena/",
+    "kind_and_usage": "Research project: cold start, improvement curves and held-out variant transfer",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R53",
+    "title": "OmniGameArena agent and runner code",
+    "url": "https://github.com/mxlin043/OmniGameArena",
+    "kind_and_usage": "Official code: UE5 game-agent harness and real-time/paused clocks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R54",
+    "title": "OmniGameArena UE5 environment dataset card",
+    "url": "https://huggingface.co/datasets/mxlin043/OmniGameArena",
+    "kind_and_usage": "Official dataset card: 12 games, 60 maps, remote control and Apache-2.0 license",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R55",
+    "title": "SPIKE: Adaptive Dual Controller Framework for Cost-Efficient Long-Horizon Game Agents",
+    "url": "https://arxiv.org/abs/2605.18636",
+    "kind_and_usage": "Preprint: event-triggered strategic/reactive game control and hierarchical memory",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R56",
+    "title": "The Latent Bridge: A Continuous Slow-Fast Channel for Real-Time Game Agents",
+    "url": "https://arxiv.org/abs/2606.24470",
+    "kind_and_usage": "Preprint: learned slow-to-fast latent communication for game agents",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R57",
+    "title": "The Latent Bridge reproducible implementation",
+    "url": "https://github.com/19PINE-AI/latent-bridge-games",
+    "kind_and_usage": "Research code: 33M bridge, paired fast/text/latent comparisons and MIT license",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R58",
+    "title": "EmbodiedCLBench: Continual Learning for Self-Evolving Embodied Agents",
+    "url": "https://arxiv.org/abs/2610.13021",
+    "kind_and_usage": "Preprint: compositional generalization from basic to unseen embodied tasks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R59",
+    "title": "EmbodiedCLBench official implementation",
+    "url": "https://github.com/PKU-VaLuE-Lab/EmbodiedCLBench",
+    "kind_and_usage": "Official benchmark code and task protocol",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R60",
+    "title": "LiViBench: Omnimodal Benchmark for Interactive Livestream Video Understanding",
+    "url": "https://ojs.aaai.org/index.php/AAAI/article/view/39859",
+    "kind_and_usage": "Peer-reviewed benchmark: audio, speech, live comments and 24 livestream tasks",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
+  },
+  {
+    "id": "R61",
+    "title": "LiViBench dataset card and license",
+    "url": "https://huggingface.co/datasets/Xiaodong/LiViBench",
+    "kind_and_usage": "Dataset card: CC BY-NC 4.0; non-commercial reuse boundary",
+    "audit": "web-source-identified; relevant source sections checked 2026-11-14"
   }
 ]
